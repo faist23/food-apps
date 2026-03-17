@@ -41,7 +41,7 @@ xcodebuild test -project RecipeCard.xcodeproj -scheme RecipeCard \
 Seeds ~410 common ingredients from `ingredients.json` (bundled in BiteLedgerCore
 via `Bundle.module`) into the shared store on first launch.
 
-- **Current version:** `usda_seed_v3` — bump this string to force a re-seed
+- **Current version:** `usda_seed_v4` — bump this string to force a re-seed
 - Cleanup deletes any food where `source.hasPrefix("usda_seed") && source != currentVersion`
 - `cal >= 0` guard (not `> 0`) — allows zero-calorie foods like salt
 - **Critical — before deleting old seed foods:** explicitly nullify
@@ -58,9 +58,12 @@ via `Bundle.module`) into the shared store on first launch.
 Located in `RecipeImportReviewView`. Runs once on view appear for all ingredients.
 
 ### Term preparation (applied in order)
-1. **`termAliases`** dict maps single-word ambiguous terms to specific ones:
+1. **`termAliases`** dict maps ambiguous terms to specific ones:
    - `"pepper"` → `"black pepper"`
+   - `"ground pepper"` → `"black pepper"`
+   - `"black pepper ground"` → `"black pepper"`
    - `"seasoning"` → `"salt"`
+   - `"chicken cutlet"` / `"chicken cutlets"` → `"chicken breast"`
 2. **Cheese stripping** — drop trailing `" cheese"` unless the full term is a
    recognised compound (`"cream cheese"`, `"cottage cheese"`, `"goat cheese"`,
    `"american cheese"`, `"swiss cheese"`, `"blue cheese"`, `"brie cheese"`).
@@ -150,6 +153,35 @@ if let gram = m.resolvedGramAmount,
 ```
 The recipe detail view recalculates `savedQuantity × serving.gramWeight × cal/100g`,
 so both screens must use the same gram basis or the displayed calories will diverge.
+
+---
+
+## Safari Share Extension (RecipeCardShare target)
+
+`RecipeCardShare/ShareViewController.swift` — a Share Extension that lets users
+send a recipe URL from Safari directly to RecipeCard.
+
+### Flow
+1. User taps Share in Safari → selects RecipeCard
+2. `ShareViewController.viewDidLoad` extracts the URL from the extension context
+3. URL is written to shared `UserDefaults(suiteName: "group.com.ridepro.biteledger")`
+   under key `"pendingRecipeURL"`
+4. Extension walks the responder chain to open `recipecard://import` (URL scheme
+   registered on the RecipeCard target — do not use `UIApplication.shared` or
+   `extensionContext?.open`, neither works in Share Extensions)
+5. Main app receives the URL via `.onOpenURL` → `consumePendingRecipeURL()` in
+   `RecipeCardApp` posts a `Notification.Name.recipeCardImportURL` notification
+   **without removing the key** (key stays so `ImportRecipeView` can read it directly)
+6. `RecipesListView` receives the notification → sets `pendingImportURL` →
+   presents `ImportRecipeView` sheet
+7. `ImportRecipeView.onAppear` uses `prefilledURL` param if set, otherwise reads
+   directly from `UserDefaults` as a fallback (handles cold-launch timing).
+   Removes the key once consumed.
+
+### Key invariant
+Do NOT remove `"pendingRecipeURL"` from UserDefaults in `consumePendingRecipeURL()`.
+Only remove it in `ImportRecipeView.onAppear` after it has been read, otherwise a
+race condition causes the URL to disappear before the view loads.
 
 ---
 
