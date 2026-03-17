@@ -1,0 +1,511 @@
+//
+//  TodayView.swift
+//  BiteLedger
+//
+
+import SwiftUI
+import SwiftData
+import BiteLedgerCore
+
+struct TodayView: View {
+
+    @Environment(\.modelContext) private var modelContext
+    @State private var logs: [FoodLog] = []
+    @State private var preferences: UserPreferences?
+
+    @State private var selectedMeal: MealType?
+    @State private var editingLog: FoodLog?
+    @State private var showingDailyNutrition = false
+    @State private var showingMealNutrition: MealType?
+    @State private var selectedDate = Date()
+    @State private var showingDatePicker = false
+    @State private var currentStreak = 0
+    @State private var yesterdayLogs: [FoodLog] = []
+
+    // MARK: - Computed
+
+    private var todayLogs: [FoodLog] {
+        logs
+    }
+
+    private func caloriesFor(meal: MealType) -> Double {
+        todayLogs
+            .filter { $0.mealType == meal }
+            .reduce(into: 0) { $0 += $1.caloriesAtLogTime }
+    }
+
+    // MARK: - Body
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                // Sticky header with streak
+                headerSection
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(Color("SurfacePrimary"))
+                
+                ScrollView {
+                    VStack(spacing: 16) {
+                        NutritionDashboard(
+                            logs: todayLogs,
+                            preferences: preferences,
+                            onTap: {
+                                showingDailyNutrition = true
+                            }
+                        )
+                        .padding(.horizontal, 20)
+
+                        mealSections
+
+                        Spacer(minLength: 60)
+                    }
+                    .padding(.top, 16)
+                }
+            }
+            .background(Color("SurfacePrimary"))
+            .navigationBarHidden(true)
+            .gesture(
+                DragGesture(minimumDistance: 50)
+                    .onEnded { value in
+                        if value.translation.width > 0 {
+                            // Swipe right - go to previous day
+                            selectedDate = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate) ?? selectedDate
+                            loadLogsForSelectedDate()
+                        } else if value.translation.width < 0 {
+                            // Swipe left - go to next day (unless today)
+                            if !Calendar.current.isDateInToday(selectedDate) {
+                                selectedDate = Calendar.current.date(byAdding: .day, value: 1, to: selectedDate) ?? selectedDate
+                                loadLogsForSelectedDate()
+                            }
+                        }
+                    }
+            )
+            .onAppear {
+                loadLogsForSelectedDate()
+                loadPreferences()  // must run before loadStreak so cache is available
+                loadStreak()
+            }
+        }
+        .sheet(item: $selectedMeal) { meal in
+            FoodSearchView(mealType: meal) { addedItem in
+                let timestamp: Date
+
+                if Calendar.current.isDateInToday(selectedDate) {
+                    timestamp = Date()
+                } else {
+                    var components = Calendar.current.dateComponents([.year, .month, .day], from: selectedDate)
+                    components.hour = 12
+                    timestamp = Calendar.current.date(from: components) ?? selectedDate
+                }
+
+                // Only insert FoodItem if it's not already in the context
+                // (e.g., when copying from an existing log, the FoodItem already exists)
+                if addedItem.foodItem.modelContext == nil {
+                    modelContext.insert(addedItem.foodItem)
+                    // Link to canonical food for authoritative unit→gram conversions.
+                    if addedItem.foodItem.canonicalFoodID == nil {
+                        addedItem.foodItem.canonicalFoodID = CanonicalFoodMatcher.match(
+                            foodName: addedItem.foodItem.name, context: modelContext
+                        )?.id
+                    }
+                    try? modelContext.save()
+                }
+
+                let foodLog = FoodLog.create(
+                    mealType: meal,
+                    quantity: addedItem.quantity,
+                    food: addedItem.foodItem,
+                    serving: addedItem.servingSize,
+                    timestamp: timestamp,
+                    loggedAmount: addedItem.loggedAmount,
+                    loggedUnit: addedItem.loggedUnit
+                )
+
+                modelContext.insert(foodLog)
+                try? modelContext.save()
+                loadLogsForSelectedDate()
+
+                // Invalidate the streak cache so the next loadStreak() recomputes.
+                // Only needed when logging for today — past-date edits don't change
+                // the streak display until the user navigates back to today anyway.
+                if Calendar.current.isDateInToday(selectedDate), let prefs = preferences {
+                    prefs.streakCachedDate = nil
+                    try? modelContext.save()
+                }
+                loadStreak()
+            }
+        }
+        .sheet(item: $editingLog) { log in
+            if let foodItem = log.foodItem {
+                FoodLogEditView(log: log, foodItem: foodItem) { updatedLog in
+                    log.quantity = updatedLog.quantity
+                    log.servingSize = updatedLog.servingSize
+                    try? modelContext.save()
+                    loadLogsForSelectedDate()
+                }
+            }
+        }
+        .sheet(isPresented: $showingDailyNutrition) {
+            DetailedNutritionView(title: "Daily Nutrition", logs: todayLogs, preferences: preferences)
+        }
+        .sheet(item: $showingMealNutrition) { meal in
+            DetailedNutritionView(
+                title: "\(meal.rawValue) Nutrition",
+                logs: todayLogs.filter { $0.mealType == meal },
+                preferences: preferences
+            )
+        }
+        .sheet(isPresented: $showingDatePicker) {
+            NavigationStack {
+                VStack {
+                    DatePicker("Select Date", selection: $selectedDate, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .padding()
+                    Spacer()
+                }
+                .navigationTitle("Select Date")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Today") {
+                            selectedDate = Date()
+                            showingDatePicker = false
+                            loadLogsForSelectedDate()
+                        }
+                        .disabled(Calendar.current.isDateInToday(selectedDate))
+                        .foregroundStyle(Calendar.current.isDateInToday(selectedDate) ? Color.secondary : Color("BrandPrimary"))
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") {
+                            showingDatePicker = false
+                            loadLogsForSelectedDate()
+                        }
+                    }
+                }
+            }
+            .presentationDetents([.medium])
+        }
+    }
+    
+    // MARK: - Data Loading
+    
+    private func loadLogsForSelectedDate() {
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: selectedDate)
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+        let startOfYesterday = calendar.date(byAdding: .day, value: -1, to: startOfDay)!
+
+        let todayDescriptor = FetchDescriptor<FoodLog>(
+            predicate: #Predicate { log in
+                log.timestamp >= startOfDay && log.timestamp < endOfDay
+            },
+            sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)]
+        )
+
+        let yesterdayDescriptor = FetchDescriptor<FoodLog>(
+            predicate: #Predicate { log in
+                log.timestamp >= startOfYesterday && log.timestamp < startOfDay
+            }
+        )
+
+        do {
+            logs = try modelContext.fetch(todayDescriptor)
+            yesterdayLogs = try modelContext.fetch(yesterdayDescriptor)
+        } catch {
+            logs = []
+            yesterdayLogs = []
+        }
+    }
+
+    private func hasYesterdayMeal(_ meal: MealType) -> Bool {
+        yesterdayLogs.contains { $0.mealType == meal }
+    }
+
+    private func yesterdayCalories(for meal: MealType) -> Double {
+        yesterdayLogs.filter { $0.mealType == meal }.reduce(0) { $0 + $1.caloriesAtLogTime }
+    }
+    
+    private func loadStreak() {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+
+        // Instant return: cache is already current for today
+        if let prefs = preferences,
+           let cachedDate = prefs.streakCachedDate,
+           calendar.startOfDay(for: cachedDate) == today {
+            currentStreak = prefs.cachedStreak
+            return
+        }
+
+        // Walk backward from today one COUNT query per day.
+        // Each query is O(1) with a timestamp index — no full table scan.
+        // When we reach the cached date we trust the stored value for that day
+        // and everything before it, so we stop early. For a typical "opened the
+        // app this morning" session this costs exactly 1–2 queries.
+        Task {
+            let cachedDay = preferences?.streakCachedDate.map { calendar.startOfDay(for: $0) }
+            let cachedValue = preferences?.cachedStreak ?? 0
+
+            var streak = 0
+            var checkDate = today
+
+            while true {
+                // Short-circuit: we've walked back to the cached anchor day.
+                // Since that day was already verified when we wrote the cache,
+                // just add the stored count for it and everything before.
+                if let anchor = cachedDay, checkDate == anchor, cachedValue > 0 {
+                    streak += cachedValue
+                    break
+                }
+
+                let nextDay = calendar.date(byAdding: .day, value: 1, to: checkDate)!
+                let count = (try? modelContext.fetchCount(
+                    FetchDescriptor<FoodLog>(predicate: #Predicate {
+                        $0.timestamp >= checkDate && $0.timestamp < nextDay
+                    })
+                )) ?? 0
+
+                if count > 0 {
+                    streak += 1
+                    checkDate = calendar.date(byAdding: .day, value: -1, to: checkDate)!
+                } else if checkDate == today {
+                    // Today is in progress — no logs yet doesn't break the streak
+                    checkDate = calendar.date(byAdding: .day, value: -1, to: checkDate)!
+                } else {
+                    break
+                }
+            }
+
+            currentStreak = streak
+
+            if let prefs = preferences {
+                prefs.cachedStreak = streak
+                prefs.streakCachedDate = Date()
+                try? modelContext.save()
+            }
+        }
+    }
+    
+    private func loadPreferences() {
+        let descriptor = FetchDescriptor<UserPreferences>()
+        do {
+            let results = try modelContext.fetch(descriptor)
+            if let existing = results.first {
+                preferences = existing
+            } else {
+                // Create default preferences
+                let newPreferences = UserPreferences()
+                modelContext.insert(newPreferences)
+                try? modelContext.save()
+                preferences = newPreferences
+            }
+        } catch {
+            print("Error loading preferences: \(error)")
+            let newPreferences = UserPreferences()
+            modelContext.insert(newPreferences)
+            try? modelContext.save()
+            preferences = newPreferences
+        }
+    }
+    
+    private func copyMealFromYesterday(meal: MealType) {
+        let calendar = Calendar.current
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: selectedDate) ?? selectedDate
+        let startOfYesterday = calendar.startOfDay(for: yesterday)
+        let endOfYesterday = calendar.date(byAdding: .day, value: 1, to: startOfYesterday)!
+        
+        // Fetch all logs from yesterday, then filter by meal in memory
+        // (SwiftData predicates can't use captured MealType values)
+        let descriptor = FetchDescriptor<FoodLog>(
+            predicate: #Predicate { log in
+                log.timestamp >= startOfYesterday && 
+                log.timestamp < endOfYesterday
+            }
+        )
+        
+        do {
+            let allYesterdayLogs = try modelContext.fetch(descriptor)
+            let yesterdayLogs = allYesterdayLogs.filter { $0.mealType == meal }
+            
+            for oldLog in yesterdayLogs {
+                guard let foodItem = oldLog.foodItem else { continue }
+                
+                let timestamp: Date
+                if Calendar.current.isDateInToday(selectedDate) {
+                    timestamp = Date()
+                } else {
+                    var components = Calendar.current.dateComponents([.year, .month, .day], from: selectedDate)
+                    components.hour = 12
+                    timestamp = Calendar.current.date(from: components) ?? selectedDate
+                }
+                
+                guard let servingSize = oldLog.servingSize else { continue }
+                
+                // Create new log with same serving size and quantity
+                let newLog = FoodLog.create(
+                    mealType: meal,
+                    quantity: oldLog.quantity,
+                    food: foodItem,
+                    serving: servingSize,
+                    timestamp: timestamp
+                )
+                
+                // Override with cached nutrition from original log to preserve exact values
+                newLog.caloriesAtLogTime = oldLog.caloriesAtLogTime
+                newLog.proteinAtLogTime = oldLog.proteinAtLogTime
+                newLog.carbsAtLogTime = oldLog.carbsAtLogTime
+                newLog.fatAtLogTime = oldLog.fatAtLogTime
+                newLog.fiberAtLogTime = oldLog.fiberAtLogTime
+                newLog.sugarAtLogTime = oldLog.sugarAtLogTime
+                newLog.sodiumAtLogTime = oldLog.sodiumAtLogTime
+                newLog.saturatedFatAtLogTime = oldLog.saturatedFatAtLogTime
+                newLog.transFatAtLogTime = oldLog.transFatAtLogTime
+                newLog.monounsaturatedFatAtLogTime = oldLog.monounsaturatedFatAtLogTime
+                newLog.polyunsaturatedFatAtLogTime = oldLog.polyunsaturatedFatAtLogTime
+                newLog.cholesterolAtLogTime = oldLog.cholesterolAtLogTime
+                newLog.magnesiumAtLogTime = oldLog.magnesiumAtLogTime
+                newLog.zincAtLogTime = oldLog.zincAtLogTime
+                newLog.vitaminAAtLogTime = oldLog.vitaminAAtLogTime
+                newLog.vitaminCAtLogTime = oldLog.vitaminCAtLogTime
+                newLog.vitaminDAtLogTime = oldLog.vitaminDAtLogTime
+                newLog.vitaminEAtLogTime = oldLog.vitaminEAtLogTime
+                newLog.vitaminKAtLogTime = oldLog.vitaminKAtLogTime
+                newLog.vitaminB6AtLogTime = oldLog.vitaminB6AtLogTime
+                newLog.vitaminB12AtLogTime = oldLog.vitaminB12AtLogTime
+                newLog.folateAtLogTime = oldLog.folateAtLogTime
+                newLog.cholineAtLogTime = oldLog.cholineAtLogTime
+                newLog.calciumAtLogTime = oldLog.calciumAtLogTime
+                newLog.ironAtLogTime = oldLog.ironAtLogTime
+                newLog.potassiumAtLogTime = oldLog.potassiumAtLogTime
+                newLog.caffeineAtLogTime = oldLog.caffeineAtLogTime
+                
+                modelContext.insert(newLog)
+            }
+            
+            try? modelContext.save()
+            loadLogsForSelectedDate()
+            if let prefs = preferences {
+                prefs.streakCachedDate = nil
+                try? modelContext.save()
+            }
+            loadStreak()
+        } catch {
+            print("Error copying meals: \(error)")
+        }
+    }
+
+    // MARK: - Header
+
+    private var headerSection: some View {
+        HStack {
+            Button {
+                selectedDate = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate) ?? selectedDate
+                loadLogsForSelectedDate()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.title3)
+                    .foregroundStyle(Color("TextSecondary"))
+            }
+
+            Spacer()
+
+            Button {
+                showingDatePicker = true
+            } label: {
+                VStack(spacing: 2) {
+                    HStack(spacing: 8) {
+                        Text(dateDisplayText)
+                            .font(.system(size: 20, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Color("TextPrimary"))
+                        
+                        if currentStreak > 0 {
+                            HStack(spacing: 4) {
+                                Image(systemName: "flame.fill")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(.orange)
+                                Text("\(currentStreak)")
+                                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                    }
+
+                    Text("Daily Ledger")
+                        .font(.caption)
+                        .foregroundStyle(Color("TextTertiary"))
+                }
+            }
+
+            Spacer()
+
+            Button {
+                selectedDate = Calendar.current.date(byAdding: .day, value: 1, to: selectedDate) ?? selectedDate
+                loadLogsForSelectedDate()
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.title3)
+                    .foregroundStyle(Color("TextSecondary"))
+            }
+            .disabled(Calendar.current.isDateInToday(selectedDate))
+            .opacity(Calendar.current.isDateInToday(selectedDate) ? 0.3 : 1)
+            
+
+        }
+    }
+
+    // MARK: - Meals
+
+    private var mealSections: some View {
+        VStack(spacing: 16) {
+            ForEach(MealType.allCases, id: \.self) { meal in
+                MealDiarySection(
+                    meal: meal,
+                    logs: todayLogs.filter { $0.mealType == meal },
+                    calories: caloriesFor(meal: meal),
+                    selectedDate: selectedDate,
+                    hasYesterdayMeal: hasYesterdayMeal(meal),
+                    yesterdayCalories: yesterdayCalories(for: meal),
+                    onAddFood: { selectedMeal = meal },
+                    onEditLog: { editingLog = $0 },
+                    onDeleteLog: { log in
+                        modelContext.delete(log)
+                        try? modelContext.save()
+                        loadLogsForSelectedDate()
+                    },
+                    onTapMeal: {
+                        if !todayLogs.filter({ $0.mealType == meal }).isEmpty {
+                            showingMealNutrition = meal
+                        }
+                    },
+                    onCopyYesterday: {
+                        copyMealFromYesterday(meal: meal)
+                    }
+                )
+            }
+        }
+    }
+
+    // MARK: - Date Formatting
+
+    private var dateDisplayText: String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(selectedDate) { return "Today" }
+        if calendar.isDateInYesterday(selectedDate) { return "Yesterday" }
+        if calendar.isDateInTomorrow(selectedDate) { return "Tomorrow" }
+
+        let formatter = DateFormatter()
+        let currentYear = calendar.component(.year, from: Date())
+        let selectedYear = calendar.component(.year, from: selectedDate)
+        
+        // Show year if it's not the current year
+        if selectedYear != currentYear {
+            formatter.dateFormat = "EEE, MMM d, yyyy"
+        } else {
+            formatter.dateFormat = "EEE, MMM d"
+        }
+        
+        return formatter.string(from: selectedDate)
+    }
+}
+

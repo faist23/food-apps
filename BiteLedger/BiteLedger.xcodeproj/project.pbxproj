@@ -1,0 +1,658 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		7E305D412F6641BA00319CAC /* BiteLedgerCore in Frameworks */ = {isa = PBXBuildFile; productRef = 7E305D402F6641BA00319CAC /* BiteLedgerCore */; };
+		7E305DF22F6654E700319CAC /* BiteLedgerCore in Frameworks */ = {isa = PBXBuildFile; productRef = 7E305DF12F6654E700319CAC /* BiteLedgerCore */; };
+		7E89B5872F439A4600B23EA8 /* .gitignore in Resources */ = {isa = PBXBuildFile; fileRef = 7E89B5862F439A4000B23EA8 /* .gitignore */; };
+		7E89B5892F439B9E00B23EA8 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 7E89B5882F439B9E00B23EA8 /* README.md */; };
+		7E89B5A92F45FCBE00B23EA8 /* CAMERA_SETUP.md in Resources */ = {isa = PBXBuildFile; fileRef = 7E89B5A82F45FCBE00B23EA8 /* CAMERA_SETUP.md */; };
+		7EC34A822F5214790041ECE0 /* ARCHITECTURE.md in Resources */ = {isa = PBXBuildFile; fileRef = 7EC34A812F5214790041ECE0 /* ARCHITECTURE.md */; };
+		7EC34A8A2F55EEA60041ECE0 /* CLAUDE.md in Resources */ = {isa = PBXBuildFile; fileRef = 7EC34A892F55EEA60041ECE0 /* CLAUDE.md */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		7E89B54E2F43963D00B23EA8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7E89B5362F43963C00B23EA8 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7E89B53D2F43963C00B23EA8;
+			remoteInfo = BiteLedger;
+		};
+		7E89B5582F43963D00B23EA8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7E89B5362F43963C00B23EA8 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7E89B53D2F43963C00B23EA8;
+			remoteInfo = BiteLedger;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		7E89B53E2F43963C00B23EA8 /* BiteLedger.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BiteLedger.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7E89B54D2F43963D00B23EA8 /* BiteLedgerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BiteLedgerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		7E89B5572F43963D00B23EA8 /* BiteLedgerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BiteLedgerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		7E89B5862F439A4000B23EA8 /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
+		7E89B5882F439B9E00B23EA8 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		7E89B5A82F45FCBE00B23EA8 /* CAMERA_SETUP.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = CAMERA_SETUP.md; sourceTree = "<group>"; };
+		7EC34A812F5214790041ECE0 /* ARCHITECTURE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = ARCHITECTURE.md; sourceTree = "<group>"; };
+		7EC34A892F55EEA60041ECE0 /* CLAUDE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = CLAUDE.md; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		7ED82FD92F5F89E000FB8E6A /* Exceptions for "BiteLedger" folder in "BiteLedger" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 7E89B53D2F43963C00B23EA8 /* BiteLedger */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		7E89B5402F43963C00B23EA8 /* BiteLedger */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				7ED82FD92F5F89E000FB8E6A /* Exceptions for "BiteLedger" folder in "BiteLedger" target */,
+			);
+			path = BiteLedger;
+			sourceTree = "<group>";
+		};
+		7E89B5502F43963D00B23EA8 /* BiteLedgerTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = BiteLedgerTests;
+			sourceTree = "<group>";
+		};
+		7E89B55A2F43963D00B23EA8 /* BiteLedgerUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = BiteLedgerUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		7E89B53B2F43963C00B23EA8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7E305DF22F6654E700319CAC /* BiteLedgerCore in Frameworks */,
+				7E305D412F6641BA00319CAC /* BiteLedgerCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7E89B54A2F43963D00B23EA8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7E89B5542F43963D00B23EA8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		7E89B5352F43963C00B23EA8 = {
+			isa = PBXGroup;
+			children = (
+				7EC34A812F5214790041ECE0 /* ARCHITECTURE.md */,
+				7EC34A892F55EEA60041ECE0 /* CLAUDE.md */,
+				7E89B5862F439A4000B23EA8 /* .gitignore */,
+				7E89B5882F439B9E00B23EA8 /* README.md */,
+				7E89B5402F43963C00B23EA8 /* BiteLedger */,
+				7E89B5502F43963D00B23EA8 /* BiteLedgerTests */,
+				7E89B55A2F43963D00B23EA8 /* BiteLedgerUITests */,
+				7E89B53F2F43963C00B23EA8 /* Products */,
+				7E89B5A82F45FCBE00B23EA8 /* CAMERA_SETUP.md */,
+			);
+			sourceTree = "<group>";
+		};
+		7E89B53F2F43963C00B23EA8 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				7E89B53E2F43963C00B23EA8 /* BiteLedger.app */,
+				7E89B54D2F43963D00B23EA8 /* BiteLedgerTests.xctest */,
+				7E89B5572F43963D00B23EA8 /* BiteLedgerUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		7E89B53D2F43963C00B23EA8 /* BiteLedger */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7E89B5612F43963D00B23EA8 /* Build configuration list for PBXNativeTarget "BiteLedger" */;
+			buildPhases = (
+				7E89B53A2F43963C00B23EA8 /* Sources */,
+				7E89B53B2F43963C00B23EA8 /* Frameworks */,
+				7E89B53C2F43963C00B23EA8 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				7E89B5402F43963C00B23EA8 /* BiteLedger */,
+			);
+			name = BiteLedger;
+			packageProductDependencies = (
+				7E305D402F6641BA00319CAC /* BiteLedgerCore */,
+				7E305DF12F6654E700319CAC /* BiteLedgerCore */,
+			);
+			productName = BiteLedger;
+			productReference = 7E89B53E2F43963C00B23EA8 /* BiteLedger.app */;
+			productType = "com.apple.product-type.application";
+		};
+		7E89B54C2F43963D00B23EA8 /* BiteLedgerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7E89B5642F43963D00B23EA8 /* Build configuration list for PBXNativeTarget "BiteLedgerTests" */;
+			buildPhases = (
+				7E89B5492F43963D00B23EA8 /* Sources */,
+				7E89B54A2F43963D00B23EA8 /* Frameworks */,
+				7E89B54B2F43963D00B23EA8 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7E89B54F2F43963D00B23EA8 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				7E89B5502F43963D00B23EA8 /* BiteLedgerTests */,
+			);
+			name = BiteLedgerTests;
+			packageProductDependencies = (
+			);
+			productName = BiteLedgerTests;
+			productReference = 7E89B54D2F43963D00B23EA8 /* BiteLedgerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		7E89B5562F43963D00B23EA8 /* BiteLedgerUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7E89B5672F43963D00B23EA8 /* Build configuration list for PBXNativeTarget "BiteLedgerUITests" */;
+			buildPhases = (
+				7E89B5532F43963D00B23EA8 /* Sources */,
+				7E89B5542F43963D00B23EA8 /* Frameworks */,
+				7E89B5552F43963D00B23EA8 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7E89B5592F43963D00B23EA8 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				7E89B55A2F43963D00B23EA8 /* BiteLedgerUITests */,
+			);
+			name = BiteLedgerUITests;
+			packageProductDependencies = (
+			);
+			productName = BiteLedgerUITests;
+			productReference = 7E89B5572F43963D00B23EA8 /* BiteLedgerUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		7E89B5362F43963C00B23EA8 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2630;
+				LastUpgradeCheck = 2630;
+				TargetAttributes = {
+					7E89B53D2F43963C00B23EA8 = {
+						CreatedOnToolsVersion = 26.3;
+					};
+					7E89B54C2F43963D00B23EA8 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 7E89B53D2F43963C00B23EA8;
+					};
+					7E89B5562F43963D00B23EA8 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 7E89B53D2F43963C00B23EA8;
+					};
+				};
+			};
+			buildConfigurationList = 7E89B5392F43963C00B23EA8 /* Build configuration list for PBXProject "BiteLedger" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 7E89B5352F43963C00B23EA8;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				7E305DF02F6654E700319CAC /* XCLocalSwiftPackageReference "../BiteLedgerCore" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 7E89B53F2F43963C00B23EA8 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				7E89B53D2F43963C00B23EA8 /* BiteLedger */,
+				7E89B54C2F43963D00B23EA8 /* BiteLedgerTests */,
+				7E89B5562F43963D00B23EA8 /* BiteLedgerUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		7E89B53C2F43963C00B23EA8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7E89B5872F439A4600B23EA8 /* .gitignore in Resources */,
+				7E89B5892F439B9E00B23EA8 /* README.md in Resources */,
+				7E89B5A92F45FCBE00B23EA8 /* CAMERA_SETUP.md in Resources */,
+				7EC34A8A2F55EEA60041ECE0 /* CLAUDE.md in Resources */,
+				7EC34A822F5214790041ECE0 /* ARCHITECTURE.md in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7E89B54B2F43963D00B23EA8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7E89B5552F43963D00B23EA8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		7E89B53A2F43963C00B23EA8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7E89B5492F43963D00B23EA8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7E89B5532F43963D00B23EA8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		7E89B54F2F43963D00B23EA8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7E89B53D2F43963C00B23EA8 /* BiteLedger */;
+			targetProxy = 7E89B54E2F43963D00B23EA8 /* PBXContainerItemProxy */;
+		};
+		7E89B5592F43963D00B23EA8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7E89B53D2F43963C00B23EA8 /* BiteLedger */;
+			targetProxy = 7E89B5582F43963D00B23EA8 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		7E89B55F2F43963D00B23EA8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = DT58WA8N32;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		7E89B5602F43963D00B23EA8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = DT58WA8N32;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		7E89B5622F43963D00B23EA8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = BiteLedger/BiteLedger.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DT58WA8N32;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = BiteLedger/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "BiteLedger needs camera access to scan product barcodes for quick food logging.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "BiteLedger can sync your nutrition data to Apple Health if you choose.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "BiteLedger can save your nutrition data to Apple Health if you choose.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ridepro.BiteLedger;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		7E89B5632F43963D00B23EA8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = BiteLedger/BiteLedger.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DT58WA8N32;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = BiteLedger/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "BiteLedger needs camera access to scan product barcodes for quick food logging.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "BiteLedger can sync your nutrition data to Apple Health if you choose.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "BiteLedger can save your nutrition data to Apple Health if you choose.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ridepro.BiteLedger;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		7E89B5652F43963D00B23EA8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DT58WA8N32;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ridepro.BiteLedgerTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BiteLedger.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BiteLedger";
+			};
+			name = Debug;
+		};
+		7E89B5662F43963D00B23EA8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DT58WA8N32;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ridepro.BiteLedgerTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/BiteLedger.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/BiteLedger";
+			};
+			name = Release;
+		};
+		7E89B5682F43963D00B23EA8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DT58WA8N32;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ridepro.BiteLedgerUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = BiteLedger;
+			};
+			name = Debug;
+		};
+		7E89B5692F43963D00B23EA8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = DT58WA8N32;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ridepro.BiteLedgerUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = BiteLedger;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		7E89B5392F43963C00B23EA8 /* Build configuration list for PBXProject "BiteLedger" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7E89B55F2F43963D00B23EA8 /* Debug */,
+				7E89B5602F43963D00B23EA8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7E89B5612F43963D00B23EA8 /* Build configuration list for PBXNativeTarget "BiteLedger" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7E89B5622F43963D00B23EA8 /* Debug */,
+				7E89B5632F43963D00B23EA8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7E89B5642F43963D00B23EA8 /* Build configuration list for PBXNativeTarget "BiteLedgerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7E89B5652F43963D00B23EA8 /* Debug */,
+				7E89B5662F43963D00B23EA8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7E89B5672F43963D00B23EA8 /* Build configuration list for PBXNativeTarget "BiteLedgerUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7E89B5682F43963D00B23EA8 /* Debug */,
+				7E89B5692F43963D00B23EA8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		7E305DF02F6654E700319CAC /* XCLocalSwiftPackageReference "../BiteLedgerCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../BiteLedgerCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		7E305D402F6641BA00319CAC /* BiteLedgerCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BiteLedgerCore;
+		};
+		7E305DF12F6654E700319CAC /* BiteLedgerCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = BiteLedgerCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 7E89B5362F43963C00B23EA8 /* Project object */;
+}

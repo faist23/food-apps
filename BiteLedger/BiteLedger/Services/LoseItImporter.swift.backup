@@ -1,0 +1,393 @@
+//
+//  LoseItImporter.swift
+//  BiteLedger
+//
+//  Created by Claude on 2/20/26.
+//
+
+import Foundation
+import SwiftData
+
+/// Service to import food logs from LoseIt CSV exports
+/// LoseIt CSV format typically includes:
+/// Date, Name, Type, Amount, Calories, Fat, Protein, Carbohydrates, etc.
+struct LoseItImporter {
+    
+    struct ImportResult {
+        let successCount: Int
+        let failedCount: Int
+        let errors: [String]
+    }
+    
+    /// Parse a LoseIt CSV file and create FoodLog entries
+    static func importCSV(from url: URL, modelContext: ModelContext) async throws -> ImportResult {
+        let csvString = try String(contentsOf: url, encoding: .utf8)
+        let lines = csvString.components(separatedBy: .newlines).filter { !$0.isEmpty }
+        
+        guard lines.count > 1 else {
+            throw ImportError.emptyFile
+        }
+        
+        // Parse header to find column indices
+        let header = lines[0].components(separatedBy: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        let columnMap = parseHeader(header)
+        
+        var successCount = 0
+        var failedCount = 0
+        var errors: [String] = []
+        
+        // Cache to reuse FoodItems with the same name+brand
+        var foodItemCache: [String: FoodItem] = [:]
+        
+        // Process each line (skip header)
+        for (index, line) in lines.dropFirst().enumerated() {
+            // CRITICAL DEBUG: Log the date string from EVERY line to see what's being skipped
+            let columns = parseCSVLine(line)
+            if let dateIndex = columnMap["date"], dateIndex < columns.count {
+                let dateStr = columns[dateIndex]
+                // Extract day number from date string
+                if let dayMatch = dateStr.range(of: #"\/(\d+)\/"#, options: .regularExpression) {
+                    let dayStr = String(dateStr[dayMatch]).replacingOccurrences(of: "/", with: "")
+                    if let day = Int(dayStr), day <= 12 {
+                        print("🔍 PROCESSING DATE WITH DAY \(day): '\(dateStr)' on line \(index + 2)")
+                    }
+                }
+            }
+            
+            do {
+                let foodLog = try createFoodLog(from: columns, using: columnMap, modelContext: modelContext, foodItemCache: &foodItemCache)
+                modelContext.insert(foodLog)
+                successCount += 1
+                
+                // Debug: Log dates for days 1-12 to verify they're imported correctly
+                let dateStr = columns[columnMap["date"] ?? 0]
+                if let dayMatch = dateStr.range(of: #"\/(\\d+)\/"#, options: .regularExpression) {
+                    let dayStr = String(dateStr[dayMatch]).replacingOccurrences(of: "/", with: "")
+                    if let day = Int(dayStr), day <= 12 {
+                        let calendar = Calendar.current
+                        let savedDay = calendar.component(.day, from: foodLog.timestamp)
+                        let savedMonth = calendar.component(.month, from: foodLog.timestamp)
+                        let savedYear = calendar.component(.year, from: foodLog.timestamp)
+                        print("💾 SAVED LOG with day \(day): '\(dateStr)' → \(savedMonth)/\(savedDay)/\(savedYear) at \(foodLog.timestamp)")
+                    }
+                }
+            } catch {
+                failedCount += 1
+                
+                // CRITICAL: Log ALL failures with date info to see if days 1-12 are failing
+                let dateStr = columns[columnMap["date"] ?? 0]
+                print("❌ FAILED on line \(index + 2): '\(dateStr)' - Error: \(error.localizedDescription)")
+                
+                // Only keep first 100 errors to avoid memory issues
+                if errors.count < 100 {
+                    let preview = line.prefix(100)
+                    errors.append("Line \(index + 2): \(error.localizedDescription)\nData: \(preview)...")
+                }
+            }
+        }
+        
+        // Save all changes
+        try modelContext.save()
+        
+        return ImportResult(successCount: successCount, failedCount: failedCount, errors: errors)
+    }
+    
+    private static func parseHeader(_ header: [String]) -> [String: Int] {
+        var map: [String: Int] = [:]
+        for (index, column) in header.enumerated() {
+            let normalizedColumn = column.lowercased()
+            map[normalizedColumn] = index
+        }
+        return map
+    }
+    
+    private static func parseCSVLine(_ line: String) -> [String] {
+        var columns: [String] = []
+        var currentColumn = ""
+        var insideQuotes = false
+        
+        for char in line {
+            if char == "\"" {
+                insideQuotes.toggle()
+            } else if char == "," && !insideQuotes {
+                columns.append(currentColumn.trimmingCharacters(in: .whitespaces))
+                currentColumn = ""
+            } else {
+                currentColumn.append(char)
+            }
+        }
+        columns.append(currentColumn.trimmingCharacters(in: .whitespaces))
+        
+        return columns
+    }
+    
+    private static func createFoodLog(from columns: [String], using columnMap: [String: Int], modelContext: ModelContext, foodItemCache: inout [String: FoodItem]) throws -> FoodLog {
+        // Extract required fields
+        guard let dateStr = getValue(from: columns, columnMap: columnMap, key: "date") else {
+            throw ImportError.missingRequiredField("date")
+        }
+        
+        // DEBUG: Check if date string has unexpected characters for days 1-12
+        if let dayMatch = dateStr.range(of: #"\/(\\d+)\/"#, options: .regularExpression) {
+            let dayStr = String(dateStr[dayMatch]).replacingOccurrences(of: "/", with: "")
+            if let day = Int(dayStr), day <= 12 {
+                let dateBytes = Array(dateStr.utf8)
+                print("🔬 EXAMINING DATE with day \(day): '\(dateStr)' (bytes: \(dateBytes))")
+            }
+        }
+        guard let name = getValue(from: columns, columnMap: columnMap, key: "name") else {
+            throw ImportError.missingRequiredField("name")
+        }
+        guard let calories = getNumericValue(from: columns, columnMap: columnMap, key: "calories") else {
+            throw ImportError.missingRequiredField("calories")
+        }
+        
+        // Parse date and time - try multiple formats
+        var date: Date?
+        
+        // Check if we have a separate time field (BiteLedger export format)
+        if let timeStr = getValue(from: columns, columnMap: columnMap, key: "time") {
+            let dateFormatter = DateFormatter()
+            dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+            dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+            date = dateFormatter.date(from: "\(dateStr) \(timeStr)")
+        }
+        
+        // Try various date formats
+        if date == nil {
+            let dateFormatter = DateFormatter()
+            dateFormatter.locale = Locale(identifier: "en_US_POSIX") // CRITICAL: Force US format
+            dateFormatter.calendar = Calendar(identifier: .gregorian) // Force Gregorian calendar
+            dateFormatter.timeZone = TimeZone.current // Use current timezone to avoid date shifts
+            dateFormatter.isLenient = false // CRITICAL: Prevent yyyy-MM-dd from matching M/d/yy
+            
+            // CRITICAL: Order matters! Try slash formats BEFORE dash formats
+            // to prevent yyyy-MM-dd from incorrectly matching M/d/yy dates
+            let formats: [(format: String, is2DigitYear: Bool)] = [
+                ("M/d/yy", true),               // LoseIt format: 5/13/14 (month/day/year) - TRY FIRST!
+                ("M/d/yyyy", false),             // Alternative: 5/13/2014
+                ("MM/dd/yy", true),             // Alternative: 05/13/14
+                ("MM/dd/yyyy", false),           // Alternative: 05/13/2014
+                ("yyyy-MM-dd", false)            // BiteLedger format: 2024-02-20 - TRY LAST!
+            ]
+            
+            for (format, is2DigitYear) in formats {
+                dateFormatter.dateFormat = format
+                
+                // DEBUG: Try parsing and log result for days 1-12
+                let attemptedParse = dateFormatter.date(from: dateStr)
+                if let dayMatch = dateStr.range(of: #"\/(\\d+)\/"#, options: .regularExpression) {
+                    let dayStr = String(dateStr[dayMatch]).replacingOccurrences(of: "/", with: "")
+                    if let day = Int(dayStr), day <= 12 {
+                        if let parsed = attemptedParse {
+                            let calendar = Calendar.current
+                            let y = calendar.component(.year, from: parsed)
+                            let m = calendar.component(.month, from: parsed)
+                            let d = calendar.component(.day, from: parsed)
+                            print("✅ FORMAT '\(format)' MATCHED for '\(dateStr)' → year:\(y) month:\(m) day:\(d)")
+                        } else {
+                            print("❌ FORMAT '\(format)' FAILED for '\(dateStr)'")
+                        }
+                    }
+                }
+                
+                if var parsedDate = attemptedParse {
+                    // Fix 2-digit year issue: year 0-99 should be 2000-2099
+                    if is2DigitYear {
+                        let calendar = Calendar.current
+                        let year = calendar.component(.year, from: parsedDate)
+                        if year < 100 {
+                            var components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: parsedDate)
+                            let originalYear = components.year ?? 0
+                            components.year = 2000 + year
+                            
+                            if let fixedDate = calendar.date(from: components) {
+                                parsedDate = fixedDate
+                                // DEBUG: Verify the fix worked
+                                if let dayMatch = dateStr.range(of: #"\/(\\d+)\/"#, options: .regularExpression) {
+                                    let dayStr = String(dateStr[dayMatch]).replacingOccurrences(of: "/", with: "")
+                                    if let day = Int(dayStr), day <= 12 {
+                                        let fixedYear = calendar.component(.year, from: fixedDate)
+                                        print("🔧 FIXED YEAR: '\(dateStr)' year \(originalYear) → \(fixedYear)")
+                                    }
+                                }
+                            } else {
+                                // DEBUG: Log if the fix failed
+                                if let dayMatch = dateStr.range(of: #"\/(\\d+)\/"#, options: .regularExpression) {
+                                    let dayStr = String(dateStr[dayMatch]).replacingOccurrences(of: "/", with: "")
+                                    if let day = Int(dayStr), day <= 12 {
+                                        print("⚠️ YEAR FIX FAILED: '\(dateStr)' - could not reconstruct date with year 2000+\(year)")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    date = parsedDate
+                    
+                    // DEBUG: Log successful parsing for days 1-12 to verify they're being parsed correctly
+                    if let dayMatch = dateStr.range(of: #"\/(\\d+)\/"#, options: .regularExpression) {
+                        let dayStr = String(dateStr[dayMatch]).replacingOccurrences(of: "/", with: "")
+                        if let day = Int(dayStr), day <= 12 {
+                            let calendar = Calendar.current
+                            let parsedDay = calendar.component(.day, from: parsedDate)
+                            let parsedMonth = calendar.component(.month, from: parsedDate)
+                            let parsedYear = calendar.component(.year, from: parsedDate)
+                            print("✅ PARSED DATE with day \(day): '\(dateStr)' → \(parsedMonth)/\(parsedDay)/\(parsedYear) using format '\(format)'")
+                        }
+                    }
+                    break
+                }
+            }
+        }
+        
+        guard let timestamp = date else {
+            // DEBUG: Log which dates are failing to parse
+            if let dayMatch = dateStr.range(of: #"\/(\\d+)\/"#, options: .regularExpression) {
+                let dayStr = String(dateStr[dayMatch]).replacingOccurrences(of: "/", with: "")
+                if let day = Int(dayStr), day <= 12 {
+                    print("❌ FAILED TO PARSE DATE with day \(day): '\(dateStr)' - tried all formats")
+                }
+            }
+            throw ImportError.invalidDate(dateStr)
+        }
+        
+        // Get meal type - check both "type" (LoseIt) and "meal" (BiteLedger) columns
+        let typeStr = getValue(from: columns, columnMap: columnMap, key: "meal") 
+                   ?? getValue(from: columns, columnMap: columnMap, key: "type") 
+                   ?? "Snack"
+        let mealType = parseMealType(typeStr)
+        
+        // Get nutrition values - try both LoseIt and BiteLedger column names
+        let protein = getNumericValue(from: columns, columnMap: columnMap, key: "protein (g)") 
+                   ?? getNumericValue(from: columns, columnMap: columnMap, key: "protein") ?? 0
+        let carbs = getNumericValue(from: columns, columnMap: columnMap, key: "carbohydrates (g)")
+                 ?? getNumericValue(from: columns, columnMap: columnMap, key: "carbohydrates")
+                 ?? getNumericValue(from: columns, columnMap: columnMap, key: "carbs") ?? 0
+        let fat = getNumericValue(from: columns, columnMap: columnMap, key: "fat (g)")
+               ?? getNumericValue(from: columns, columnMap: columnMap, key: "fat") ?? 0
+        let fiber = getNumericValue(from: columns, columnMap: columnMap, key: "fiber (g)")
+                 ?? getNumericValue(from: columns, columnMap: columnMap, key: "fiber") ?? 0
+        let sugar = getNumericValue(from: columns, columnMap: columnMap, key: "sugars (g)")
+                 ?? getNumericValue(from: columns, columnMap: columnMap, key: "sugar") ?? 0
+        let sodium = getNumericValue(from: columns, columnMap: columnMap, key: "sodium (mg)")
+                  ?? getNumericValue(from: columns, columnMap: columnMap, key: "sodium") ?? 0
+        let saturatedFat = getNumericValue(from: columns, columnMap: columnMap, key: "saturated fat (g)")
+                        ?? getNumericValue(from: columns, columnMap: columnMap, key: "saturated fat") ?? 0
+        let cholesterol = getNumericValue(from: columns, columnMap: columnMap, key: "cholesterol (mg)")
+                       ?? getNumericValue(from: columns, columnMap: columnMap, key: "cholesterol") ?? 0
+        
+        // Get amount/serving info - LoseIt uses "Quantity" and "Units"
+        let quantity = getValue(from: columns, columnMap: columnMap, key: "quantity") ?? "1"
+        let units = getValue(from: columns, columnMap: columnMap, key: "units") ?? "serving"
+        let amount = getValue(from: columns, columnMap: columnMap, key: "amount") ?? "\(quantity) \(units)"
+        
+        // Parse grams if available
+        var totalGrams: Double = 100.0  // Default estimate
+        if let grams = getNumericValue(from: columns, columnMap: columnMap, key: "grams") {
+            totalGrams = grams
+        }
+        
+        // Create or reuse a FoodItem
+        let brand = getValue(from: columns, columnMap: columnMap, key: "brand")
+        let cacheKey = "\(name)|\(brand ?? "")"
+        
+        let foodItem: FoodItem
+        if let cachedItem = foodItemCache[cacheKey] {
+            // Reuse existing food item
+            foodItem = cachedItem
+        } else {
+            // Create new food item and cache it
+            // Since we're importing, we back-calculate per-100g values
+            let multiplier = totalGrams / 100.0
+            let newItem = FoodItem(
+                name: name,
+                brand: brand,
+                caloriesPer100g: multiplier > 0 ? calories / multiplier : calories,
+                proteinPer100g: multiplier > 0 ? protein / multiplier : protein,
+                carbsPer100g: multiplier > 0 ? carbs / multiplier : carbs,
+                fatPer100g: multiplier > 0 ? fat / multiplier : fat,
+                fiberPer100g: multiplier > 0 && fiber > 0 ? fiber / multiplier : nil,
+                sugarPer100g: multiplier > 0 && sugar > 0 ? sugar / multiplier : nil,
+                sodiumPer100g: multiplier > 0 && sodium > 0 ? (sodium / 1000) / multiplier : nil, // Convert mg to g
+                saturatedFatPer100g: multiplier > 0 && saturatedFat > 0 ? saturatedFat / multiplier : nil,
+                cholesterolPer100g: multiplier > 0 && cholesterol > 0 ? (cholesterol / 1000) / multiplier : nil, // Convert mg to g
+                servingDescription: amount,
+                gramsPerServing: totalGrams,
+                source: "CSV Import"
+            )
+            
+            // Insert and cache the food item
+            modelContext.insert(newItem)
+            foodItemCache[cacheKey] = newItem
+            foodItem = newItem
+        }
+        
+        // Create the food log
+        let foodLog = FoodLog(
+            foodItem: foodItem,
+            timestamp: timestamp,
+            meal: mealType,
+            servingMultiplier: 1.0,
+            totalGrams: totalGrams
+        )
+        
+        return foodLog
+    }
+    
+    private static func getValue(from columns: [String], columnMap: [String: Int], key: String) -> String? {
+        guard let index = columnMap[key.lowercased()], index < columns.count else {
+            return nil
+        }
+        let value = columns[index].trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+        return value.isEmpty ? nil : value
+    }
+    
+    private static func getNumericValue(from columns: [String], columnMap: [String: Int], key: String) -> Double? {
+        guard let stringValue = getValue(from: columns, columnMap: columnMap, key: key) else {
+            return nil
+        }
+        // Remove commas from numbers (e.g., "1,190" -> "1190")
+        let cleanedValue = stringValue.replacingOccurrences(of: ",", with: "")
+        return Double(cleanedValue)
+    }
+    
+    // Try multiple column name variations
+    private static func getNumericValueFlexible(from columns: [String], columnMap: [String: Int], keys: [String]) -> Double? {
+        for key in keys {
+            if let value = getNumericValue(from: columns, columnMap: columnMap, key: key) {
+                return value
+            }
+        }
+        return nil
+    }
+    
+    private static func parseMealType(_ typeStr: String) -> MealType {
+        let lower = typeStr.lowercased()
+        if lower.contains("breakfast") {
+            return .breakfast
+        } else if lower.contains("lunch") {
+            return .lunch
+        } else if lower.contains("dinner") {
+            return .dinner
+        } else {
+            return .snack
+        }
+    }
+    
+    enum ImportError: LocalizedError {
+        case emptyFile
+        case missingRequiredField(String)
+        case invalidDate(String)
+        
+        var errorDescription: String? {
+            switch self {
+            case .emptyFile:
+                return "The CSV file is empty"
+            case .missingRequiredField(let field):
+                return "Missing required field: \(field)"
+            case .invalidDate(let dateStr):
+                return "Invalid date format: \(dateStr)"
+            }
+        }
+    }
+}

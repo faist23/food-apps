@@ -1,0 +1,170 @@
+# CLAUDE.md — BiteLedger
+
+Privacy-first food & nutrition tracking app.
+See `../CLAUDE.md` for shared workspace rules (schema, nutrition math,
+data sources, FDA label format).
+
+---
+
+## Build & Run
+
+```bash
+# Build
+xcodebuild -project BiteLedger.xcodeproj -scheme BiteLedger \
+  -destination 'platform=iOS Simulator,name=iPhone 16' build
+
+# Run all tests
+xcodebuild test -project BiteLedger.xcodeproj -scheme BiteLedger \
+  -destination 'platform=iOS Simulator,name=iPhone 16'
+
+# Run a single test class
+xcodebuild test -project BiteLedger.xcodeproj -scheme BiteLedger \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -only-testing:BiteLedgerTests/BiteLedgerTests
+```
+
+---
+
+## View Structure
+
+```
+Views/
+  Home/      — TodayView (root), NutritionDashboard, MealSection, FoodLogEditView
+  AddFood/   — FoodSearchView, ProductDetailView, MealEntryView,
+               ManualFoodEntryView, ImprovedServingPicker
+  History/   — HistoryView
+  Settings/  — SettingsView, DataExportView, LoseItImportView,
+               LoseItEnrichmentView, MyFoodsManagementView, FoodItemEditorView
+```
+
+`TodayView` is the root view. It reads `FoodLog` entries for the selected date
+and passes them to `NutritionDashboard` and `MealSection`.
+
+**FDA label views:**
+- `DetailedNutritionView` — full label for daily and meal totals
+- `FoodLogEditView` — full label with live-updating preview as serving/quantity changes
+- `ImprovedServingPicker` — full label using `NutritionFacts` data from APIs
+- `ManualFoodEntryView` — editable label using `ElevatedCard(padding:0, cornerRadius:20)`;
+  rows use `LabelNutrientRow` (14pt, tappable unit/% toggle)
+- `FoodItemEditorView` — editable label using `ElevatedCard(padding:0, cornerRadius:20)`
+  inside a `ScrollView`
+
+---
+
+## USDA Nutriments Invariant (Critical — Do Not Regress)
+
+`USDAFoodDetail.toProductInfo()` must set **all `*Serving` fields to `nil`**:
+```swift
+energyKcalServing: nil, proteinsServing: nil, carbohydratesServing: nil,
+sugarsServing: nil, fatServing: nil, saturatedFatServing: nil,
+fiberServing: nil, sodiumServing: nil
+```
+USDA is a per-100g database. Any non-nil `*Serving` field causes
+`ImprovedServingPicker.nutritionMultiplier` to take the `hasServingData = true`
+branch, returning `resolvedServingCount` (= 1.0) × the serving value —
+producing wildly wrong calories (e.g. 1452 cal for one frankfurter instead of ~142).
+All USDA nutrition must flow through the `totalGrams / 100` path using `*100g`
+fields only.
+
+---
+
+## perServing-no-gramWeight Mineral/Caffeine Invariant (Critical — Do Not Regress)
+
+For `perServing` foods with no `gramWeight` (`baseGrams = 1.0`), `mgToPer100g()`
+guards `baseGrams > 1.0` and returns `nil` to prevent garbage per-100g values.
+These foods rely on `*Serving` fallback fields instead:
+- `Nutriments` has `potassiumServing`, `calciumServing`, `ironServing`,
+  `caffeineServing` (all `FlexibleDouble? = nil`, mg/serving)
+- All four `FoodSearchView` code paths that build `ProductInfo` for existing foods
+  must set these when `baseGrams <= 1.0`
+- `ImprovedServingPicker` displays them via `nutrientMg * resolvedServingCount`
+  (the `else if` branch after the `*100g` check)
+- In `searchMyFoods` (path 3): use `actualGrams = 1.0` for `perServing` foods
+  without `gramWeight` (not the 100.0 fallback) so mineral `*100g` fields
+  are computed correctly
+
+---
+
+## `displayNameForUnit(.serving)` in `ImprovedServingPicker`
+
+Strips the leading number from `product.servingSize` (e.g. `"1 caplet"` →
+`"Caplet"`) rather than running through `ServingSizeParser` which maps unknown
+unit words to `.serving` and would display "Serving".
+
+---
+
+## CSV Import/Export
+
+`CSVExporter` produces three files for full round-trip backup:
+`foods.csv`, `servings.csv`, `logs.csv`.
+
+`CSVImporter` auto-detects format:
+- **LoseIt export** — single CSV with daily logs
+- **BiteLedger full export** — three-file set (foods + servings + logs)
+
+Guarantee: export → delete app → import produces identical data.
+
+---
+
+## LoseIt Enrichment Tool
+
+Files: `LoseItEnrichmentService.swift`, `LoseItEnrichmentView.swift`,
+`ClaudeMatchingService.swift`, `CSVImporter.importLoseItEnriched`
+
+### Three-pass matching
+1. **USDA** — 15 concurrent searches, word-overlap scoring.
+   `≥ 0.70` → autoMatched, `0.30–0.70` → needsReview, `< 0.30` → noMatch
+2. **FatSecret fallback** — for noMatch foods only. Batch size 3, 1.5s
+   inter-batch pause, retry on error code 12 (backoff: 2s / 4s / 6s)
+3. **Claude AI pass** — for needsReview + fatSecretMatched + noMatch.
+   Batches of 20. Picks best USDA or FatSecret candidate semantically.
+   Requires `claude.plist` with `APIKey` in bundle — must be added to
+   "Copy Bundle Resources" in Xcode manually.
+
+### Data applied at import
+- **USDA match:** all 15 micronutrients via calorie-based scale
+  (`calPerServing / caloriesPer100g`)
+- **FatSecret match:** potassium, calcium, iron, vitaminA, vitaminC —
+  converted from % DV using FDA daily values
+
+### Key details
+- `EnrichmentMatch` holds both `topCandidate: USDAFoodItem?` and
+  `fatSecretTopCandidate / ServingData / Candidates`
+- `buildEnrichmentMap()` → USDA map; `buildFatSecretMap()` → FatSecret map;
+  both passed to `importLoseItEnriched`
+- `ClaudeMatchingService.fromPlist()` logs why it fails if `claude.plist`
+  is missing or unconfigured
+- FatSecret `executeRequest` retries error code 12 up to 3× with exponential backoff
+
+---
+
+## Performance Rules
+
+- **`FoodSearchView`** uses `@State private var allLogs` loaded in `.task {}`
+  — NOT `@Query`. With 1000+ logs, `@Query` blocks the main thread on sheet
+  init, delaying keyboard appearance by several seconds. The `.task` loads
+  after first render so the keyboard appears immediately.
+- **`MealDiarySection`** receives `hasYesterdayMeal` and `yesterdayCalories`
+  as `let` params from `TodayView` — does not fetch from the DB itself.
+  Avoids 4× per-section DB queries on every log change.
+- **`TodayView.loadStreak()`** is guarded by `hasLoadedStreak` — runs once
+  per session, not on every sheet dismiss.
+
+---
+
+## Streak Cache
+
+`UserPreferences.cachedStreak` + `streakCachedDate` store a cached anchor so
+per-day COUNT queries walk backward and short-circuit at the cached value.
+- `deleteAllData()` resets `cachedStreak = 0` and clears `streakCachedDate`
+- `loadStreak()` skips today if it has 0 logs (today is in-progress, not missed)
+- `copyMealFromYesterday()` invalidates the cache and calls `loadStreak()`
+  after saving
+
+---
+
+## USDA `sortedPortions` (Do Not Regress)
+
+`USDAFoodDetail.toProductInfo()` sorts portions so bulk keywords
+(`"package"`, `"bag"`, `"box"`) go to the end, making individual units
+(e.g. `"frankfurter"`) the default selection in the serving picker.
