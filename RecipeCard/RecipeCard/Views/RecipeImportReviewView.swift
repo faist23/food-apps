@@ -18,14 +18,25 @@ private final class MatchedIngredient: Identifiable, ObservableObject {
     @Published var matchedServing: ServingSize?
     @Published var quantity: Double
     @Published var skip: Bool = false
+    @Published var isRematching: Bool = false
 
     /// Pre-computed gram amount from the recipe's own quantity+unit.
     /// More reliable than deriving grams from whichever serving happened to be selected.
     @Published var resolvedGramAmount: Double? = nil
 
+    /// Mutable raw text — starts as the OCR/import value; user can correct it.
+    @Published var editedRawText: String
+    /// Search term to pre-fill in the food picker. Updated when editedRawText changes.
+    @Published var currentSearchTerm: String
+    /// Unit from the most-recently parsed text (may differ from parsed.unit after user edits).
+    @Published var editedUnit: String
+
     init(parsed: RecipeImportResult.ParsedIngredient) {
         self.parsed = parsed
         self.quantity = parsed.quantity
+        self.editedRawText = parsed.rawString
+        self.currentSearchTerm = parsed.searchTerm
+        self.editedUnit = parsed.unit
     }
 
     var displayCalories: Double {
@@ -47,17 +58,26 @@ struct RecipeImportReviewView: View {
 
     @State private var name: String
     @State private var servingsYield: String
+    @State private var source: String
+    @State private var editableDirections: [String]
     @State private var matchedIngredients: [MatchedIngredient] = []
     @State private var isMatching = true
     @State private var isSaving = false
     @State private var selectedIngredient: MatchedIngredient?
     @State private var matchVersion = 0      // incremented on every manual food pick to force header refresh
 
-    init(result: RecipeImportResult, onSave: @escaping () -> Void) {
+    private let importService = RecipeImportService.fromPlist()
+
+    /// True for OCR scans — source is a free-text field. False for URL imports — domain shown as label.
+    private var isOCR: Bool { result.sourceURL == "ocr://scan" }
+
+    init(result: RecipeImportResult, prefilledSource: String = "", onSave: @escaping () -> Void) {
         self.result = result
         self.onSave = onSave
         _name = State(initialValue: result.name)
         _servingsYield = State(initialValue: String(Int(result.servingsYield)))
+        _source = State(initialValue: prefilledSource)
+        _editableDirections = State(initialValue: result.directions.map(expandUnitAbbreviations))
     }
 
     private var activeIngredients: [MatchedIngredient] {
@@ -86,8 +106,7 @@ struct RecipeImportReviewView: View {
     }
 
     var body: some View {
-        ZStack {
-         Form {
+        Form {
             // MARK: Recipe Info
             Section("Recipe Info") {
                 TextField("Name", text: $name)
@@ -99,7 +118,15 @@ struct RecipeImportReviewView: View {
                         .multilineTextAlignment(.trailing)
                         .frame(width: 60)
                 }
-                if let domain = URL(string: result.sourceURL)?.host {
+                if isOCR {
+                    HStack {
+                        Text("Source")
+                        Spacer()
+                        TextField("e.g. Debbie's Kitchen", text: $source)
+                            .multilineTextAlignment(.trailing)
+                            .foregroundStyle(.secondary)
+                    }
+                } else if let domain = URL(string: result.sourceURL)?.host {
                     Label(domain, systemImage: "link")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -145,38 +172,88 @@ struct RecipeImportReviewView: View {
             // MARK: Ingredients
             Section {
                 ForEach(matchedIngredients) { m in
-                    IngredientMatchRow(matched: m) {
+                    IngredientMatchRow(matched: m, onTap: {
                         selectedIngredient = m
+                    }, onEditText: { newText in
+                        let parsed = importService.parseIngredientText(newText)
+                        m.editedRawText = newText
+                        m.currentSearchTerm = parsed.searchTerm
+                        m.quantity = parsed.quantity
+                        m.editedUnit = parsed.unit
+                        m.matchedFood = nil
+                        m.matchedServing = nil
+                        m.resolvedGramAmount = nil
+                        m.isRematching = true
+                        Task {
+                            await matchSingle(m, searchTerm: parsed.searchTerm, recipeContext: name)
+                            matchVersion += 1   // refresh the nutrition header
+                        }
+                    })
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            m.skip = true
+                        } label: {
+                            Label("Remove", systemImage: "trash")
+                        }
+                    }
+                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        if m.skip {
+                            Button {
+                                m.skip = false
+                            } label: {
+                                Label("Restore", systemImage: "arrow.uturn.backward")
+                            }
+                            .tint(.green)
+                        }
                     }
                 }
             } header: {
                 HStack {
                     Text("Ingredients")
                     Spacer()
-                    let matched = matchedIngredients.filter { $0.matchedFood != nil && !$0.skip }.count
-                    let total   = matchedIngredients.filter { !$0.skip }.count
-                    Text("\(matched)/\(total) matched")
-                        .id(matchVersion)   // forces re-render when a food is manually picked
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    if isMatching {
+                        HStack(spacing: 4) {
+                            ProgressView().scaleEffect(0.7)
+                            Text("Matching…")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    } else {
+                        let matched = matchedIngredients.filter { $0.matchedFood != nil && !$0.skip }.count
+                        let total   = matchedIngredients.filter { !$0.skip }.count
+                        Text("\(matched)/\(total) matched")
+                            .id(matchVersion)
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             } footer: {
                 Text("Tap to match to a food for nutrition tracking. Unmatched ingredients still save as text.")
                     .font(.caption)
             }
 
-            // MARK: Directions
-            if !result.directions.isEmpty {
-                Section("Directions") {
-                    ForEach(Array(result.directions.enumerated()), id: \.offset) { i, step in
-                        HStack(alignment: .top, spacing: 10) {
-                            Text("\(i + 1).")
-                                .foregroundStyle(.secondary)
-                                .frame(width: 24, alignment: .trailing)
-                            Text(step)
-                        }
-                        .font(.subheadline)
+            // MARK: Directions (editable)
+            Section {
+                ForEach(editableDirections.indices, id: \.self) { i in
+                    HStack(alignment: .top, spacing: 10) {
+                        Text("\(i + 1).")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 24, alignment: .trailing)
+                        TextField("Step \(i + 1)", text: $editableDirections[i], axis: .vertical)
+                            .font(.subheadline)
                     }
+                }
+                .onDelete { editableDirections.remove(atOffsets: $0) }
+                Button {
+                    editableDirections.append("")
+                } label: {
+                    Label("Add Step", systemImage: "plus")
+                        .font(.subheadline)
+                }
+            } header: {
+                Text("Directions")
+            } footer: {
+                if !editableDirections.isEmpty {
+                    Text("Swipe to delete a step.")
+                        .font(.caption)
                 }
             }
 
@@ -206,113 +283,113 @@ struct RecipeImportReviewView: View {
             IngredientFoodPickerView(matched: m, onUpdate: { matchVersion += 1 })
         }
 
-        if isMatching {
-            ZStack {
-                Color.black.opacity(0.45).ignoresSafeArea()
-                VStack(spacing: 12) {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .scaleEffect(1.4)
-                        .tint(.white)
-                    Text("Matching ingredients…")
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                }
-                .padding(28)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
-            }
-        }
-        } // end ZStack
     }
 
     // MARK: - Auto-match
 
     private func autoMatch() async {
         let items = result.parsedIngredients.map { MatchedIngredient(parsed: $0) }
-
+        // Show the list immediately in the original recipe order so the user can
+        // see all ingredients while matching runs, rather than waiting for everything
+        // to finish before the list appears.
+        matchedIngredients = items
         for m in items {
-            let rawTerm = m.parsed.searchTerm.trimmingCharacters(in: .whitespaces)
-            guard !rawTerm.isEmpty else { continue }
-            // Common single-word aliases where context implies the specific variety
-            let termAliases: [String: String] = [
-                "pepper": "black pepper",
-                "ground pepper": "black pepper",
-                "black pepper ground": "black pepper",
-                "seasoning": "salt",
-                "chicken cutlet": "chicken breast",
-                "chicken cutlets": "chicken breast",
-            ]
-            var term = termAliases[rawTerm.lowercased()] ?? rawTerm
+            m.isRematching = true
+            await matchSingle(m, searchTerm: m.parsed.searchTerm, recipeContext: name)
+        }
+    }
 
-            // Strip trailing generic category word " cheese" so e.g. "mozzarella cheese"
-            // searches for "mozzarella" and gets an exact/prefix match in the seeded DB.
-            // Exceptions: compound cheese names that ARE the food (cream cheese, etc.).
-            let keptCheesePhrases: Set<String> = [
-                "cream cheese", "cottage cheese", "goat cheese", "american cheese",
-                "swiss cheese", "blue cheese", "brie cheese"
-            ]
-            if term.lowercased().hasSuffix(" cheese") && !keptCheesePhrases.contains(term.lowercased()) {
-                term = String(term.dropLast(7)) // drop " cheese"
-            }
+    /// Matches a single ingredient to a FoodItem using the local DB and live API.
+    /// `recipeContext` is the recipe name — used to disambiguate generic terms like "broth"
+    /// by preferring foods that share the same protein (e.g. chicken broth in a chicken recipe).
+    private func matchSingle(_ m: MatchedIngredient, searchTerm rawTerm: String, recipeContext: String = "") async {
+        let rawTerm = rawTerm.trimmingCharacters(in: .whitespaces)
+        guard !rawTerm.isEmpty else { m.isRematching = false; return }
 
-            // --- Local DB search (always runs first; provides guaranteed fallback) ---
-            let descriptor = FetchDescriptor<FoodItem>(
-                predicate: #Predicate { $0.name.localizedStandardContains(term) },
-                sortBy: [SortDescriptor(\.name)]
-            )
-            let localCandidates = (try? modelContext.fetch(descriptor)) ?? []
-            let localScored: [(FoodItem, Int)] = localCandidates.map { food in
-                var score = ingredientScore(foodName: food.name, term: term)
-                // Large bonus for authoritative seeded/USDA foods so they beat polluted DB entries.
-                // "usda_seed" prefix covers current and future seed versions.
-                let isAuthoritative = food.source.hasPrefix("usda_seed")
-                                   || food.source.hasPrefix("built_in")
-                if isAuthoritative { score += 20 }
-                return (food, score)
-            }
-            // When scores are equal, shorter name wins (more specific match)
-            let bestLocal = localScored.max(by: { lhs, rhs in
-                lhs.1 != rhs.1 ? lhs.1 < rhs.1 : lhs.0.name.count > rhs.0.name.count
-            })
-            let localScore = bestLocal?.1 ?? 0
+        let termAliases: [String: String] = [
+            "pepper": "black pepper",
+            "ground pepper": "black pepper",
+            "black pepper ground": "black pepper",
+            "seasoning": "salt",
+            "chicken cutlet": "chicken breast",
+            "chicken cutlets": "chicken breast",
+            "canned chicken": "chicken breast",   // canned chicken ≈ cooked chicken breast nutritionally
+            "chicken canned": "chicken breast",
+        ]
+        var term = termAliases[rawTerm.lowercased()] ?? rawTerm
 
-            // Accept local candidate immediately if it meets the threshold.
-            // This is the guaranteed fallback — USDA can only upgrade it, never block it.
-            var food: FoodItem? = localScore >= 30 ? bestLocal?.0 : nil
-            let localIsAuthoritative = (food?.source.hasPrefix("usda_seed") ?? false)
-                                    || (food?.source.hasPrefix("built_in") ?? false)
-
-            // --- USDA / API search: only when local is absent or from an untrustworthy source ---
-            // If USDA fails for any reason, `food` already holds the local candidate.
-            if !localIsAuthoritative {
-                if let products = try? await UnifiedFoodSearchService.shared.searchAllDatabases(query: term),
-                   !products.isEmpty {
-                    let apiScored = products.map { ($0, ingredientScore(foodName: $0.displayName, term: term)) }
-                    if let bestAPI = apiScored.max(by: { $0.1 < $1.1 }),
-                       bestAPI.1 >= 30,
-                       bestAPI.1 >= localScore {
-                        if let usdaFood = await createOrFetchUSDAFood(product: bestAPI.0) {
-                            food = usdaFood
-                        }
-                    }
-                }
-                // If USDA failed or scored worse, food still holds the local candidate
-            }
-
-            guard let food = food else { continue }
-
-            m.matchedFood    = food
-            m.matchedServing = food.defaultServing
-
-            // --- Gram amount resolution ---
-            let (gramAmount, bestServing) = resolveGrams(
-                quantity: m.parsed.quantity, unit: m.parsed.unit, food: food
-            )
-            m.resolvedGramAmount = gramAmount
-            if let s = bestServing { m.matchedServing = s }
+        let keptCheesePhrases: Set<String> = [
+            "cream cheese", "cottage cheese", "goat cheese", "american cheese",
+            "swiss cheese", "blue cheese", "brie cheese"
+        ]
+        if term.lowercased().hasSuffix(" cheese") && !keptCheesePhrases.contains(term.lowercased()) {
+            term = String(term.dropLast(7))
         }
 
-        matchedIngredients = items
+        // --- Local DB search ---
+        let descriptor = FetchDescriptor<FoodItem>(
+            predicate: #Predicate { $0.name.localizedStandardContains(term) },
+            sortBy: [SortDescriptor(\.name)]
+        )
+        let localCandidates = (try? modelContext.fetch(descriptor)) ?? []
+        let localScored: [(FoodItem, Int)] = localCandidates.map { food in
+            var score = ingredientScore(foodName: food.name, term: term)
+            let isAuthoritative = food.source.hasPrefix("usda_seed") || food.source.hasPrefix("built_in")
+            if isAuthoritative { score += 20 }
+            return (food, score)
+        }
+        let bestLocal = localScored.max(by: { lhs, rhs in
+            lhs.1 != rhs.1 ? lhs.1 < rhs.1 : lhs.0.name.count > rhs.0.name.count
+        })
+        let localScore = bestLocal?.1 ?? 0
+
+        var food: FoodItem? = localScore >= 30 ? bestLocal?.0 : nil
+        let localIsAuthoritative = (food?.source.hasPrefix("usda_seed") ?? false)
+                                || (food?.source.hasPrefix("built_in") ?? false)
+
+        // --- Live API fallback ---
+        if !localIsAuthoritative {
+            if let products = try? await UnifiedFoodSearchService.shared.searchAllDatabases(query: term),
+               !products.isEmpty {
+                let apiScored = products.map { ($0, ingredientScore(foodName: $0.displayName, term: term)) }
+                if let bestAPI = apiScored.max(by: { $0.1 < $1.1 }),
+                   bestAPI.1 >= 30, bestAPI.1 >= localScore,
+                   let usdaFood = await createOrFetchUSDAFood(product: bestAPI.0) {
+                    food = usdaFood
+                }
+            }
+        }
+
+        m.isRematching = false
+        guard var food else { return }
+
+        // Context refinement: if the recipe name contains a protein (e.g. "chicken") and
+        // the search term does NOT already specify it, look for a more specific match.
+        // "broth" in "Chicken Squares" → prefer "chicken broth" over "beef broth".
+        let proteinWords: Set<String> = [
+            "chicken","beef","pork","turkey","lamb","fish","shrimp","tuna","salmon","ham","veal"
+        ]
+        let contextWords = Set(recipeContext.lowercased().components(separatedBy: .whitespaces))
+        let termWords    = Set(term.lowercased().components(separatedBy: .whitespaces))
+        if let contextProtein = contextWords.first(where: { proteinWords.contains($0) }),
+           !termWords.contains(contextProtein) {
+            let contextTerm = "\(contextProtein) \(term)"
+            let ctxDescriptor = FetchDescriptor<FoodItem>(
+                predicate: #Predicate { $0.name.localizedStandardContains(contextTerm) }
+            )
+            if let contextFood = try? modelContext.fetch(ctxDescriptor).first {
+                food = contextFood
+            }
+        }
+
+        m.matchedFood    = food
+        m.matchedServing = food.defaultServing
+
+        let (gramAmount, bestServing) = resolveGrams(
+            quantity: m.quantity, unit: m.editedUnit, food: food
+        )
+        m.resolvedGramAmount = gramAmount
+        if let s = bestServing { m.matchedServing = s }
     }
 
     /// Looks up an existing FoodItem by USDA code, or fetches full details from USDA and
@@ -394,11 +471,22 @@ struct RecipeImportReviewView: View {
         isSaving = true
         let yield = Double(Int(servingsYield) ?? 1)
 
+        // For OCR imports, save the human-readable source text (or nil if blank).
+        // For URL imports, preserve the original URL.
+        let savedSourceURL: String?
+        if isOCR {
+            let trimmed = source.trimmingCharacters(in: .whitespaces)
+            savedSourceURL = trimmed.isEmpty ? nil : trimmed
+        } else {
+            savedSourceURL = result.sourceURL
+        }
+
         let recipe = Recipe(
             name: name.trimmingCharacters(in: .whitespaces),
             servingsYield: yield,
-            sourceURL: result.sourceURL,
-            directions: result.directions
+            sourceURL: savedSourceURL,
+            directions: editableDirections.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                                          .filter { !$0.isEmpty }
         )
 
         // Always store website nutrition when available — it is the authoritative source
@@ -425,7 +513,7 @@ struct RecipeImportReviewView: View {
                 recipeQuantity: m.parsed.quantity,
                 recipeUnit: m.parsed.unit.isEmpty ? nil : m.parsed.unit
             )
-            ing.rawText     = m.parsed.rawString   // always store raw text
+            ing.rawText     = m.editedRawText       // always store raw text (may be user-edited)
             ing.foodItem    = m.matchedFood         // optional
             ing.servingSize = m.matchedServing      // optional
             ing.recipe      = recipe
@@ -445,23 +533,36 @@ struct RecipeImportReviewView: View {
 private struct IngredientMatchRow: View {
     @ObservedObject var matched: MatchedIngredient
     let onTap: () -> Void
+    let onEditText: (String) -> Void
+
+    @State private var showingEdit = false
+    @State private var pendingText = ""
 
     var body: some View {
-        Button {
-            onTap()
-        } label: {
-            HStack(spacing: 12) {
-                // Status indicator
-                Image(systemName: matched.skip ? "minus.circle.fill" :
-                                  matched.matchedFood != nil ? "checkmark.circle.fill" : "questionmark.circle.fill")
-                    .foregroundColor(matched.skip ? .secondary :
-                                     matched.matchedFood != nil ? .green : .orange)
+        HStack(spacing: 0) {
+            // Main tap area → food picker
+            Button {
+                onTap()
+            } label: {
+                HStack(spacing: 12) {
+                    // Status indicator
+                    Group {
+                        if matched.isRematching {
+                            ProgressView().scaleEffect(0.7)
+                        } else {
+                            Image(systemName: matched.skip ? "minus.circle.fill" :
+                                              matched.matchedFood != nil ? "checkmark.circle.fill" : "questionmark.circle.fill")
+                                .foregroundColor(matched.skip ? .secondary :
+                                                 matched.matchedFood != nil ? .green : .orange)
+                        }
+                    }
+                    .frame(width: 22)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(matched.parsed.rawString)
-                        .font(.subheadline)
-                        .foregroundStyle(matched.skip ? .secondary : .primary)
-                        .strikethrough(matched.skip)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(matched.editedRawText)
+                            .font(.subheadline)
+                            .foregroundStyle(matched.skip ? .secondary : .primary)
+                            .strikethrough(matched.skip)
 
                     if matched.skip {
                         Text("Removed — tap to restore")
@@ -483,16 +584,60 @@ private struct IngredientMatchRow: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
-                        Text("Tap to match food (saves as text without nutrition)")
+                        Text("Tap to match food")
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }
                 }
-
-                Spacer()
             }
+            }
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 0)
+
+            // Pencil button — edit raw ingredient text
+            Button {
+                pendingText = matched.editedRawText
+                showingEdit = true
+            } label: {
+                Image(systemName: "pencil")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 8)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+        .sheet(isPresented: $showingEdit) {
+            NavigationStack {
+                Form {
+                    Section {
+                        TextField("e.g. 2 cups flour", text: $pendingText, axis: .vertical)
+                            .font(.subheadline)
+                    } header: {
+                        Text("Ingredient Text")
+                    } footer: {
+                        Text("Edit to correct OCR errors. The app will re-match automatically.")
+                    }
+                }
+                .navigationTitle("Edit Ingredient")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") {
+                            let trimmed = pendingText.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !trimmed.isEmpty { onEditText(trimmed) }
+                            showingEdit = false
+                        }
+                        .bold()
+                    }
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { showingEdit = false }
+                    }
+                }
+            }
+            .presentationDetents([.medium])
+        }
     }
 }
 
@@ -570,7 +715,7 @@ private struct IngredientFoodPickerView: View {
                     ContentUnavailableView.search(text: searchText)
                 }
             }
-            .navigationTitle(matched.parsed.rawString)
+            .navigationTitle(matched.editedRawText)
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, prompt: "Search foods")
             .toolbar {
@@ -580,8 +725,9 @@ private struct IngredientFoodPickerView: View {
             }
             .onChange(of: searchText) { _, q in search(q) }
             .onAppear {
-                searchText = matched.parsed.searchTerm
-                search(matched.parsed.searchTerm)
+                // Use currentSearchTerm (quantity/unit stripped) not the raw text
+                searchText = matched.currentSearchTerm
+                search(matched.currentSearchTerm)
             }
         }
     }
@@ -592,8 +738,8 @@ private struct IngredientFoodPickerView: View {
         matched.matchedFood = food
         matched.skip        = false
         let (gram, bestServing) = resolveGrams(
-            quantity: matched.parsed.quantity,
-            unit: matched.parsed.unit,
+            quantity: matched.quantity,
+            unit: matched.editedUnit,
             food: food
         )
         matched.resolvedGramAmount = gram
@@ -842,16 +988,42 @@ private func volumeToTbsp(_ amount: Double, unit: String) -> Double? {
 ///  30 — every word in term appears as a whole word in the food name
 ///  10 — raw substring match (kept for completeness; callers should ignore)
 ///   0 — no match
+/// Replaces single-letter cooking abbreviations with their full names for readability.
+/// T (uppercase) = tablespoon, t (lowercase) = teaspoon — common in handwritten recipes.
+/// Applied to directions text so "Add 2 T butter" displays as "Add 2 tbsp butter".
+private func expandUnitAbbreviations(_ text: String) -> String {
+    var s = text
+    // \b word boundaries ensure we only match standalone T/t, not letters inside words.
+    s = s.replacingOccurrences(of: #"\bT\b"#, with: "tbsp", options: .regularExpression)
+    s = s.replacingOccurrences(of: #"\bt\b"#, with: "tsp",  options: .regularExpression)
+    return s
+}
+
 private func ingredientScore(foodName: String, term: String) -> Int {
     let name    = foodName.lowercased()
     let termLow = term.lowercased()
     if name == termLow { return 100 }
+
+    // Words that fundamentally change what the food is — "milk chocolate" is not "milk",
+    // "brown sugar" is not the same as plain "sugar" in most contexts.
+    let typeChangers: Set<String> = [
+        "chocolate","dark","white","vanilla","strawberry","caramel","maple",
+        "lemon","lime","orange","cherry","blueberry","raspberry","mocha","mint",
+        "peanut","almond","coconut","butterscotch","hazelnut","brown","golden",
+        "flavored","flavoured","infused","sweetened","spiced"
+    ]
 
     // Prefix must be followed by a word boundary (space or end-of-string only, not comma —
     // "Pepper, banana, raw" must NOT score 50 for term "pepper")
     if name.hasPrefix(termLow) {
         let afterPrefix = name.dropFirst(termLow.count)
         if afterPrefix.isEmpty || afterPrefix.first == " " {
+            // If the trailing words change the food type, demote below the 30 threshold
+            let trailingWords = afterPrefix.trimmingCharacters(in: .whitespaces)
+                .components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+            if trailingWords.contains(where: { typeChangers.contains($0) }) {
+                return 20   // below 30 threshold → treated as no match
+            }
             return 50
         }
     }
@@ -875,15 +1047,23 @@ private func ingredientScore(foodName: String, term: String) -> Int {
 
     if score == 0 { return 10 }
 
-    // Penalise processed/flavoured products so raw/plain foods win over
-    // e.g. "Chicken breast tenders, breaded" or "Tri-Color Rotini Product with Dried Vegetables"
+    // Penalise processed/flavoured products so raw/plain foods win, e.g.
+    // "Chicken breast tenders, breaded" or "Tri-Color Rotini Product with Dried Vegetables".
+    // Also penalise type-changer words that appear in the food name but NOT in the search term
+    // (so "brown sugar" loses to "granulated sugar" when term is "sugar").
     let processedWords: Set<String> = [
         "breaded","battered","fried","tenders","nuggets","strips","patty","patties",
         "canned","stewed","flavored","flavoured","product","seasoned","prepared",
         "tri-color","tri","multicolor"
     ]
-    let foodWordArr = name.components(separatedBy: sep).filter { !$0.isEmpty }
-    if foodWordArr.contains(where: { processedWords.contains($0) }) { score -= 20 }
+    let penaltyWords = processedWords.union(typeChangers)
+    let termWordSet  = Set(termWords)
+    let foodWordArr  = name.components(separatedBy: sep).filter { !$0.isEmpty }
+    // Only penalise for words that aren't already in the search term
+    // ("peanut butter" for term "peanut butter" should NOT penalise "peanut")
+    if foodWordArr.contains(where: { penaltyWords.contains($0) && !termWordSet.contains($0) }) {
+        score -= 20
+    }
 
     return max(0, score)
 }

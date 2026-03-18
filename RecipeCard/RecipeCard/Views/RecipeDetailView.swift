@@ -72,9 +72,16 @@ struct RecipeDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
 
-                // Source URL
+                // Source
                 if let domain = recipe.sourceDomain {
+                    // Imported from a website — show domain
                     Label(domain, systemImage: "link")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal)
+                } else if let src = recipe.sourceURL, !src.isEmpty {
+                    // Scanned recipe with a human-readable source (e.g. "Debbie's Kitchen")
+                    Label(src, systemImage: "book.closed")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal)

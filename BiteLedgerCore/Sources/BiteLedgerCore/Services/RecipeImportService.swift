@@ -40,6 +40,8 @@ public struct RecipeImportResult {
     public let parsedIngredients: [ParsedIngredient]
     /// Non-nil when the recipe website included Schema.org NutritionInformation.
     public let nutrition: RecipeNutrition?
+    /// Source/author extracted from the scanned card (e.g. "Aunt Debbie"). Nil for URL imports.
+    public let detectedSource: String?
 
     public struct ParsedIngredient: Identifiable {
         public let id: UUID = UUID()
@@ -100,7 +102,7 @@ public struct RecipeImportService {
         return RecipeImportService(apiKey: key)
     }
 
-    // MARK: - Main Entry Point
+    // MARK: - Main Entry Points
 
     public func importRecipe(from urlString: String) async throws -> RecipeImportResult {
         let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -116,8 +118,370 @@ public struct RecipeImportService {
             sourceURL:          trimmed,
             directions:         raw.directions,
             parsedIngredients:  ingredients,
-            nutrition:          raw.nutrition
+            nutrition:          raw.nutrition,
+            detectedSource:     nil
         )
+    }
+
+    /// Import a recipe from raw OCR text lines (e.g. from a Vision framework scan of a cookbook).
+    /// Uses Claude to structure the text if an API key is available; falls back to heuristics.
+    public func importFromOCRLines(_ lines: [String]) async throws -> RecipeImportResult {
+        guard !lines.isEmpty else { throw RecipeImportError.noRecipeFound }
+
+        let preprocessed = preprocessOCRLines(lines)
+
+        // Try Claude to structure the raw OCR text
+        if let apiKey, !apiKey.isEmpty,
+           let structured = await structureOCRWithClaude(preprocessed) {
+            let ingredients = await parseIngredients(structured.ingredientStrings)
+            return RecipeImportResult(
+                name:              structured.name,
+                servingsYield:     structured.servingsYield,
+                sourceURL:         "ocr://scan",
+                directions:        structured.directions,
+                parsedIngredients: ingredients,
+                nutrition:         nil,
+                detectedSource:    structured.detectedSource
+            )
+        }
+
+        // Heuristic fallback
+        let structured = heuristicParseOCR(preprocessed)
+        guard !structured.ingredientStrings.isEmpty else { throw RecipeImportError.noIngredients }
+        let ingredients = await parseIngredients(structured.ingredientStrings)
+        return RecipeImportResult(
+            name:              structured.name.isEmpty ? "Scanned Recipe" : structured.name,
+            servingsYield:     structured.servingsYield,
+            sourceURL:         "ocr://scan",
+            directions:        structured.directions,
+            parsedIngredients: ingredients,
+            nutrition:         nil,
+            detectedSource:    nil
+        )
+    }
+
+    /// Parses a single raw ingredient string into structured fields using the same
+    /// logic as the full import pipeline. Use this to re-parse after the user edits
+    /// an ingredient's raw text on the review screen.
+    public func parseIngredientText(_ raw: String) -> RecipeImportResult.ParsedIngredient {
+        let (qty, unit, term) = fallbackParse(raw)
+        return RecipeImportResult.ParsedIngredient(
+            rawString: raw,
+            quantity:  max(0.1, qty),
+            unit:      unit,
+            searchTerm: term.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
+    // MARK: - OCR Preprocessing
+
+    /// Fixes clear OCR character misreads before sending lines to Claude or the heuristic parser.
+    /// Only corrects unambiguous character substitutions — does not merge, reorder, or restructure lines.
+    /// Normalises and filters raw OCR lines before displaying them to the user and before sending
+    /// to Claude. Public so callers (e.g. OCRRecipeImportView) can show the cleaned text.
+    ///
+    /// Two passes:
+    /// 1. Character-level fixes (parenthesised quantities, unit abbreviations, OCR misreads)
+    /// 2. Noise filtering — drops lines that can't plausibly be recipe content (decorative
+    ///    card artwork, borders, background patterns, and single stray characters are common
+    ///    sources of garbage in handwritten-recipe-card scans)
+    public func preprocessOCRLines(_ lines: [String]) -> [String] {
+        // Pass 1: character-level normalisation
+        let normalised: [String] = lines.compactMap { line -> String? in
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            var s = trimmed
+            // Parenthesised leading quantities: "(2)" → "2", "(4)" → "4"
+            s = s.replacingOccurrences(of: #"^\((\d+)\)\s*"#, with: "$1 ", options: .regularExpression)
+            // Unit abbreviation expansion — case-sensitive: standalone T=tbsp, t=tsp
+            s = s.replacingOccurrences(of: #"\bT\b"#, with: "tbsp", options: .regularExpression)
+            s = s.replacingOccurrences(of: #"\bt\b"#, with: "tsp",  options: .regularExpression)
+            // OCR character misreads for the letter 't' in tbsp/tsp
+            s = s.replacingOccurrences(of: #"\+\s*bsp\b"#, with: "tbsp", options: [.regularExpression, .caseInsensitive])
+            s = s.replacingOccurrences(of: #"\+\s*sp\b"#,  with: "tsp",  options: [.regularExpression, .caseInsensitive])
+            s = s.replacingOccurrences(of: #"\blbsp\b"#,   with: "tbsp", options: [.regularExpression, .caseInsensitive])
+            s = s.replacingOccurrences(of: #"\btbps\b"#,   with: "tbsp", options: [.regularExpression, .caseInsensitive])
+            s = s.replacingOccurrences(of: #"\btpsp\b"#,   with: "tsp",  options: [.regularExpression, .caseInsensitive])
+            return s.trimmingCharacters(in: .whitespaces)
+        }
+
+        // Pass 2: noise filtering
+        return normalised.filter { isPlausibleRecipeLine($0) }
+    }
+
+    /// Returns false for lines that are almost certainly OCR noise rather than recipe content.
+    /// Designed to drop stray characters from card artwork, borders, and decorative backgrounds
+    /// while preserving all genuine recipe text.
+    private func isPlausibleRecipeLine(_ line: String) -> Bool {
+        // Must have at least 2 characters
+        guard line.count >= 2 else { return false }
+
+        let letters    = line.filter { $0.isLetter }
+        let alphanum   = line.filter { $0.isLetter || $0.isNumber }
+        let totalChars = line.count
+
+        // Must contain at least one letter
+        guard !letters.isEmpty else { return false }
+
+        // Alphanumeric density must be ≥ 40 % — catches lines that are mostly symbols/punctuation
+        let density = Double(alphanum.count) / Double(totalChars)
+        guard density >= 0.40 else { return false }
+
+        // Must have at least one "real word" (3+ consecutive letters), OR start with a quantity.
+        // This catches lines like "a b c" (all 1-letter tokens) from decorative lettering.
+        let words = line.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        let hasRealWord = words.contains { $0.filter { $0.isLetter }.count >= 3 }
+        if !hasRealWord {
+            let firstChar = line.unicodeScalars.first!
+            let quantityStarters = CharacterSet.decimalDigits
+                .union(CharacterSet(charactersIn: "½¼¾⅓⅔⅛⅜⅝⅞/"))
+            guard quantityStarters.contains(firstChar) else { return false }
+        }
+
+        return true
+    }
+
+    // MARK: - OCR Structuring (Claude)
+
+    private func structureOCRWithClaude(_ lines: [String]) async -> RawRecipeData? {
+        guard let apiKey else { return nil }
+
+        let joined = lines.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+        let prompt = """
+        The following numbered lines were extracted via OCR from a physical recipe card or cookbook page.
+        Structure the recipe following every rule below exactly.
+
+        CRITICAL — NO HALLUCINATION:
+        You MUST only include ingredients and steps that are explicitly written in the OCR lines below.
+        Do NOT invent, infer, assume, or add anything that is not present in the text.
+        If something is unclear, use the OCR text as-is rather than guessing.
+
+        LAYOUT (recipe cards are often multi-column):
+        - Many cards have a LEFT column for quantity+unit ("2 cups", "½ cup", "1 tbsp") and a RIGHT
+          column for the ingredient name ("sugar", "milk", "cocoa"). Quantity and name may appear on
+          SEPARATE consecutive lines — combine them: line 6="2 cups", line 7="sugar" → "2 cups sugar".
+        - Some cards have a THIRD column of directions/notes mixed in — exclude direction text from
+          ingredient strings; it belongs in instructions only.
+        - A quantity-only line always belongs to the ingredient on the very next non-blank line.
+
+        PARENTHESIZED QUANTITIES:
+        - Numbers in parentheses like (2), (4), (3) at the start of an ingredient line are the
+          quantity, NOT step numbers. "(2) 12.5oz canned chicken" = 2 cans of 12.5oz canned chicken.
+          Write as: "2 12.5oz canned chicken". Preserve "canned", "jarred", etc. exactly.
+
+        SUB-SECTIONS:
+        - If the card has a sub-section for toppings (e.g. "For top:", "For frosting:", "For sauce:"),
+          include those ingredients in the main ingredient list. Prefix each with the section label:
+          e.g. "For top: 2 tbsp melted butter", "For top: 1/3 bag crushed croutons".
+
+        INGREDIENTS:
+        - Format each as: quantity unit name (e.g. "2 cups sugar", "1 tsp vanilla", "2 12.5oz canned chicken").
+        - PREFIX every ingredient with "[N]" where N = OCR line number of the ingredient name line.
+          Example: "[7] 2 cups sugar". Do NOT omit this prefix — it is required for ordering.
+
+        SOURCE:
+        - Look for author/source phrases: "from the kitchen of", "recipe by", "submitted by", etc.
+        - Return just the name (e.g. "Pat Faist"), not the phrase. Use null if none found.
+
+        SERVINGS:
+        - Extract from: "serves X", "yield X", "yields X", "makes X", "makes X-Y" (use smaller),
+          "makes X dozen" → X × 12. Default to 4 if not stated.
+
+        INSTRUCTIONS:
+        - Copy steps as written. Do not reorder or combine steps.
+        - Do not invent steps not in the OCR text.
+
+        Ignore page numbers, print credits, card artwork, blank lines.
+
+        Respond ONLY with valid JSON, no commentary:
+        {"name":"...","servings":4,"source":null,"ingredients":["[N] quantity unit name"],"instructions":["step 1","step 2"]}
+
+        OCR Lines:
+        \(joined)
+        """
+
+        let body: [String: Any] = [
+            "model": model,
+            "max_tokens": 4096,
+            "messages": [["role": "user", "content": prompt]]
+        ]
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else { return nil }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.httpBody   = bodyData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey,             forHTTPHeaderField: "x-api-key")
+        request.setValue("2023-06-01",       forHTTPHeaderField: "anthropic-version")
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 200
+        else {
+            print("⚠️ RecipeImportService: OCR Claude call failed, using heuristic fallback")
+            return nil
+        }
+
+        guard let json    = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let content = json["content"] as? [[String: Any]],
+              let text    = content.first?["text"] as? String,
+              let start   = text.firstIndex(of: "{"),
+              let end     = text.lastIndex(of: "}")
+        else { return nil }
+
+        let slice = String(text[start...end])
+        guard let objData = slice.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: objData) as? [String: Any]
+        else { return nil }
+
+        let name         = (obj["name"] as? String) ?? "Scanned Recipe"
+        let servings     = (obj["servings"] as? Double) ?? Double((obj["servings"] as? Int) ?? 4)
+        let rawIngredients = (obj["ingredients"] as? [String]) ?? []
+        let instructions = (obj["instructions"] as? [String]) ?? []
+        let detectedSource = obj["source"] as? String
+
+        guard !rawIngredients.isEmpty else { return nil }
+
+        // Parse "[N] ingredient text" prefixes, sort by N to guarantee original order,
+        // then strip the prefix before storing.
+        let lineTagPattern = #"^\[(\d+)\]\s*"#
+        let tagged: [(lineNum: Int, text: String)] = rawIngredients.compactMap { raw in
+            if let range = raw.range(of: lineTagPattern, options: .regularExpression),
+               let numRange = raw.range(of: #"\d+"#, options: .regularExpression, range: range) {
+                let num = Int(raw[numRange]) ?? Int.max
+                let text = String(raw[raw.index(range.upperBound, offsetBy: 0)...])
+                return (num, text)
+            }
+            // Claude omitted the tag — keep as-is, append to end
+            return (Int.max, raw)
+        }
+        let ingredients = tagged.sorted { $0.lineNum < $1.lineNum }.map { $0.text }
+
+        print("✅ RecipeImportService: OCR structured via Claude — \(name), \(ingredients.count) ingredients, source: \(detectedSource ?? "none")")
+        return RawRecipeData(
+            name:              name,
+            servingsYield:     max(1, servings),
+            ingredientStrings: ingredients,
+            directions:        instructions,
+            nutrition:         nil,
+            detectedSource:    detectedSource
+        )
+    }
+
+    // MARK: - OCR Structuring (Heuristic Fallback)
+
+    private func heuristicParseOCR(_ lines: [String]) -> RawRecipeData {
+        enum Section { case header, ingredients, instructions, other }
+
+        let ingredientHeaders: Set<String> = [
+            "ingredients", "ingredient list", "you'll need", "you will need",
+            "what you need", "for the recipe", "for the filling", "for the sauce",
+            "for the dough", "for the topping"
+        ]
+        let instructionHeaders: Set<String> = [
+            "instructions", "directions", "method", "steps", "preparation",
+            "how to make", "how to prepare", "to make", "procedure"
+        ]
+
+        var name          = ""
+        var servings      = 4.0      // default 4 when nothing is mentioned
+        var ingredients   = [String]()
+        var instructions  = [String]()
+        var section       = Section.header
+        var nameFound     = false
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+
+            let lower = trimmed.lowercased()
+
+            // Detect section transitions
+            if ingredientHeaders.contains(where: { lower == $0 || lower.hasPrefix($0 + ":") }) {
+                section = .ingredients
+                continue
+            }
+            if instructionHeaders.contains(where: { lower == $0 || lower.hasPrefix($0 + ":") }) {
+                section = .instructions
+                continue
+            }
+
+            // Servings / yield line — check anywhere in the text (often at the bottom)
+            if lower.contains("serves") || lower.contains("servings") ||
+               lower.contains("yield") || lower.contains("makes") {
+                if let n = extractFirstNumber(from: trimmed) {
+                    // "makes 3 dozen" or "makes 3 or 4 dozen" → multiply by 12
+                    servings = lower.contains("dozen") ? n * 12 : n
+                }
+                // Don't skip the line — it might still be part of a section
+                continue
+            }
+
+            switch section {
+            case .header:
+                // Recipe name = first substantial non-numeric line
+                if !nameFound, trimmed.count > 2,
+                   trimmed.rangeOfCharacter(from: .letters) != nil {
+                    name = trimmed
+                    nameFound = true
+                }
+            case .ingredients:
+                ingredients.append(trimmed)
+            case .instructions:
+                instructions.append(trimmed)
+            case .other:
+                break
+            }
+        }
+
+        // Second pass: if no ingredients were found (no explicit header),
+        // identify ingredient-like lines by pattern (quantity + unit or leading fraction/number).
+        if ingredients.isEmpty {
+            let unitWords: Set<String> = [
+                "cup", "cups", "tablespoon", "tablespoons", "tbsp", "tsp",
+                "teaspoon", "teaspoons", "oz", "ounce", "ounces", "lb", "lbs",
+                "pound", "pounds", "gram", "grams", "g", "kg", "ml", "liter",
+                "liters", "quart", "quarts", "pint", "pints", "stick", "sticks",
+                "bunch", "bunches", "clove", "cloves", "slice", "slices",
+                "can", "cans", "package", "packages", "pkg", "jar", "jars",
+                "bag", "bags", "pinch", "dash", "handful", "head", "heads",
+                "T", "t"
+            ]
+            // Fraction/number start: "1", "1/2", "½", "¼", "¾", "2½"
+            let leadingQuantityPattern = #"^[\d¼½¾⅓⅔⅛⅜⅝⅞]"#
+            for line in lines {
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty, trimmed.count > 2 else { continue }
+                let words = trimmed.components(separatedBy: .whitespaces)
+                let firstWord = words.first ?? ""
+                let secondWord = words.count > 1 ? words[1] : ""
+                let hasLeadingNumber = trimmed.range(of: leadingQuantityPattern, options: .regularExpression) != nil
+                let hasUnitSecond = unitWords.contains(secondWord.lowercased())
+                let hasUnitFirst = unitWords.contains(firstWord)
+                // Include lines that look like "qty unit ingredient" or just start with a unit
+                if (hasLeadingNumber && hasUnitSecond) || hasUnitFirst {
+                    // Skip if this looks like a title or serving note
+                    let lower = trimmed.lowercased()
+                    guard !lower.contains("serves") && !lower.contains("servings") &&
+                          !lower.contains("makes") && !lower.contains("yield") else { continue }
+                    ingredients.append(trimmed)
+                }
+            }
+        }
+
+        return RawRecipeData(
+            name:              nameFound ? name : "Scanned Recipe",
+            servingsYield:     servings,
+            ingredientStrings: ingredients,
+            directions:        instructions,
+            nutrition:         nil,
+            detectedSource:    nil
+        )
+    }
+
+    private func extractFirstNumber(from text: String) -> Double? {
+        let pattern = #"\d+\.?\d*"#
+        guard let range = text.range(of: pattern, options: .regularExpression) else { return nil }
+        return Double(String(text[range]))
     }
 
     // MARK: - Fetch
@@ -151,6 +515,7 @@ public struct RecipeImportService {
         public let ingredientStrings: [String]
         public let directions: [String]
         public let nutrition: RecipeNutrition?
+        public let detectedSource: String?
     }
 
     private func extractSchemaOrgRecipe(from html: String) throws -> RawRecipeData {
@@ -170,7 +535,8 @@ public struct RecipeImportService {
             servingsYield:     yield,
             ingredientStrings: rawIngredients,
             directions:        directions,
-            nutrition:         nutrition
+            nutrition:         nutrition,
+            detectedSource:    nil
         )
     }
 
@@ -337,6 +703,7 @@ public struct RecipeImportService {
         - Simplify to a generic searchable name: "Barilla penne pasta" → "penne pasta"
         - Use "piece" as unit for count-based items with no unit: "3 eggs" → unit="piece"
         - For "N (X oz) item" format, total quantity = N×X, unit = oz: "8 (4 ounce) chicken cutlets" → quantity=32, unit="oz", searchTerm="chicken breast"
+        - Case-sensitive single-letter units: uppercase "T" = tablespoon (tbsp), lowercase "t" = teaspoon (tsp)
         - Known units: cup, tbsp, tsp, oz, lb, g, kg, ml, l, piece, slice, can, jar, package, bunch, clove, sprig, stalk, head
 
         Respond ONLY with a JSON array, one object per ingredient in order:
@@ -496,10 +863,27 @@ public struct RecipeImportService {
         var unit      = "piece"
         var termStart = nextIndex
 
-        if nextIndex < parts.count,
-           let mapped = unitMap[parts[nextIndex].lowercased().trimmingCharacters(in: .punctuationCharacters)] {
-            unit      = mapped
-            termStart = nextIndex + 1
+        if nextIndex < parts.count {
+            let rawUnit = parts[nextIndex].trimmingCharacters(in: .punctuationCharacters)
+            // Case-sensitive single-letter cooking abbreviations must be checked BEFORE lowercasing
+            // because T (tablespoon) and t (teaspoon) are otherwise identical after lowercasing.
+            if rawUnit == "T" {
+                unit = "tbsp"; termStart = nextIndex + 1
+            } else if rawUnit == "t" {
+                unit = "tsp"; termStart = nextIndex + 1
+            } else if let mapped = unitMap[rawUnit.lowercased()] {
+                unit = mapped; termStart = nextIndex + 1
+            } else {
+                // Handle fused quantity+unit tokens like "12.5oz", "8oz", "16oz"
+                // e.g. "2 12.5oz canned chicken" — skip the size descriptor, keep the food name
+                let fusedPattern = #"^\d+\.?\d*(oz|g|ml|lb|lbs|kg|cup|tbsp|tsp)$"#
+                if rawUnit.range(of: fusedPattern, options: [.regularExpression, .caseInsensitive]) != nil {
+                    // The fused token is a package-size descriptor — skip it, don't use as unit
+                    termStart = nextIndex + 1
+                    // Unit stays as "piece" since the leading qty (e.g. 2 cans) has no explicit unit
+                    unit = "can"   // most common case for fused-size ingredients like "2 12.5oz canned chicken"
+                }
+            }
         }
 
         // Rest of words form the search term; strip common prep notes
@@ -510,7 +894,8 @@ public struct RecipeImportService {
             "drained","packed","sifted","beaten","room","temperature","separated","skinless",
             "boneless","lean","large","medium","small","extra",
             // flavour/processing adjectives
-            "salted","unsalted","jarred","canned","whole","organic","plain","wild","light",
+            "salted","unsalted","jarred","whole","organic","plain","wild","light",
+            // NOTE: "canned" intentionally excluded — "canned chicken" is a distinct food, not a prep note
             "reduced","nonfat","fat-free","low-fat","rotisserie","thick","thin","raw",
             "grass-fed","free-range","roasted","toasted","blanched","soaked","dry","wet"
         ]

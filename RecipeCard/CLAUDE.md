@@ -22,6 +22,7 @@ xcodebuild test -project RecipeCard.xcodeproj -scheme RecipeCard \
 
 ## Recipe Import Flow
 
+### URL import
 1. User provides a URL → `RecipeImportService.import(url:)` fetches the page
    and parses Schema.org `Recipe` JSON-LD
 2. `fallbackParse(_:)` cleans each raw ingredient string into a searchable term:
@@ -29,10 +30,64 @@ xcodebuild test -project RecipeCard.xcodeproj -scheme RecipeCard \
    - Strips everything after the first comma
    - Removes prep-note words (`"chopped"`, `"diced"`, `"unsalted"`, `"roasted"`,
      `"jarred"`, `"organic"`, `"grass-fed"`, `"rotisserie"`, etc.)
-3. `RecipeImportReviewView` displays a spinner overlay while `autoMatch()` runs
-4. `autoMatch()` matches each ingredient to a `FoodItem` in the shared store
-5. User reviews matches, corrects any mismatches via `IngredientFoodPickerView`,
-   then saves
+   - **`"canned"` is NOT stripped** — "canned chicken" is a distinct food item
+3. `RecipeImportReviewView` runs `autoMatch()` then lets user review/save
+
+### OCR import (scan a physical recipe card)
+Three-screen flow — all in the same `NavigationStack` owned by `OCRRecipeImportView`:
+
+1. **`OCRRecipeImportView`** — camera + photo library picker; "Scan Photo" button
+   runs Vision OCR on every selected image, calls `service.preprocessOCRLines()`
+   on the raw lines, then navigates to `OCRTextReviewView`.
+   - Vision coordinate system: Y=0 = bottom of image, Y=1 = top.
+     Sort uses `dy < 0` (not `dy > 0`) to get top-to-bottom order.
+
+2. **`OCRTextReviewView`** — shows preprocessed OCR lines in an editable `TextEditor`
+   (monospaced font). User fixes remaining handwriting misreads before Claude sees
+   the text. Also has a source field (auto-filled from `result.detectedSource` if
+   the user leaves it blank). "Process Recipe" button calls
+   `service.importFromOCRLines()` and navigates to `RecipeImportReviewView`.
+
+3. **`RecipeImportReviewView`** — standard ingredient match/review/save screen.
+
+### `RecipeImportService.preprocessOCRLines(_:)` — public, two-pass
+Called by `OCRRecipeImportView` before showing lines to the user, and again
+internally by `importFromOCRLines` (idempotent).
+
+**Pass 1 — character normalisation:**
+- Strips parenthesised leading quantities: `(4) tbsp` → `4 tbsp`
+- Expands unit abbreviations: `T` → `tbsp`, `t` → `tsp` (case-sensitive, word-boundary)
+- Fixes OCR misreads: `+bsp` → `tbsp`, `lbsp` → `tbsp`, `tbps` → `tbsp`, etc.
+
+**Pass 2 — noise filtering (drops lines that can't be recipe content):**
+- Fewer than 2 characters
+- No letters at all
+- Alphanumeric density < 40 % (mostly symbols/punctuation from card artwork)
+- No word with 3+ consecutive letters AND doesn't start with a quantity
+  (catches single-letter OCR artifacts from decorative card lettering)
+
+### `RecipeImportResult.detectedSource`
+New `String?` field. Claude extracts "from the kitchen of / recipe by / submitted by"
+style attributions from the OCR text and returns them here. `OCRTextReviewView`
+auto-fills the source field if the user left it blank.
+
+### OCR Claude prompt — key rules
+- `[N]` line-number prefix on every ingredient (e.g. `"[7] 2 cups sugar"`) —
+  code sorts by N after parsing, guaranteeing original card order regardless of
+  how Claude internally reasons.
+- Anti-hallucination: only ingredients explicitly written in OCR lines.
+- Parenthesised quantities `(4)` explained as amounts, not step numbers.
+- Sub-sections (`For top:`, `For frosting:`) included with label prefix.
+- Servings: handles `yield X`, `makes X dozen` (× 12), default = 4.
+
+### Key rule: `MatchedIngredient.editedRawText` and `editedUnit`
+- Always use `editedRawText` (not `parsed.rawString`) for the ingredient's
+  human-visible text — rows, food picker title, saved `rawText` on `RecipeIngredient`
+- `editedUnit` (not `parsed.unit`) must be used in `matchSingle` and
+  `IngredientFoodPickerView.selectFood` for `resolveGrams` calls — `parsed` is
+  immutable and won't reflect unit changes the user makes when editing text.
+- `matchVersion += 1` must be called after `matchSingle` completes from a text
+  edit to trigger a nutrition-header refresh (same mechanism as food picker).
 
 ---
 
@@ -64,6 +119,7 @@ Located in `RecipeImportReviewView`. Runs once on view appear for all ingredient
    - `"black pepper ground"` → `"black pepper"`
    - `"seasoning"` → `"salt"`
    - `"chicken cutlet"` / `"chicken cutlets"` → `"chicken breast"`
+   - `"canned chicken"` / `"chicken canned"` → `"chicken breast"` (nutritional proxy)
 2. **Cheese stripping** — drop trailing `" cheese"` unless the full term is a
    recognised compound (`"cream cheese"`, `"cottage cheese"`, `"goat cheese"`,
    `"american cheese"`, `"swiss cheese"`, `"blue cheese"`, `"brie cheese"`).

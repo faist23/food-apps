@@ -6,7 +6,7 @@ Two standalone iOS apps sharing a common data layer:
 - **RecipeCard** (`RecipeCard/`) — recipe manager and importer
 - **BiteLedgerCore** (`BiteLedgerCore/`) — shared Swift package (models, services, calculators)
 
-Platform: iOS 18.3+, Swift 6.0, SwiftUI + SwiftData, Xcode 16.3.
+Platform: iOS 26.0+, Swift 6.0, SwiftUI + SwiftData, Xcode 16.3.
 
 Both apps ship independently on the App Store. When both are installed they share
 the same SwiftData store via App Groups and can read each other's data.
@@ -157,3 +157,8 @@ Calcium 1300mg, Iron 18mg, Potassium 4700mg.
 nutrients. It defines units, categories (macros/minerals/vitamins/special), and
 default goal types (minimum/maximum/range). When adding new nutrients, update
 `FoodItem`, `FoodLog`, and `NutritionCalculator` together — they must stay in sync.
+
+
+## gstack
+Use /browse from gstack for all web browsing. Never use mcp__claude-in-chrome__* tools.
+Available skills: /plan-ceo-review, /plan-eng-review, /plan-design-review, /design-consultation, /review, /ship, /browse, /qa, /qa-only, /qa-design-review, /setup-browser-cookies, /retro, /document-release.

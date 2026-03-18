@@ -12,6 +12,7 @@ struct RecipesListView: View {
     @Query(sort: \Recipe.name) private var recipes: [Recipe]
     @State private var showingNewRecipe = false
     @State private var showingImport = false
+    @State private var showingOCRImport = false
     @State private var pendingImportURL: String? = nil
 
     var body: some View {
@@ -41,7 +42,12 @@ struct RecipesListView: View {
                 }
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button { showingImport = true } label: {
-                        Label("Import", systemImage: "link.badge.plus")
+                        Label("Import from URL", systemImage: "link.badge.plus")
+                    }
+                }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { showingOCRImport = true } label: {
+                        Label("Scan Recipe", systemImage: "camera.viewfinder")
                     }
                 }
                 if !recipes.isEmpty {
@@ -50,6 +56,9 @@ struct RecipesListView: View {
             }
             .sheet(isPresented: $showingImport, onDismiss: { pendingImportURL = nil }) {
                 ImportRecipeView(prefilledURL: pendingImportURL)
+            }
+            .sheet(isPresented: $showingOCRImport) {
+                OCRRecipeImportView()
             }
             .sheet(isPresented: $showingNewRecipe) {
                 RecipeEditorView(recipe: nil)
