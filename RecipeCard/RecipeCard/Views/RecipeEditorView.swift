@@ -5,6 +5,8 @@
 
 import SwiftUI
 import SwiftData
+import PhotosUI
+import UIKit
 import BiteLedgerCore
 
 struct RecipeEditorView: View {
@@ -21,13 +23,20 @@ struct RecipeEditorView: View {
     @State private var newDirection: String = ""
     @State private var showingIngredientPicker = false
 
+    // Photo editing
+    @State private var currentImageURL: String?       // existing saved URL (remote or file://)
+    @State private var pendingImage: UIImage?         // new selection — written to disk on save
+    @State private var photoItem: PhotosPickerItem?
+    @State private var showingCamera = false
+
     init(recipe: Recipe?) {
         self.existingRecipe = recipe
-        _name          = State(initialValue: recipe?.name ?? "")
-        _servingsYield = State(initialValue: recipe.map { String(Int($0.servingsYield)) } ?? "1")
-        _sourceURL     = State(initialValue: recipe?.sourceURL ?? "")
-        _directions    = State(initialValue: recipe?.directions ?? [])
-        _ingredients   = State(initialValue: recipe?.sortedIngredients ?? [])
+        _name             = State(initialValue: recipe?.name ?? "")
+        _servingsYield    = State(initialValue: recipe.map { String(Int($0.servingsYield)) } ?? "1")
+        _sourceURL        = State(initialValue: recipe?.sourceURL ?? "")
+        _directions       = State(initialValue: recipe?.directions ?? [])
+        _ingredients      = State(initialValue: recipe?.sortedIngredients ?? [])
+        _currentImageURL  = State(initialValue: recipe?.imageURL)
     }
 
     private var totals: NutritionCalculator.Result {
@@ -49,6 +58,63 @@ struct RecipeEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
+                // MARK: Photo
+                Section("Photo") {
+                    // Preview
+                    Group {
+                        if let img = pendingImage {
+                            Image(uiImage: img)
+                                .resizable().scaledToFill()
+                        } else if let urlStr = currentImageURL, let url = URL(string: urlStr) {
+                            AsyncImage(url: url) { phase in
+                                if let img = phase.image { img.resizable().scaledToFill() }
+                                else { Color.secondary.opacity(0.1) }
+                            }
+                        } else {
+                            ZStack {
+                                Color.secondary.opacity(0.1)
+                                Image(systemName: "photo")
+                                    .font(.largeTitle)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity).frame(height: 180)
+                    .clipped()
+                    .listRowInsets(EdgeInsets())
+
+                    // Actions
+                    HStack(spacing: 0) {
+                        Button {
+                            showingCamera = true
+                        } label: {
+                            Label("Camera", systemImage: "camera")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderless)
+
+                        Divider().frame(height: 32)
+
+                        PhotosPicker(selection: $photoItem, matching: .images) {
+                            Label("Library", systemImage: "photo.on.rectangle")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderless)
+
+                        if pendingImage != nil || currentImageURL != nil {
+                            Divider().frame(height: 32)
+                            Button(role: .destructive) {
+                                pendingImage = nil
+                                currentImageURL = nil
+                            } label: {
+                                Label("Remove", systemImage: "trash")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                }
+
                 Section("Recipe Info") {
                     TextField("Name", text: $name)
                     HStack {
@@ -137,6 +203,24 @@ struct RecipeEditorView: View {
                     ingredients.append(ing)
                 }
             }
+            .fullScreenCover(isPresented: $showingCamera) {
+                EditorCameraPickerView { image in
+                    pendingImage = image
+                    currentImageURL = nil
+                }
+                .ignoresSafeArea()
+            }
+            .onChange(of: photoItem) { _, newItem in
+                guard let newItem else { return }
+                Task {
+                    if let data = try? await newItem.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data) {
+                        pendingImage = image
+                        currentImageURL = nil
+                    }
+                    photoItem = nil
+                }
+            }
         }
     }
 
@@ -144,11 +228,29 @@ struct RecipeEditorView: View {
         let yield = Double(Int(servingsYield) ?? 1)
         let url = sourceURL.trimmingCharacters(in: .whitespaces).isEmpty ? nil : sourceURL.trimmingCharacters(in: .whitespaces)
 
+        // Resolve the final imageURL:
+        // - New photo selected: write to disk, delete the old local file if any.
+        // - Photo cleared (both nil): delete the old local file if any.
+        // - No change: keep currentImageURL as-is.
+        let resolvedImageURL: String?
+        if let newImage = pendingImage {
+            if let old = existingRecipe?.imageURL { RecipeImportService.deleteLocalImage(urlString: old) }
+            let data = newImage.jpegData(compressionQuality: 0.82)
+            resolvedImageURL = data.flatMap { RecipeImportService.saveImageDataLocally($0) }
+        } else if currentImageURL == nil, let old = existingRecipe?.imageURL {
+            // User cleared the photo
+            RecipeImportService.deleteLocalImage(urlString: old)
+            resolvedImageURL = nil
+        } else {
+            resolvedImageURL = currentImageURL
+        }
+
         if let recipe = existingRecipe {
             recipe.name = name.trimmingCharacters(in: .whitespaces)
             recipe.servingsYield = yield
             recipe.sourceURL = url
             recipe.directions = directions
+            recipe.imageURL = resolvedImageURL
             for (i, ing) in ingredients.enumerated() { ing.sortOrder = i; ing.recipe = recipe }
         } else {
             let recipe = Recipe(
@@ -157,6 +259,7 @@ struct RecipeEditorView: View {
                 sourceURL: url,
                 directions: directions
             )
+            recipe.imageURL = resolvedImageURL
             for (i, ing) in ingredients.enumerated() { ing.sortOrder = i; ing.recipe = recipe }
             modelContext.insert(recipe)
         }
@@ -196,6 +299,38 @@ private struct NutritionRow: View {
             Text(label)
             Spacer()
             Text("\(Int(value))\(unit)").foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - Camera picker
+
+private struct EditorCameraPickerView: UIViewControllerRepresentable {
+    let onImage: (UIImage) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onImage: onImage) }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    final class Coordinator: NSObject, UINavigationControllerDelegate, UIImagePickerControllerDelegate {
+        let onImage: (UIImage) -> Void
+        init(onImage: @escaping (UIImage) -> Void) { self.onImage = onImage }
+
+        func imagePickerController(_ picker: UIImagePickerController,
+                                   didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            picker.dismiss(animated: true)
+            if let img = info[.originalImage] as? UIImage { onImage(img) }
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            picker.dismiss(animated: true)
         }
     }
 }

@@ -1,11 +1,12 @@
-import Combine
 //
 //  RecipeImportReviewView.swift
 //  RecipeCard
 //
 
+import Combine
 import SwiftUI
 import SwiftData
+import UIKit
 import BiteLedgerCore
 
 // MARK: - Matched Ingredient (working model for the review screen)
@@ -54,6 +55,8 @@ struct RecipeImportReviewView: View {
     @Environment(\.modelContext) private var modelContext
 
     let result: RecipeImportResult
+    /// Scanned photo from `OCRRecipeImportView`. Not yet on disk — written in `save()`.
+    let scannedImage: UIImage?
     let onSave: () -> Void
 
     @State private var name: String
@@ -71,8 +74,9 @@ struct RecipeImportReviewView: View {
     /// True for OCR scans — source is a free-text field. False for URL imports — domain shown as label.
     private var isOCR: Bool { result.sourceURL == "ocr://scan" }
 
-    init(result: RecipeImportResult, prefilledSource: String = "", onSave: @escaping () -> Void) {
+    init(result: RecipeImportResult, prefilledSource: String = "", scannedImage: UIImage? = nil, onSave: @escaping () -> Void) {
         self.result = result
+        self.scannedImage = scannedImage
         self.onSave = onSave
         _name = State(initialValue: result.name)
         _servingsYield = State(initialValue: String(Int(result.servingsYield)))
@@ -109,6 +113,31 @@ struct RecipeImportReviewView: View {
         Form {
             // MARK: Recipe Info
             Section("Recipe Info") {
+                // Hero photo preview — confirms the user imported the right recipe.
+                // OCR: show the scanned UIImage directly (not yet written to disk).
+                // URL: load from the remote imageURL via AsyncImage.
+                if let image = scannedImage {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(maxWidth: .infinity).frame(height: 180)
+                        .clipped()
+                        .listRowInsets(EdgeInsets())
+                } else if let urlStr = result.imageURL, let url = URL(string: urlStr) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let img):
+                            img.resizable().scaledToFill()
+                                .frame(maxWidth: .infinity).frame(height: 180)
+                                .clipped()
+                        default:
+                            Color.secondary.opacity(0.08)
+                                .frame(maxWidth: .infinity).frame(height: 180)
+                                .overlay { ProgressView() }
+                        }
+                    }
+                    .listRowInsets(EdgeInsets())
+                }
                 TextField("Name", text: $name)
                 HStack {
                     Text("Servings")
@@ -492,6 +521,32 @@ struct RecipeImportReviewView: View {
         // Always store website nutrition when available — it is the authoritative source
         if let n = result.nutrition {
             recipe.importedNutrition = n
+        }
+
+        // Rich metadata from Schema.org / Claude OCR
+        recipe.prepMinutes       = result.prepMinutes
+        recipe.cookMinutes       = result.cookMinutes
+        recipe.totalMinutes      = result.totalMinutes
+        recipe.recipeDescription = result.recipeDescription
+        recipe.recipeCategory    = result.recipeCategory
+        recipe.recipeCuisine     = result.recipeCuisine
+        recipe.ratingValue       = result.ratingValue
+        recipe.ratingCount       = result.ratingCount
+        recipe.keywords          = result.keywords
+        recipe.dietTags          = result.dietTags
+
+        if isOCR {
+            // For OCR recipes: write the scanned photo to disk now (user confirmed save).
+            // The source field doubles as the author attribution (auto-filled from detectedSource).
+            if let image = scannedImage,
+               let jpegData = image.jpegData(compressionQuality: 0.82) {
+                recipe.imageURL = RecipeImportService.saveImageDataLocally(jpegData)
+            }
+            let trimmedAuthor = source.trimmingCharacters(in: .whitespaces)
+            recipe.author = trimmedAuthor.isEmpty ? nil : trimmedAuthor
+        } else {
+            recipe.imageURL = result.imageURL
+            recipe.author   = result.author
         }
 
         var sortOrder = 0

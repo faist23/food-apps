@@ -73,7 +73,11 @@ struct RecipesListView: View {
     }
 
     private func deleteRecipes(offsets: IndexSet) {
-        for index in offsets { modelContext.delete(recipes[index]) }
+        for index in offsets {
+            let recipe = recipes[index]
+            if let url = recipe.imageURL { RecipeImportService.deleteLocalImage(urlString: url) }
+            modelContext.delete(recipe)
+        }
     }
 }
 
@@ -81,6 +85,7 @@ private struct RecipeRowView: View {
     let recipe: Recipe
 
     var caloriesPerServing: Double? {
+        if let n = recipe.importedNutrition { return n.calories }
         let total = recipe.sortedIngredients.reduce(NutritionCalculator.Result.zero) { acc, ing in
             guard let food = ing.foodItem else { return acc }
             return acc + NutritionCalculator.calculate(food: food, serving: ing.servingSize, quantity: ing.quantity)
@@ -90,14 +95,33 @@ private struct RecipeRowView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(recipe.name).font(.headline)
-            HStack(spacing: 12) {
-                Label("\(Int(recipe.servingsYield)) servings", systemImage: "person.2")
-                    .font(.caption).foregroundStyle(.secondary)
-                if let cal = caloriesPerServing {
-                    Text("\(Int(cal)) cal/serving")
+        HStack(spacing: 12) {
+            // Thumbnail
+            if let urlStr = recipe.imageURL, let url = URL(string: urlStr) {
+                AsyncImage(url: url) { phase in
+                    if let img = phase.image {
+                        img.resizable().scaledToFill()
+                    } else {
+                        Color.secondary.opacity(0.12)
+                    }
+                }
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(recipe.name).font(.headline)
+                HStack(spacing: 10) {
+                    if let time = recipe.displayTime {
+                        Label(time, systemImage: "clock")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Label("\(Int(recipe.servingsYield)) servings", systemImage: "person.2")
                         .font(.caption).foregroundStyle(.secondary)
+                    if let cal = caloriesPerServing {
+                        Text("\(Int(cal)) cal")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
         }

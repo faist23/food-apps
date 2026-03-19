@@ -22,6 +22,8 @@ struct FoodSearchView: View {
     @State private var selectedProduct: ProductInfo?
     @State private var selectedProductContext: (product: ProductInfo, existingFood: FoodItem?, initialAmount: Double?, initialPortionId: Int?, initialUnit: String?)? // Combined context
     @State private var selectedMeal: [FoodLog]?
+    @State private var allRecipes: [Recipe] = []
+    @State private var selectedRecipeForLog: Recipe?
     @State private var errorMessage: String?
     @State private var searchTask: Task<Void, Never>? // Track current search task
     @State private var debounceTask: Task<Void, Never>? // Track debounce task
@@ -32,6 +34,7 @@ struct FoodSearchView: View {
         case search = "Search"
         case myFoods = "My Foods"
         case meals = "Meals"
+        case recipes = "Recipes"
     }
     
     var body: some View {
@@ -159,6 +162,8 @@ struct FoodSearchView: View {
                         myFoodsTabContent
                     case .meals:
                         mealsTabContent
+                    case .recipes:
+                        recipesTabContent
                     }
                 }
                 .padding(.top, 16)
@@ -173,6 +178,9 @@ struct FoodSearchView: View {
                 )
                 d.fetchLimit = 1000
                 allLogs = (try? modelContext.fetch(d)) ?? []
+
+                let rd = FetchDescriptor<Recipe>(sortBy: [SortDescriptor(\Recipe.name)])
+                allRecipes = (try? modelContext.fetch(rd)) ?? []
             }
             .navigationTitle("Add Food")
             .navigationBarTitleDisplayMode(.inline)
@@ -573,6 +581,129 @@ struct FoodSearchView: View {
             }
         )
     }
+
+    // MARK: - Recipes Tab
+
+    private var filteredRecipes: [Recipe] {
+        guard !searchText.isEmpty else { return allRecipes }
+        return allRecipes.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    @ViewBuilder
+    private var recipesTabContent: some View {
+        Group {
+            if filteredRecipes.isEmpty {
+                ContentUnavailableView {
+                    Label(
+                        searchText.isEmpty ? "No Recipes Yet" : "No Matching Recipes",
+                        systemImage: "fork.knife"
+                    )
+                } description: {
+                    Text(searchText.isEmpty
+                         ? "Import or create recipes in the Recipes tab"
+                         : "No recipes match '\(searchText)'")
+                }
+            } else {
+                List(filteredRecipes) { recipe in
+                    RecipeLogRow(recipe: recipe, perServing: recipePerServingNutrition(recipe))
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectedRecipeForLog = recipe }
+                }
+                .listStyle(.plain)
+            }
+        }
+        .sheet(item: $selectedRecipeForLog) { recipe in
+            RecipeServingSheet(
+                recipe: recipe,
+                mealType: mealType,
+                perServing: recipePerServingNutrition(recipe)
+            ) { servingCount in
+                logRecipe(recipe, servingCount: servingCount)
+            }
+        }
+    }
+
+    private func recipePerServingNutrition(_ recipe: Recipe) -> NutritionCalculator.Result {
+        if let n = recipe.importedNutrition {
+            return NutritionCalculator.Result(
+                calories: n.calories, protein: n.protein, carbs: n.carbs, fat: n.fat,
+                fiber: n.fiber, sugar: n.sugar, saturatedFat: n.saturatedFat,
+                sodium: n.sodium, cholesterol: n.cholesterol, potassium: n.potassium,
+                calcium: n.calcium, iron: n.iron, vitaminA: n.vitaminA, vitaminC: n.vitaminC
+            )
+        }
+        let total = recipe.sortedIngredients.reduce(NutritionCalculator.Result.zero) { acc, ing in
+            guard let food = ing.foodItem else { return acc }
+            return acc + NutritionCalculator.calculate(food: food, serving: ing.servingSize, quantity: ing.quantity)
+        }
+        guard total.calories > 0 else { return .zero }
+        let d = recipe.servingsYield > 0 ? recipe.servingsYield : 1
+        return NutritionCalculator.Result(
+            calories: total.calories / d, protein: total.protein / d,
+            carbs: total.carbs / d, fat: total.fat / d,
+            fiber: total.fiber.map { $0 / d }
+        )
+    }
+
+    private func logRecipe(_ recipe: Recipe, servingCount: Int) {
+        let (foodItem, servingSize) = findOrCreateRecipeFoodItem(for: recipe)
+        let addedItem = AddedFoodItem(
+            foodItem: foodItem,
+            servingSize: servingSize,
+            quantity: Double(servingCount),
+            loggedAmount: Double(servingCount),
+            loggedUnit: servingCount == 1 ? "serving" : "servings"
+        )
+        onFoodAdded(addedItem)
+        dismiss()
+    }
+
+    private func findOrCreateRecipeFoodItem(for recipe: Recipe) -> (FoodItem, ServingSize) {
+        let source = "recipe_\(recipe.id.uuidString)"
+        var descriptor = FetchDescriptor<FoodItem>(predicate: #Predicate { $0.source == source })
+        descriptor.fetchLimit = 1
+        let perServing = recipePerServingNutrition(recipe)
+
+        if let existing = (try? modelContext.fetch(descriptor))?.first {
+            // Refresh nutrition in case recipe ingredients changed since last log
+            existing.calories = perServing.calories
+            existing.protein  = perServing.protein
+            existing.carbs    = perServing.carbs
+            existing.fat      = perServing.fat
+            existing.fiber    = perServing.fiber
+            existing.sugar    = perServing.sugar
+            existing.sodium   = perServing.sodium
+            if let serving = existing.defaultServing ?? existing.servingSizes.first {
+                return (existing, serving)
+            }
+        }
+
+        // Create a synthetic perServing FoodItem for this recipe
+        let food = FoodItem(
+            name: recipe.name,
+            source: source,
+            nutritionMode: .perServing,
+            calories: perServing.calories,
+            protein: perServing.protein,
+            carbs: perServing.carbs,
+            fat: perServing.fat,
+            fiber: perServing.fiber,
+            sugar: perServing.sugar,
+            sodium: perServing.sodium
+        )
+        food.recipe = recipe
+
+        let serving = ServingSize(label: "1 serving", isDefault: true)
+        serving.foodItem = food
+
+        modelContext.insert(food)
+        modelContext.insert(serving)
+        try? modelContext.save()
+
+        return (food, serving)
+    }
+
+    // MARK: - Meals Tab
 
     private var groupedMeals: [(date: Date, mealType: MealType, logs: [FoodLog])] {
         let calendar = Calendar.current
@@ -1605,6 +1736,144 @@ struct RecentFoodsForMealView: View {
                         }
                         .padding(.horizontal)
                     }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Recipe List Row
+
+private struct RecipeLogRow: View {
+    let recipe: Recipe
+    let perServing: NutritionCalculator.Result
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Thumbnail
+            if let urlStr = recipe.imageURL, let url = URL(string: urlStr) {
+                AsyncImage(url: url) { phase in
+                    if let img = phase.image { img.resizable().scaledToFill() }
+                    else { Color.secondary.opacity(0.12) }
+                }
+                .frame(width: 52, height: 52)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            } else {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.secondary.opacity(0.12))
+                    .frame(width: 52, height: 52)
+                    .overlay {
+                        Image(systemName: "fork.knife")
+                            .foregroundStyle(.secondary)
+                    }
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(recipe.name)
+                    .font(.body)
+                    .lineLimit(1)
+                HStack(spacing: 8) {
+                    if perServing.calories > 0 {
+                        Text("\(Int(perServing.calories)) cal/serving")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let time = recipe.displayTime {
+                        Text("·")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                        Label(time, systemImage: "clock")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Recipe Serving Picker Sheet
+
+private struct RecipeServingSheet: View {
+    let recipe: Recipe
+    let mealType: MealType
+    let perServing: NutritionCalculator.Result
+    let onAdd: (Int) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var servingCount: Int = 1
+
+    private var totalCalories: Double { perServing.calories * Double(servingCount) }
+    private var totalProtein: Double  { perServing.protein  * Double(servingCount) }
+    private var totalCarbs: Double    { perServing.carbs    * Double(servingCount) }
+    private var totalFat: Double      { perServing.fat      * Double(servingCount) }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                // Hero photo
+                if let urlStr = recipe.imageURL, let url = URL(string: urlStr) {
+                    AsyncImage(url: url) { phase in
+                        if let img = phase.image { img.resizable().scaledToFill() }
+                        else { Color.secondary.opacity(0.1) }
+                    }
+                    .frame(maxWidth: .infinity).frame(height: 180)
+                    .clipped()
+                    .listRowInsets(EdgeInsets())
+                }
+
+                // Serving stepper
+                Section {
+                    Stepper(value: $servingCount, in: 1...20) {
+                        HStack {
+                            Text("Servings")
+                            Spacer()
+                            Text("\(servingCount)")
+                                .fontWeight(.semibold)
+                        }
+                    }
+                } footer: {
+                    if let author = recipe.author, !author.isEmpty {
+                        Text("From \(author)")
+                    }
+                }
+
+                // Nutrition summary
+                if totalCalories > 0 {
+                    Section("Nutrition\(servingCount > 1 ? " (\(servingCount) servings)" : " per serving")") {
+                        HStack { Text("Calories"); Spacer(); Text("\(Int(totalCalories))").foregroundStyle(.secondary) }
+                        HStack { Text("Protein");  Spacer(); Text("\(Int(totalProtein))g").foregroundStyle(.secondary) }
+                        HStack { Text("Carbs");    Spacer(); Text("\(Int(totalCarbs))g").foregroundStyle(.secondary) }
+                        HStack { Text("Fat");      Spacer(); Text("\(Int(totalFat))g").foregroundStyle(.secondary) }
+                    }
+                }
+
+                // Add button
+                Section {
+                    Button {
+                        onAdd(servingCount)
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Text("Add to \(mealType.rawValue)")
+                                .fontWeight(.semibold)
+                            Spacer()
+                        }
+                    }
+                }
+            }
+            .navigationTitle(recipe.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
                 }
             }
         }

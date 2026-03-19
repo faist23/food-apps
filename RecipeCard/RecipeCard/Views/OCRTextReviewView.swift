@@ -8,10 +8,14 @@
 //
 
 import SwiftUI
+import UIKit
 import BiteLedgerCore
 
 struct OCRTextReviewView: View {
     let rawLines: [String]
+    /// First scanned photo — passed forward to RecipeImportReviewView so it can be
+    /// saved to disk when the user confirms and saves the recipe.
+    let scannedImage: UIImage?
     let onSave: () -> Void
 
     @Environment(\.modelContext) private var modelContext
@@ -31,8 +35,9 @@ struct OCRTextReviewView: View {
         case failed(String)
     }
 
-    init(rawLines: [String], onSave: @escaping () -> Void) {
+    init(rawLines: [String], scannedImage: UIImage? = nil, onSave: @escaping () -> Void) {
         self.rawLines = rawLines
+        self.scannedImage = scannedImage
         self.onSave = onSave
         _editedText = State(initialValue: rawLines.joined(separator: "\n"))
     }
@@ -101,6 +106,7 @@ struct OCRTextReviewView: View {
                 RecipeImportReviewView(
                     result: result,
                     prefilledSource: source.trimmingCharacters(in: .whitespaces),
+                    scannedImage: scannedImage,
                     onSave: onSave
                 )
             }

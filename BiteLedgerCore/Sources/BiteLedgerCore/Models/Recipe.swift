@@ -46,6 +46,61 @@ public final class Recipe {
         }
     }
 
+    // MARK: - Rich Metadata (populated on URL import from Schema.org)
+
+    /// Prep time in minutes (from ISO 8601 `prepTime`, e.g. "PT15M" → 15). nil if not specified.
+    public var prepMinutes: Int? = nil
+    /// Active cook time in minutes. nil if not specified.
+    public var cookMinutes: Int? = nil
+    /// Total time in minutes (prep + cook). nil if not specified.
+    public var totalMinutes: Int? = nil
+    /// Remote URL for the recipe hero image. Display with AsyncImage.
+    public var imageURL: String? = nil
+    /// Description / intro paragraph from the recipe website.
+    public var recipeDescription: String? = nil
+    /// Recipe category (e.g. "Dinner", "Dessert", "Appetizer").
+    public var recipeCategory: String? = nil
+    /// Cuisine type (e.g. "Italian", "Mexican").
+    public var recipeCuisine: String? = nil
+    /// Recipe author name.
+    public var author: String? = nil
+    /// Aggregate star rating from the source site (e.g. 4.5).
+    public var ratingValue: Double? = nil
+    /// Number of ratings/reviews at the source site.
+    public var ratingCount: Int? = nil
+    /// JSON-encoded [String] — keyword tags from the website.
+    public var keywordsData: Data? = nil
+    /// JSON-encoded [String] — diet restriction labels ("Vegan", "Gluten-Free", etc.).
+    public var dietTagsData: Data? = nil
+    /// Free-text notes the user adds after cooking a recipe.
+    public var notes: String? = nil
+
+    public var keywords: [String] {
+        get { (try? JSONDecoder().decode([String].self, from: keywordsData ?? Data())) ?? [] }
+        set { keywordsData = try? JSONEncoder().encode(newValue) }
+    }
+
+    public var dietTags: [String] {
+        get { (try? JSONDecoder().decode([String].self, from: dietTagsData ?? Data())) ?? [] }
+        set { dietTagsData = try? JSONEncoder().encode(newValue) }
+    }
+
+    /// Best available time string — total if known, else prep+cook sum, else either alone.
+    public var displayTime: String? {
+        if let t = totalMinutes, t > 0 { return formatMinutes(t) }
+        if let p = prepMinutes, let c = cookMinutes, p + c > 0 { return formatMinutes(p + c) }
+        if let p = prepMinutes, p > 0 { return formatMinutes(p) }
+        if let c = cookMinutes, c > 0 { return formatMinutes(c) }
+        return nil
+    }
+
+    private func formatMinutes(_ m: Int) -> String {
+        guard m > 0 else { return "" }
+        if m < 60 { return "\(m) min" }
+        let h = m / 60; let r = m % 60
+        return r == 0 ? "\(h) hr" : "\(h) hr \(r) min"
+    }
+
     // MARK: Imported Nutrition
 
     /// JSON-encoded RecipeNutrition — per-serving nutrition scraped from the recipe website.

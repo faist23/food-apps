@@ -43,6 +43,22 @@ public struct RecipeImportResult {
     /// Source/author extracted from the scanned card (e.g. "Aunt Debbie"). Nil for URL imports.
     public let detectedSource: String?
 
+    // MARK: - Rich Metadata (URL imports only; nil/empty for OCR)
+    public let prepMinutes: Int?
+    public let cookMinutes: Int?
+    public let totalMinutes: Int?
+    /// Remote URL for the recipe hero image.
+    public let imageURL: String?
+    /// Intro / description paragraph from the recipe website.
+    public let recipeDescription: String?
+    public let recipeCategory: String?
+    public let recipeCuisine: String?
+    public let author: String?
+    public let ratingValue: Double?
+    public let ratingCount: Int?
+    public let keywords: [String]
+    public let dietTags: [String]
+
     public struct ParsedIngredient: Identifiable {
         public let id: UUID = UUID()
         public let rawString: String
@@ -119,7 +135,19 @@ public struct RecipeImportService {
             directions:         raw.directions,
             parsedIngredients:  ingredients,
             nutrition:          raw.nutrition,
-            detectedSource:     nil
+            detectedSource:     nil,
+            prepMinutes:        raw.prepMinutes,
+            cookMinutes:        raw.cookMinutes,
+            totalMinutes:       raw.totalMinutes,
+            imageURL:           raw.imageURL,
+            recipeDescription:  raw.recipeDescription,
+            recipeCategory:     raw.recipeCategory,
+            recipeCuisine:      raw.recipeCuisine,
+            author:             raw.author,
+            ratingValue:        raw.ratingValue,
+            ratingCount:        raw.ratingCount,
+            keywords:           raw.keywords,
+            dietTags:           raw.dietTags
         )
     }
 
@@ -141,7 +169,11 @@ public struct RecipeImportService {
                 directions:        structured.directions,
                 parsedIngredients: ingredients,
                 nutrition:         nil,
-                detectedSource:    structured.detectedSource
+                detectedSource:    structured.detectedSource,
+                prepMinutes: nil, cookMinutes: nil, totalMinutes: nil,
+                imageURL: nil, recipeDescription: nil,
+                recipeCategory: nil, recipeCuisine: nil, author: nil,
+                ratingValue: nil, ratingCount: nil, keywords: [], dietTags: []
             )
         }
 
@@ -156,7 +188,11 @@ public struct RecipeImportService {
             directions:        structured.directions,
             parsedIngredients: ingredients,
             nutrition:         nil,
-            detectedSource:    nil
+            detectedSource:    nil,
+            prepMinutes: nil, cookMinutes: nil, totalMinutes: nil,
+            imageURL: nil, recipeDescription: nil,
+            recipeCategory: nil, recipeCuisine: nil, author: nil,
+            ratingValue: nil, ratingCount: nil, keywords: [], dietTags: []
         )
     }
 
@@ -287,6 +323,23 @@ public struct RecipeImportService {
         - Extract from: "serves X", "yield X", "yields X", "makes X", "makes X-Y" (use smaller),
           "makes X dozen" → X × 12. Default to 4 if not stated.
 
+        TIMING (prepMinutes, cookMinutes, totalMinutes):
+        - ONLY extract times that are explicitly written on the card.
+        - "Prep: 15 min" → prepMinutes=15. "Bake 350° for 30 min" → cookMinutes=30.
+        - "1 hour" → 60, "1½ hours" → 90, "45 minutes" → 45.
+        - Return null for any time not explicitly stated. Do NOT guess or invent times.
+
+        DESCRIPTION:
+        - If there is a short intro note or tagline before the ingredients ("A family favorite!",
+          "Quick weeknight dinner"), return it as "description".
+        - Return null if no such note exists. Do NOT invent one.
+
+        CATEGORY:
+        - Infer from context. Use exactly one of: "Dessert", "Bread", "Soup", "Salad",
+          "Appetizer", "Side Dish", "Main Dish", "Breakfast", "Drink", "Snack".
+        - A chocolate cake recipe → "Dessert". Chicken casserole → "Main Dish".
+        - Return null only if genuinely ambiguous.
+
         INSTRUCTIONS:
         - Copy steps as written. Do not reorder or combine steps.
         - Do not invent steps not in the OCR text.
@@ -294,7 +347,7 @@ public struct RecipeImportService {
         Ignore page numbers, print credits, card artwork, blank lines.
 
         Respond ONLY with valid JSON, no commentary:
-        {"name":"...","servings":4,"source":null,"ingredients":["[N] quantity unit name"],"instructions":["step 1","step 2"]}
+        {"name":"...","servings":4,"source":null,"prepMinutes":null,"cookMinutes":null,"totalMinutes":null,"description":null,"category":null,"ingredients":["[N] quantity unit name"],"instructions":["step 1","step 2"]}
 
         OCR Lines:
         \(joined)
@@ -333,11 +386,17 @@ public struct RecipeImportService {
               let obj = try? JSONSerialization.jsonObject(with: objData) as? [String: Any]
         else { return nil }
 
-        let name         = (obj["name"] as? String) ?? "Scanned Recipe"
-        let servings     = (obj["servings"] as? Double) ?? Double((obj["servings"] as? Int) ?? 4)
+        let name           = (obj["name"] as? String) ?? "Scanned Recipe"
+        let servings       = (obj["servings"] as? Double) ?? Double((obj["servings"] as? Int) ?? 4)
         let rawIngredients = (obj["ingredients"] as? [String]) ?? []
-        let instructions = (obj["instructions"] as? [String]) ?? []
+        let instructions   = (obj["instructions"] as? [String]) ?? []
         let detectedSource = obj["source"] as? String
+        // New fields — only present when Claude finds them in the card text
+        let prepMins   = obj["prepMinutes"]  as? Int
+        let cookMins   = obj["cookMinutes"]  as? Int
+        let totalMins  = obj["totalMinutes"] as? Int
+        let desc       = (obj["description"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let category   = (obj["category"]    as? String).flatMap { $0.isEmpty ? nil : $0 }
 
         guard !rawIngredients.isEmpty else { return nil }
 
@@ -356,14 +415,26 @@ public struct RecipeImportService {
         }
         let ingredients = tagged.sorted { $0.lineNum < $1.lineNum }.map { $0.text }
 
-        print("✅ RecipeImportService: OCR structured via Claude — \(name), \(ingredients.count) ingredients, source: \(detectedSource ?? "none")")
+        print("✅ RecipeImportService: OCR structured via Claude — \(name), \(ingredients.count) ingredients, source: \(detectedSource ?? "none"), prepMins: \(prepMins.map(String.init) ?? "nil"), category: \(category ?? "nil")")
         return RawRecipeData(
             name:              name,
             servingsYield:     max(1, servings),
             ingredientStrings: ingredients,
             directions:        instructions,
             nutrition:         nil,
-            detectedSource:    detectedSource
+            detectedSource:    detectedSource,
+            prepMinutes:       prepMins,
+            cookMinutes:       cookMins,
+            totalMinutes:      totalMins,
+            imageURL:          nil,   // set later from scanned photo, not from text
+            recipeDescription: desc,
+            recipeCategory:    category,
+            recipeCuisine:     nil,
+            author:            nil,
+            ratingValue:       nil,
+            ratingCount:       nil,
+            keywords:          [],
+            dietTags:          []
         )
     }
 
@@ -474,7 +545,11 @@ public struct RecipeImportService {
             ingredientStrings: ingredients,
             directions:        instructions,
             nutrition:         nil,
-            detectedSource:    nil
+            detectedSource:    nil,
+            prepMinutes: nil, cookMinutes: nil, totalMinutes: nil,
+            imageURL: nil, recipeDescription: nil,
+            recipeCategory: nil, recipeCuisine: nil, author: nil,
+            ratingValue: nil, ratingCount: nil, keywords: [], dietTags: []
         )
     }
 
@@ -510,12 +585,25 @@ public struct RecipeImportService {
     // MARK: - Schema.org Parsing
 
     private struct RawRecipeData {
-        public let name: String
-        public let servingsYield: Double
-        public let ingredientStrings: [String]
-        public let directions: [String]
-        public let nutrition: RecipeNutrition?
-        public let detectedSource: String?
+        let name: String
+        let servingsYield: Double
+        let ingredientStrings: [String]
+        let directions: [String]
+        let nutrition: RecipeNutrition?
+        let detectedSource: String?
+        // Rich metadata — populated for URL imports, nil/empty for OCR/heuristic
+        let prepMinutes: Int?
+        let cookMinutes: Int?
+        let totalMinutes: Int?
+        let imageURL: String?
+        let recipeDescription: String?
+        let recipeCategory: String?
+        let recipeCuisine: String?
+        let author: String?
+        let ratingValue: Double?
+        let ratingCount: Int?
+        let keywords: [String]
+        let dietTags: [String]
     }
 
     private func extractSchemaOrgRecipe(from html: String) throws -> RawRecipeData {
@@ -524,11 +612,27 @@ public struct RecipeImportService {
             throw RecipeImportError.noRecipeFound
         }
 
-        let name       = (recipe["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Imported Recipe"
-        let yield      = parseYield(recipe["recipeYield"])
-        let directions = parseInstructions(recipe["recipeInstructions"])
+        let name           = (recipe["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Imported Recipe"
+        let yield          = parseYield(recipe["recipeYield"])
+        let directions     = parseInstructions(recipe["recipeInstructions"])
         let rawIngredients = parseIngredientStrings(recipe["recipeIngredient"])
-        let nutrition  = parseSchemaOrgNutrition(recipe["nutrition"])
+        let nutrition      = parseSchemaOrgNutrition(recipe["nutrition"])
+
+        // Rich metadata
+        let prepMins   = parseISODuration(recipe["prepTime"])
+        let cookMins   = parseISODuration(recipe["cookTime"])
+        let totalMins  = parseISODuration(recipe["totalTime"])
+        let imageURL   = parseImageURL(recipe["image"])
+        let desc       = (recipe["description"] as? String).flatMap { s -> String? in
+            let t = stripHTMLTags(s).trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t
+        }
+        let category   = parseTextOrArray(recipe["recipeCategory"])
+        let cuisine    = parseTextOrArray(recipe["recipeCuisine"])
+        let author     = parseAuthorName(recipe["author"])
+        let (rating, ratingCount) = parseAggregateRating(recipe["aggregateRating"])
+        let keywords   = parseKeywordsList(recipe["keywords"])
+        let dietTags   = parseDietTags(recipe["suitableForDiet"])
 
         return RawRecipeData(
             name:              name,
@@ -536,8 +640,129 @@ public struct RecipeImportService {
             ingredientStrings: rawIngredients,
             directions:        directions,
             nutrition:         nutrition,
-            detectedSource:    nil
+            detectedSource:    nil,
+            prepMinutes:       prepMins,
+            cookMinutes:       cookMins,
+            totalMinutes:      totalMins,
+            imageURL:          imageURL,
+            recipeDescription: desc,
+            recipeCategory:    category,
+            recipeCuisine:     cuisine,
+            author:            author,
+            ratingValue:       rating,
+            ratingCount:       ratingCount,
+            keywords:          keywords,
+            dietTags:          dietTags
         )
+    }
+
+    // MARK: - Rich Metadata Parsers
+
+    /// Parses ISO 8601 duration strings to total minutes. "PT1H30M" → 90, "PT15M" → 15.
+    private func parseISODuration(_ value: Any?) -> Int? {
+        guard let s = value as? String, s.hasPrefix("P") else { return nil }
+        var minutes = 0
+        // Hours: match digits before "H"
+        if let range = s.range(of: #"(\d+)H"#, options: .regularExpression),
+           let digits = s[range].range(of: #"\d+"#, options: .regularExpression) {
+            minutes += (Int(s[range][digits]) ?? 0) * 60
+        }
+        // Minutes: match digits before "M" — exclude month "P1M" (no T prefix context needed
+        // since recipe durations are always in hours/minutes, not months)
+        if let range = s.range(of: #"(\d+)M"#, options: .regularExpression),
+           let digits = s[range].range(of: #"\d+"#, options: .regularExpression) {
+            minutes += Int(s[range][digits]) ?? 0
+        }
+        return minutes > 0 ? minutes : nil
+    }
+
+    /// Extracts the first usable image URL from Schema.org `image` (string, array, or ImageObject).
+    private func parseImageURL(_ value: Any?) -> String? {
+        func fromString(_ s: String) -> String? { s.hasPrefix("http") ? s : nil }
+        func fromObject(_ obj: [String: Any]) -> String? {
+            (obj["url"] as? String).flatMap(fromString)
+        }
+        if let s   = value as? String              { return fromString(s) }
+        if let obj = value as? [String: Any]       { return fromObject(obj) }
+        if let arr = value as? [Any] {
+            for item in arr {
+                if let s   = item as? String        { if let u = fromString(s)   { return u } }
+                if let obj = item as? [String: Any] { if let u = fromObject(obj) { return u } }
+            }
+        }
+        return nil
+    }
+
+    /// Returns the first value as a trimmed string when the field is a String or [String].
+    private func parseTextOrArray(_ value: Any?) -> String? {
+        if let s = value as? String {
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t
+        }
+        if let arr = value as? [String] { return arr.first }
+        return nil
+    }
+
+    /// Extracts the author name from a string, Person object, or array of either.
+    private func parseAuthorName(_ value: Any?) -> String? {
+        func fromObj(_ obj: [String: Any]) -> String? { obj["name"] as? String }
+        if let s   = value as? String              { return s.isEmpty ? nil : s }
+        if let obj = value as? [String: Any]       { return fromObj(obj) }
+        if let arr = value as? [Any] {
+            for item in arr {
+                if let s   = item as? String        { if !s.isEmpty   { return s } }
+                if let obj = item as? [String: Any] { if let n = fromObj(obj) { return n } }
+            }
+        }
+        return nil
+    }
+
+    /// Parses `aggregateRating` → (ratingValue, ratingCount).
+    private func parseAggregateRating(_ value: Any?) -> (Double?, Int?) {
+        guard let obj = value as? [String: Any] else { return (nil, nil) }
+        let rv: Double? = {
+            if let d = obj["ratingValue"] as? Double { return d }
+            if let i = obj["ratingValue"] as? Int    { return Double(i) }
+            if let s = obj["ratingValue"] as? String { return Double(s) }
+            return nil
+        }()
+        let rc: Int? = {
+            for key in ["reviewCount", "ratingCount"] {
+                if let i = obj[key] as? Int    { return i }
+                if let s = obj[key] as? String { return Int(s) }
+            }
+            return nil
+        }()
+        return (rv, rc)
+    }
+
+    /// Parses the `keywords` field (comma-separated string or array).
+    private func parseKeywordsList(_ value: Any?) -> [String] {
+        if let s = value as? String {
+            return s.components(separatedBy: ",")
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+        }
+        if let arr = value as? [String] { return arr.filter { !$0.isEmpty } }
+        return []
+    }
+
+    /// Maps Schema.org `suitableForDiet` URLs/strings to human-readable labels.
+    private func parseDietTags(_ value: Any?) -> [String] {
+        let dietMap: [String: String] = [
+            "VeganDiet": "Vegan", "VegetarianDiet": "Vegetarian",
+            "GlutenFreeDiet": "Gluten-Free", "DiabeticDiet": "Diabetic",
+            "HalalDiet": "Halal", "KosherDiet": "Kosher",
+            "LowCalorieDiet": "Low-Calorie", "LowFatDiet": "Low-Fat",
+            "LowLactoseDiet": "Low-Lactose", "LowSaltDiet": "Low-Salt"
+        ]
+        func map(_ raw: String) -> String {
+            let key = raw.components(separatedBy: "/").last ?? raw
+            return dietMap[key] ?? key
+        }
+        if let s   = value as? String  { return [map(s)] }
+        if let arr = value as? [String] { return arr.map(map) }
+        return []
     }
 
     /// Finds all <script type="application/ld+json"> blocks and parses each as JSON.
@@ -923,5 +1148,30 @@ public struct RecipeImportService {
               let den = Double(parts[1]), den != 0
         else { return nil }
         return num / den
+    }
+
+    // MARK: - Local Image Storage
+
+    /// Saves raw JPEG data for a scanned recipe image to the app's Documents directory.
+    /// Returns a `file://` URL string, or nil on failure.
+    /// The caller is responsible for deleting the file when the recipe is deleted.
+    public static func saveImageDataLocally(_ jpegData: Data) -> String? {
+        let filename = "recipe-\(UUID().uuidString).jpg"
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let fileURL = dir.appendingPathComponent(filename)
+        do {
+            try jpegData.write(to: fileURL, options: .atomic)
+            return fileURL.absoluteString
+        } catch {
+            print("⚠️ RecipeImportService: failed to save scanned image — \(error)")
+            return nil
+        }
+    }
+
+    /// Deletes a locally-saved recipe image. Safe to call with remote `https://` URLs (no-op).
+    public static func deleteLocalImage(urlString: String) {
+        guard urlString.hasPrefix("file://"),
+              let url = URL(string: urlString) else { return }
+        try? FileManager.default.removeItem(at: url)
     }
 }

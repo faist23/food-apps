@@ -23,6 +23,13 @@ struct RecipeDetailView: View {
         ("1/2x", 0.5), ("1x", 1.0), ("2x", 2.0), ("3x", 3.0)
     ]
 
+    private func formatMinutes(_ m: Int) -> String {
+        guard m > 0 else { return "" }
+        if m < 60 { return "\(m) min" }
+        let h = m / 60; let r = m % 60
+        return r == 0 ? "\(h) hr" : "\(h) hr \(r) min"
+    }
+
     private var perServing: NutritionCalculator.Result {
         // Website nutrition is the authoritative source — always prefer it when available.
         // Ingredient-level calculation is only a fallback for recipes with no website data.
@@ -72,19 +79,97 @@ struct RecipeDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
 
-                // Source
-                if let domain = recipe.sourceDomain {
-                    // Imported from a website — show domain
-                    Label(domain, systemImage: "link")
+                // Hero photo
+                if let urlStr = recipe.imageURL, let url = URL(string: urlStr) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let img):
+                            img.resizable().scaledToFill()
+                                .frame(maxWidth: .infinity).frame(height: 220)
+                                .clipped()
+                        default:
+                            Color.secondary.opacity(0.08)
+                                .frame(maxWidth: .infinity).frame(height: 220)
+                        }
+                    }
+                }
+
+                // Source + author
+                VStack(alignment: .leading, spacing: 4) {
+                    if let domain = recipe.sourceDomain {
+                        Label(domain, systemImage: "link")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    } else if let src = recipe.sourceURL, !src.isEmpty {
+                        Label(src, systemImage: "book.closed")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                    if let author = recipe.author {
+                        Text("By \(author)")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal)
+
+                // Rating
+                if let rating = recipe.ratingValue {
+                    HStack(spacing: 4) {
+                        Image(systemName: "star.fill").foregroundStyle(.yellow)
+                        Text(String(format: "%.1f", rating)).fontWeight(.semibold)
+                        if let count = recipe.ratingCount {
+                            Text("(\(count.formatted()))")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.subheadline)
+                    .padding(.horizontal)
+                }
+
+                // Time row
+                let times: [(String, Int)] = [
+                    ("Prep", recipe.prepMinutes ?? 0),
+                    ("Cook", recipe.cookMinutes ?? 0),
+                    ("Total", recipe.totalMinutes ?? (recipe.prepMinutes ?? 0) + (recipe.cookMinutes ?? 0))
+                ].filter { $0.1 > 0 }
+                if !times.isEmpty {
+                    HStack(spacing: 0) {
+                        ForEach(Array(times.enumerated()), id: \.offset) { i, pair in
+                            if i > 0 { Divider().frame(height: 32) }
+                            VStack(spacing: 2) {
+                                Text(pair.0).font(.caption).foregroundStyle(.secondary)
+                                Text(formatMinutes(pair.1)).font(.subheadline.bold())
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .padding(.vertical, 10)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal)
+                }
+
+                // Description
+                if let desc = recipe.recipeDescription {
+                    Text(desc)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal)
-                } else if let src = recipe.sourceURL, !src.isEmpty {
-                    // Scanned recipe with a human-readable source (e.g. "Debbie's Kitchen")
-                    Label(src, systemImage: "book.closed")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                }
+
+                // Tags (category, cuisine, diet)
+                let tags: [String] = ([recipe.recipeCategory, recipe.recipeCuisine].compactMap { $0 }
+                    + recipe.dietTags).filter { !$0.isEmpty }
+                if !tags.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(tags, id: \.self) { tag in
+                                Text(tag)
+                                    .font(.caption.weight(.medium))
+                                    .padding(.horizontal, 10).padding(.vertical, 4)
+                                    .background(.tint.opacity(0.12), in: Capsule())
+                                    .foregroundStyle(.tint)
+                            }
+                        }
                         .padding(.horizontal)
+                    }
                 }
 
                 // Scale picker

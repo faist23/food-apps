@@ -189,7 +189,11 @@ struct OCRRecipeImportView: View {
             }
             .navigationDestination(isPresented: $showingTextReview) {
                 if let lines = rawLines {
-                    OCRTextReviewView(rawLines: lines, onSave: { dismiss() })
+                    OCRTextReviewView(
+                        rawLines: lines,
+                        scannedImage: images.first,
+                        onSave: { dismiss() }
+                    )
                 }
             }
         }
