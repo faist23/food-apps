@@ -138,6 +138,31 @@ Files: `LoseItEnrichmentService.swift`, `LoseItEnrichmentView.swift`,
 
 ---
 
+## FoodSearchView — Recipes Tab
+
+`FoodSearchView` has four tabs: **Search**, **My Foods**, **Meals**, **Recipes**.
+
+The Recipes tab loads all `Recipe` objects in `.task` (same async pattern as `allLogs` —
+not `@Query`, to avoid blocking keyboard appearance). It filters by `searchText` in memory.
+
+### Logging a recipe (`findOrCreateRecipeFoodItem`)
+Recipes are logged via a synthetic `FoodItem` in `.perServing` mode:
+- **Source prefix:** `"recipe_<UUID>"` — used to find or update the FoodItem on repeat logs.
+- **Nutrition:** from `recipe.importedNutrition` if present; otherwise calculated from
+  ingredients and divided by `servingsYield`.
+- **Serving:** a single `ServingSize(label: "1 serving", isDefault: true)` with no `gramWeight`.
+- On every log, the FoodItem's nutrition is refreshed in case ingredients changed since last time.
+- `food.recipe = recipe` links back to the source Recipe.
+
+The user picks a serving count (1–20) in `RecipeServingSheet`, then `onFoodAdded` is called
+with an `AddedFoodItem` — same callback as all other tabs, so `FoodLog.create()` runs unchanged.
+
+### Do NOT exclude recipe FoodItems from IngredientSeeder cleanup
+The seeder cleans up `usda_seed_*` prefixed foods. Recipe synthetic foods use `recipe_<UUID>` —
+a completely separate prefix namespace that the seeder never touches.
+
+---
+
 ## Performance Rules
 
 - **`FoodSearchView`** uses `@State private var allLogs` loaded in `.task {}`

@@ -25,13 +25,20 @@ xcodebuild test -project RecipeCard.xcodeproj -scheme RecipeCard \
 ### URL import
 1. User provides a URL → `RecipeImportService.import(url:)` fetches the page
    and parses Schema.org `Recipe` JSON-LD
-2. `fallbackParse(_:)` cleans each raw ingredient string into a searchable term:
+2. `extractSchemaOrgRecipe()` extracts both ingredients **and rich metadata**:
+   - `prepTime` / `cookTime` / `totalTime` → ISO 8601 duration → `prepMinutes` / `cookMinutes` / `totalMinutes`
+   - `image` → `imageURL` (handles `String`, `{url:}` object, or array variants)
+   - `description`, `recipeCategory`, `recipeCuisine`, `author`
+   - `aggregateRating` → `ratingValue` / `ratingCount`
+   - `keywords` → `[String]` (comma-split or array)
+   - `suitableForDiet` → `dietTags`
+3. `fallbackParse(_:)` cleans each raw ingredient string into a searchable term:
    - Strips nested parentheses (3 passes via regex)
    - Strips everything after the first comma
    - Removes prep-note words (`"chopped"`, `"diced"`, `"unsalted"`, `"roasted"`,
      `"jarred"`, `"organic"`, `"grass-fed"`, `"rotisserie"`, etc.)
    - **`"canned"` is NOT stripped** — "canned chicken" is a distinct food item
-3. `RecipeImportReviewView` runs `autoMatch()` then lets user review/save
+4. `RecipeImportReviewView` runs `autoMatch()` then lets user review/save
 
 ### OCR import (scan a physical recipe card)
 Three-screen flow — all in the same `NavigationStack` owned by `OCRRecipeImportView`:
@@ -49,6 +56,13 @@ Three-screen flow — all in the same `NavigationStack` owned by `OCRRecipeImpor
    `service.importFromOCRLines()` and navigates to `RecipeImportReviewView`.
 
 3. **`RecipeImportReviewView`** — standard ingredient match/review/save screen.
+   - Accepts `scannedImage: UIImage?` forwarded from `OCRRecipeImportView`.
+   - Shows `Image(uiImage: scannedImage)` as the photo preview at review time
+     (the file is not yet on disk; `AsyncImage` can't be used here).
+   - `save()` writes the JPEG to Documents via `RecipeImportService.saveImageDataLocally(_:)`
+     and stores the resulting `file://` URL in `recipe.imageURL`.
+   - `save()` writes the source field (which may be auto-filled from `detectedSource`)
+     to `recipe.author` for OCR recipes, unifying both attribution paths.
 
 ### `RecipeImportService.preprocessOCRLines(_:)` — public, two-pass
 Called by `OCRRecipeImportView` before showing lines to the user, and again
@@ -74,11 +88,18 @@ auto-fills the source field if the user left it blank.
 ### OCR Claude prompt — key rules
 - `[N]` line-number prefix on every ingredient (e.g. `"[7] 2 cups sugar"`) —
   code sorts by N after parsing, guaranteeing original card order regardless of
-  how Claude internally reasons.
+  how Claude internally renders.
 - Anti-hallucination: only ingredients explicitly written in OCR lines.
 - Parenthesised quantities `(4)` explained as amounts, not step numbers.
 - Sub-sections (`For top:`, `For frosting:`) included with label prefix.
 - Servings: handles `yield X`, `makes X dozen` (× 12), default = 4.
+- **Timing:** `prepMinutes`, `cookMinutes`, `totalMinutes` extracted only when
+  explicitly written on the card (e.g. "Prep: 15 min", "Bake 350° for 30 min").
+  Never inferred or hallucinated.
+- **Description:** short intro note or tagline before the ingredients, or `null`.
+- **Category:** one of the fixed list ("Dessert", "Bread", "Soup", "Salad",
+  "Appetizer", "Side Dish", "Main Dish", "Breakfast", "Drink", "Snack") inferred
+  from card content; `null` if genuinely ambiguous.
 
 ### Key rule: `MatchedIngredient.editedRawText` and `editedUnit`
 - Always use `editedRawText` (not `parsed.rawString`) for the ingredient's
@@ -238,6 +259,38 @@ send a recipe URL from Safari directly to RecipeCard.
 Do NOT remove `"pendingRecipeURL"` from UserDefaults in `consumePendingRecipeURL()`.
 Only remove it in `ImportRecipeView.onAppear` after it has been read, otherwise a
 race condition causes the URL to disappear before the view loads.
+
+---
+
+## Local Image Storage
+
+`RecipeImportService` provides two static helpers for managing locally-saved recipe photos:
+
+- **`saveImageDataLocally(_ jpegData: Data) -> String?`** — writes a JPEG to the app's
+  Documents directory under a UUID filename; returns a `file://` URL string or `nil` on failure.
+  Accepts raw `Data` (not `UIImage`) so it can live in `BiteLedgerCore` without a UIKit dependency.
+- **`deleteLocalImage(urlString: String)`** — deletes the file at a `file://` URL.
+  No-op for remote `https://` URLs, so it is safe to call unconditionally.
+
+**Key rules:**
+- The photo is written to disk **only inside `save()`** in `RecipeImportReviewView`, not
+  during the review step — zero orphan files if the user cancels.
+- `recipe.imageURL` holds either a remote `https://` URL (URL import) or a `file://` URL
+  (OCR scan or photo added via `RecipeEditorView`). `AsyncImage(url:)` handles both natively.
+- `RecipesListView.deleteRecipes()` calls `deleteLocalImage(urlString:)` before
+  `modelContext.delete(recipe)` to prevent orphaned JPEG files.
+
+## Recipe Photo Editing (`RecipeEditorView`)
+
+The editor supports adding, replacing, or removing the recipe photo:
+
+- **Camera** (`UIImagePickerController` via `EditorCameraPickerView`) and
+  **Library** (`PhotosPicker`) both write the selection to `@State private var pendingImage: UIImage?`.
+- **Remove** button sets both `pendingImage` and `currentImageURL` to `nil`.
+- `save()` resolves the final `recipe.imageURL`:
+  - New photo selected → delete the old local file (if any), save new JPEG, assign URL.
+  - Photo removed → delete the old local file, set `recipe.imageURL = nil`.
+  - No change → leave `currentImageURL` as-is (preserves remote `https://` URLs unchanged).
 
 ---
 
