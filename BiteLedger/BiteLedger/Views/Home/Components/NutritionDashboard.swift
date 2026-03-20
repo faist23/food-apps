@@ -192,8 +192,15 @@ struct MacroBalanceTile: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color("DividerSubtle"), lineWidth: 1)
         )
+        // D-4: VoiceOver — synthesize macro balance summary
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(macroBalanceAccessibilityLabel)
     }
-    
+
+    private var macroBalanceAccessibilityLabel: String {
+        "Macro balance: \(Int(proteinPercent * 100))% protein, \(Int(carbsPercent * 100))% carbs, \(Int(fatPercent * 100))% fat"
+    }
+
     private func macroRow(_ name: String, _ percent: Double, _ color: String) -> some View {
         HStack(spacing: 3) {
             Text(name)
@@ -256,8 +263,32 @@ struct NutritionTile: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color("DividerSubtle"), lineWidth: 1)
         )
+        // D-4: VoiceOver — synthesize meaningful label from nutrient + value + goal
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(nutrientAccessibilityLabel)
     }
-    
+
+    private var nutrientAccessibilityLabel: String {
+        let nutrientName = nutrient.rawValue
+        let valueStr: String
+        if nutrient == .calories {
+            valueStr = "\(Int(value)) calories"
+        } else {
+            valueStr = "\(formattedValue) \(nutrient.unit) \(nutrientName)"
+        }
+        guard let goal else { return valueStr }
+        let pct = goal.targetValue > 0 ? Int((value / goal.targetValue) * 100) : 0
+        switch goal.goalType {
+        case .minimum:
+            return "\(valueStr) of \(Int(goal.targetValue)) \(nutrient.unit) goal — \(pct)% complete"
+        case .maximum:
+            return "\(valueStr) — \(pct)% of \(Int(goal.targetValue)) \(nutrient.unit) limit"
+        case .range:
+            let max = goal.rangeMax ?? goal.targetValue
+            return "\(valueStr) — target \(Int(goal.targetValue))–\(Int(max)) \(nutrient.unit)"
+        }
+    }
+
     private var formattedValue: String {
         if value >= 100 {
             return "\(Int(value))"

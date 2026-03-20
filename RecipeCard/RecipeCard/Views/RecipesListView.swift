@@ -19,11 +19,7 @@ struct RecipesListView: View {
         NavigationStack {
             Group {
                 if recipes.isEmpty {
-                    ContentUnavailableView(
-                        "No Recipes Yet",
-                        systemImage: "fork.knife.circle",
-                        description: Text("Tap + to create your first recipe.")
-                    )
+                    recipeEmptyState
                 } else {
                     List {
                         ForEach(recipes) { recipe in
@@ -37,18 +33,26 @@ struct RecipesListView: View {
             }
             .navigationTitle("Recipes")
             .toolbar {
+                // D-1: Consolidate import actions into ⋯ More menu
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button { showingImport = true } label: {
+                            Label("Import from URL", systemImage: "link.badge.plus")
+                        }
+                        Button { showingOCRImport = true } label: {
+                            Label("Scan Recipe Card", systemImage: "camera.viewfinder")
+                        }
+                        Button { showingNewRecipe = true } label: {
+                            Label("New Recipe", systemImage: "square.and.pencil")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .accessibilityLabel("More options")
+                }
                 ToolbarItem(placement: .primaryAction) {
-                    Button { showingNewRecipe = true } label: { Image(systemName: "plus") }
-                }
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button { showingImport = true } label: {
-                        Label("Import from URL", systemImage: "link.badge.plus")
-                    }
-                }
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button { showingOCRImport = true } label: {
-                        Label("Scan Recipe", systemImage: "camera.viewfinder")
-                    }
+                    Button { showingImport = true } label: { Image(systemName: "plus") }
+                        .accessibilityLabel("Import recipe from URL")
                 }
                 if !recipes.isEmpty {
                     ToolbarItem(placement: .navigationBarLeading) { EditButton() }
@@ -79,6 +83,59 @@ struct RecipesListView: View {
             modelContext.delete(recipe)
         }
     }
+
+    // D-2: Custom empty state with 3 import options
+    private var recipeEmptyState: some View {
+        VStack(spacing: 32) {
+            Spacer()
+
+            Image(systemName: "fork.knife.circle")
+                .font(.system(size: 64))
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 8) {
+                Text("No Recipes Yet")
+                    .font(.title2.bold())
+                Text("Add your first recipe one of three ways:")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            VStack(spacing: 12) {
+                Button {
+                    showingImport = true
+                } label: {
+                    Label("Import from URL", systemImage: "link.badge.plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+                Button {
+                    showingOCRImport = true
+                } label: {
+                    Label("Scan Recipe Card", systemImage: "camera.viewfinder")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+
+                Button {
+                    showingNewRecipe = true
+                } label: {
+                    Label("Create Manually", systemImage: "square.and.pencil")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+            }
+            .padding(.horizontal, 32)
+
+            Spacer()
+            Spacer()
+        }
+    }
 }
 
 private struct RecipeRowView: View {
@@ -96,18 +153,22 @@ private struct RecipeRowView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Thumbnail
-            if let urlStr = recipe.imageURL, let url = URL(string: urlStr) {
-                AsyncImage(url: url) { phase in
-                    if let img = phase.image {
-                        img.resizable().scaledToFill()
-                    } else {
-                        Color.secondary.opacity(0.12)
+            // D-3: Thumbnail — show fork.knife placeholder on SurfaceCard when no image
+            Group {
+                if let urlStr = recipe.imageURL, let url = URL(string: urlStr) {
+                    AsyncImage(url: url) { phase in
+                        if let img = phase.image {
+                            img.resizable().scaledToFill()
+                        } else {
+                            recipeThumbnailPlaceholder
+                        }
                     }
+                } else {
+                    recipeThumbnailPlaceholder
                 }
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
             }
+            .frame(width: 56, height: 56)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(recipe.name).font(.headline)
@@ -126,5 +187,14 @@ private struct RecipeRowView: View {
             }
         }
         .padding(.vertical, 2)
+    }
+
+    private var recipeThumbnailPlaceholder: some View {
+        ZStack {
+            Color("SurfaceCard")
+            Image(systemName: "fork.knife")
+                .font(.system(size: 22))
+                .foregroundStyle(.secondary)
+        }
     }
 }
