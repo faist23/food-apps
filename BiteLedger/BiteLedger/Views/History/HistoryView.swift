@@ -21,6 +21,7 @@ struct HistoryView: View {
     @State private var totalUniqueDaysAllTime = 0
     @State private var selectedTimeRange: TimeRange = .thirtyDays
     @AppStorage("historyExtraNutrients") private var extraNutrientKeys: String = ""
+    @State private var heroNutrient: Nutrient = .calories
 
     // MARK: - Persistence helpers
 
@@ -52,6 +53,8 @@ struct HistoryView: View {
 
                         ScrollView {
                             VStack(spacing: 24) {
+                                rollingAverageHeroCard
+
                                 statsRow
 
                                 if !allLogs.isEmpty {
@@ -446,8 +449,125 @@ struct HistoryView: View {
         }
     }
     
+    // MARK: - Rolling Average Hero Card
+
+    /// Hero card at the top of History — tab picker for Cal/Protein/Carbs/Fat,
+    /// 7-day trailing rolling average line, FDA DV reference (no goal coloring).
+    private var rollingAverageHeroCard: some View {
+        ElevatedCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("7-Day Rolling Average")
+                    .font(.headline)
+                    .foregroundStyle(Color("TextPrimary"))
+
+                Picker("Nutrient", selection: $heroNutrient) {
+                    Text("Cal").tag(Nutrient.calories)
+                    Text("Protein").tag(Nutrient.protein)
+                    Text("Carbs").tag(Nutrient.carbs)
+                    Text("Fat").tag(Nutrient.fat)
+                }
+                .pickerStyle(.segmented)
+
+                let data = heroRollingData
+                if data.isEmpty {
+                    Text("Log some food to see your trend")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .frame(height: 140)
+                } else {
+                    let dv = heroDV
+                    Chart {
+                        ForEach(data, id: \.date) { point in
+                            LineMark(
+                                x: .value("Date", point.date),
+                                y: .value("Average", point.average)
+                            )
+                            .foregroundStyle(Color("BrandAccent"))
+                            .lineStyle(StrokeStyle(lineWidth: 2.5))
+                            .interpolationMethod(.catmullRom)
+                        }
+                        if let dv {
+                            RuleMark(y: .value("FDA DV", dv))
+                                .foregroundStyle(.secondary.opacity(0.4))
+                                .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                        }
+                    }
+                    .frame(height: 140)
+                    .chartXAxis {
+                        AxisMarks(values: .stride(by: .day, count: 7)) { value in
+                            if let date = value.as(Date.self) {
+                                AxisValueLabel {
+                                    Text(date, format: .dateTime.month(.abbreviated).day())
+                                        .font(.caption2)
+                                }
+                            }
+                        }
+                    }
+                    .chartYAxis {
+                        AxisMarks { value in
+                            AxisValueLabel {
+                                if let v = value.as(Double.self) {
+                                    Text(heroNutrient == .calories
+                                         ? "\(Int(v))"
+                                         : "\(Int(v))\(heroNutrient.unit)")
+                                        .font(.caption2)
+                                }
+                            }
+                        }
+                    }
+
+                    HStack(spacing: 16) {
+                        HStack(spacing: 4) {
+                            Rectangle()
+                                .fill(Color("BrandAccent"))
+                                .frame(width: 16, height: 3)
+                            Text("7-Day Avg")
+                                .font(.caption2)
+                                .foregroundStyle(Color("TextSecondary"))
+                        }
+                        if dv != nil {
+                            HStack(spacing: 4) {
+                                Rectangle()
+                                    .fill(Color.secondary.opacity(0.4))
+                                    .frame(width: 16, height: 2)
+                                Text("FDA DV")
+                                    .font(.caption2)
+                                    .foregroundStyle(Color("TextSecondary"))
+                            }
+                        }
+                        Spacer()
+                    }
+                    .padding(.top, 4)
+                }
+            }
+        }
+        .accessibilityLabel("Rolling average chart for \(heroNutrient.rawValue)")
+    }
+
+    /// Last 30 days of logs rolled into a 7-day trailing average for the selected nutrient.
+    private var heroRollingData: [(date: Date, average: Double)] {
+        let calendar = Calendar.current
+        let thirtyDaysAgo = calendar.startOfDay(
+            for: calendar.date(byAdding: .day, value: -30, to: Date()) ?? Date()
+        )
+        let recent = allLogs.filter { $0.timestamp >= thirtyDaysAgo }
+        return NutritionCalculator.rollingAverage(logs: recent, days: 7, nutrient: heroNutrient)
+    }
+
+    /// FDA daily value reference for the hero nutrient (nil = no reference line).
+    private var heroDV: Double? {
+        switch heroNutrient {
+        case .calories: return 2000
+        case .protein:  return 50
+        case .carbs:    return 275
+        case .fat:      return 78
+        default:        return nil
+        }
+    }
+
     // MARK: - Stats Row
-    
+
     private var statsRow: some View {
         HStack(spacing: 12) {
             StatCard(

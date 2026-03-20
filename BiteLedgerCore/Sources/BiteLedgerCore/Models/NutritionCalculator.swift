@@ -325,6 +325,93 @@ public struct NutritionCalculator {
         return total.scaled(by: 1.0 / yield)
     }
 
+    // MARK: - Rolling Average (for trend charts)
+
+    /// Returns (date, rolling average) pairs for a specified nutrient over the last `days`-day
+    /// trailing window. Groups logs by calendar day, sums each day's nutrient, then computes
+    /// a trailing N-day rolling average (using only days with logged data as the denominator).
+    ///
+    /// Only days that have at least one log produce an output point. Zero-log days within
+    /// the window are included in the sum (as 0) but not in the denominator.
+    ///
+    /// - Parameters:
+    ///   - logs:     FoodLog entries to analyse. Caller applies date filtering before passing in.
+    ///   - days:     Rolling window size (default 7).
+    ///   - nutrient: The nutrient to aggregate.
+    /// - Returns: Array sorted by date. Empty if `logs` is empty.
+    public static func rollingAverage(
+        logs: [FoodLog],
+        days: Int = 7,
+        nutrient: Nutrient
+    ) -> [(date: Date, average: Double)] {
+        guard !logs.isEmpty, days > 0 else { return [] }
+        let calendar = Calendar.current
+
+        // Sum the nutrient per calendar day
+        var dailyTotals: [Date: Double] = [:]
+        for log in logs {
+            let day = calendar.startOfDay(for: log.timestamp)
+            dailyTotals[day, default: 0] += nutrientValue(log: log, nutrient: nutrient)
+        }
+        guard !dailyTotals.isEmpty else { return [] }
+
+        // Build a contiguous day array covering the full date range
+        let sortedDays = dailyTotals.keys.sorted()
+        guard let firstDay = sortedDays.first, let lastDay = sortedDays.last else { return [] }
+        var allDays: [Date] = []
+        var cursor = firstDay
+        while cursor <= lastDay {
+            allDays.append(cursor)
+            cursor = calendar.date(byAdding: .day, value: 1, to: cursor) ?? cursor.addingTimeInterval(86400)
+        }
+
+        // Compute trailing N-day average, emitting a point only on days with data
+        var result: [(date: Date, average: Double)] = []
+        for (i, day) in allDays.enumerated() {
+            guard dailyTotals[day] != nil else { continue }
+            let startIdx = max(0, i - (days - 1))
+            let window = allDays[startIdx...i]
+            let sum = window.reduce(0.0) { $0 + (dailyTotals[$1] ?? 0) }
+            let count = window.filter { dailyTotals[$0] != nil }.count
+            guard count > 0 else { continue }
+            result.append((date: day, average: sum / Double(count)))
+        }
+        return result
+    }
+
+    /// Extracts a single nutrient value from a FoodLog's frozen AtLogTime fields.
+    private static func nutrientValue(log: FoodLog, nutrient: Nutrient) -> Double {
+        switch nutrient {
+        case .calories:          return log.caloriesAtLogTime
+        case .protein:           return log.proteinAtLogTime
+        case .carbs:             return log.carbsAtLogTime
+        case .fat:               return log.fatAtLogTime
+        case .fiber:             return log.fiberAtLogTime ?? 0
+        case .sugar:             return log.sugarAtLogTime ?? 0
+        case .saturatedFat:      return log.saturatedFatAtLogTime ?? 0
+        case .transFat:          return log.transFatAtLogTime ?? 0
+        case .monounsaturatedFat: return log.monounsaturatedFatAtLogTime ?? 0
+        case .polyunsaturatedFat: return log.polyunsaturatedFatAtLogTime ?? 0
+        case .sodium:            return log.sodiumAtLogTime ?? 0
+        case .cholesterol:       return log.cholesterolAtLogTime ?? 0
+        case .potassium:         return log.potassiumAtLogTime ?? 0
+        case .calcium:           return log.calciumAtLogTime ?? 0
+        case .iron:              return log.ironAtLogTime ?? 0
+        case .magnesium:         return log.magnesiumAtLogTime ?? 0
+        case .zinc:              return log.zincAtLogTime ?? 0
+        case .vitaminA:          return log.vitaminAAtLogTime ?? 0
+        case .vitaminC:          return log.vitaminCAtLogTime ?? 0
+        case .vitaminD:          return log.vitaminDAtLogTime ?? 0
+        case .vitaminE:          return log.vitaminEAtLogTime ?? 0
+        case .vitaminK:          return log.vitaminKAtLogTime ?? 0
+        case .vitaminB6:         return log.vitaminB6AtLogTime ?? 0
+        case .vitaminB12:        return log.vitaminB12AtLogTime ?? 0
+        case .folate:            return log.folateAtLogTime ?? 0
+        case .choline:           return log.cholineAtLogTime ?? 0
+        case .caffeine:          return log.caffeineAtLogTime ?? 0
+        }
+    }
+
     // MARK: - Private Helpers
 
     /// Converts food + serving + quantity into a gram amount for `calculate(food:gramAmount:)`.
