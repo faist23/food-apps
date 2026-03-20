@@ -21,6 +21,7 @@ struct TodayView: View {
     @State private var showingDatePicker = false
     @State private var currentStreak = 0
     @State private var yesterdayLogs: [FoodLog] = []
+    @AppStorage("firstRunBannerDismissed") private var firstRunBannerDismissed: Bool = false
 
     // MARK: - Computed
 
@@ -47,6 +48,13 @@ struct TodayView: View {
                 
                 ScrollView {
                     VStack(spacing: 16) {
+                        // D-5: First-run banner — shown until dismissed, hidden once any food is logged
+                        if !firstRunBannerDismissed && todayLogs.isEmpty
+                            && (preferences == nil || preferences?.goals.isEmpty == true) {
+                            firstRunBanner
+                                .padding(.horizontal, 20)
+                        }
+
                         NutritionDashboard(
                             logs: todayLogs,
                             preferences: preferences,
@@ -455,6 +463,47 @@ struct TodayView: View {
     }
 
     // MARK: - Meals
+
+    // MARK: - First-Run Banner (D-5)
+
+    private var firstRunBanner: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "leaf.fill")
+                .font(.system(size: 18))
+                .foregroundStyle(Color("BrandPrimary"))
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Welcome to BiteLedger")
+                    .font(.headline)
+                    .foregroundStyle(Color("TextPrimary"))
+                Text("Tap any meal below to log your first food. No judgment — just awareness.")
+                    .font(.subheadline)
+                    .foregroundStyle(Color("TextSecondary"))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    firstRunBannerDismissed = true
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityLabel("Dismiss welcome message")
+        }
+        .padding(14)
+        .background(Color("SurfaceCard"))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color("DividerSubtle"), lineWidth: 1)
+        )
+    }
 
     private var mealSections: some View {
         VStack(spacing: 16) {

@@ -79,20 +79,23 @@ struct RecipeDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
 
-                // Hero photo
-                if let urlStr = recipe.imageURL, let url = URL(string: urlStr) {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let img):
-                            img.resizable().scaledToFill()
-                                .frame(maxWidth: .infinity).frame(height: 220)
-                                .clipped()
-                        default:
-                            Color.secondary.opacity(0.08)
-                                .frame(maxWidth: .infinity).frame(height: 220)
+                // D-8: Hero photo — always show 220pt frame; placeholder when no image
+                Group {
+                    if let urlStr = recipe.imageURL, let url = URL(string: urlStr) {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let img):
+                                img.resizable().scaledToFill()
+                            default:
+                                recipeHeroPlaceholder
+                            }
                         }
+                    } else {
+                        recipeHeroPlaceholder
                     }
                 }
+                .frame(maxWidth: .infinity).frame(height: 220)
+                .clipped()
 
                 // Source + author
                 VStack(alignment: .leading, spacing: 4) {
@@ -142,7 +145,8 @@ struct RecipeDetailView: View {
                         }
                     }
                     .padding(.vertical, 10)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .background(Color("SurfaceCard"), in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color("DividerSubtle"), lineWidth: 1))
                     .padding(.horizontal)
                 }
 
@@ -284,6 +288,23 @@ struct RecipeDetailView: View {
             )
         }
     }
+
+    private var recipeHeroPlaceholder: some View {
+        ZStack {
+            Color("SurfaceCard")
+            VStack(spacing: 8) {
+                Image(systemName: "fork.knife")
+                    .font(.system(size: 40))
+                    .foregroundStyle(.secondary)
+                Text(recipe.name)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+            }
+        }
+    }
 }
 
 private struct NutritionSummaryCard: View {
@@ -306,7 +327,8 @@ private struct NutritionSummaryCard: View {
             }
             .frame(maxWidth: .infinity)
             .padding()
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .background(Color("SurfaceCard"), in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color("DividerSubtle"), lineWidth: 1))
         }
     }
 }
@@ -340,7 +362,7 @@ private struct IngredientRowView: View {
                     let scaleStr = scaleFactor.truncatingRemainder(dividingBy: 1) == 0
                         ? String(Int(scaleFactor)) : String(format: "%.2g", scaleFactor)
                     Text("→ \(s) \(runit) (x\(scaleStr))")
-                        .font(.caption).foregroundColor(.accentColor)
+                        .font(.caption).foregroundStyle(Color("BrandPrimary"))
                 } else if ingredient.rawText != nil, let food = ingredient.foodItem {
                     Text("→ \(food.name)").font(.caption).foregroundStyle(.secondary)
                 } else if ingredient.rawText == nil {
