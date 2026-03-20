@@ -145,7 +145,7 @@ All text uses `.system()` — no custom fonts. The rounded design variant is res
 
 ### RecipeRowView (List row)
 - Thumbnail: 56×56, rounded 8pt
-- Placeholder: `Color.secondary.opacity(0.12)` — **FLAGGED: too invisible, replace with icon placeholder**
+- Placeholder: gradient + `fork.knife` icon centered in `SurfaceCard` fill (shipped D-3)
 - Title: `.headline`
 - Metadata: `.caption` in `.secondary`
 
@@ -165,7 +165,7 @@ Empty states are features — not fallbacks. Every empty state must have:
 | `RecipesListView` (empty) | ContentUnavailableView generic | **Improve: add primary import action** |
 | `RecipeDetailView` (no photo) | Nearly invisible gray | **Icon placeholder with camera affordance** |
 | `RecipeDetailView` (no ingredients) | "No ingredients added yet." plain text | **Icon + action to add first ingredient** |
-| `HistoryView` (no logs) | Unknown — needs check | **Encourage first log** |
+| `HistoryView` (no logs) | "Log some food to see your trend" — no action button (correct per product philosophy) | ✅ Shipped T-01 |
 | `FoodSearchView` (no results) | Unknown — needs check | **"No results for X" + suggest manual entry** |
 
 ---
@@ -237,10 +237,10 @@ Every interactive feature must define all 5 states:
 RecipeCard's `Assets.xcassets` currently has only `AccentColor` and `AppIcon`. To align with BiteLedger:
 
 1. **Add all BiteLedger color tokens** to `RecipeCard/Assets.xcassets` (or reference them from a shared xcassets)
-2. **Replace** `Color.secondary` → `Color("TextSecondary")`
-3. **Replace** `.accentColor` → `Color("BrandAccent")`
-4. **Replace** `.regularMaterial` on cards → `Color("SurfaceCard")`
-5. **Replace** thumbnail placeholder `Color.secondary.opacity(0.12)` → icon placeholder
+2. ✅ **Shipped D-6** — `Color.secondary` → `Color("TextSecondary")` applied throughout
+3. ✅ **Shipped D-6** — `.accentColor` → `Color("BrandAccent")` applied throughout
+4. ✅ **Shipped D-6** — `.regularMaterial` on cards → `Color("SurfaceCard")` applied throughout
+5. ✅ **Shipped D-3** — thumbnail placeholder `Color.secondary.opacity(0.12)` → gradient + fork-knife icon
 
 ---
 

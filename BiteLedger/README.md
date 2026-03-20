@@ -6,7 +6,8 @@ A privacy-first food tracking app for iOS.
 
 - 📱 Barcode scanning (always free)
 - 🔒 All data stays on your device
-- 📊 HealthKit integration
+- 📈 7-day rolling average history chart
+- 📤 Weekly recap share card
 - 🎯 No account required
 - 💪 Comprehensive nutrition tracking
 
@@ -16,7 +17,7 @@ A privacy-first food tracking app for iOS.
 - SwiftData
 - HealthKit
 - Open Food Facts API
-- iOS 18.3+
+- iOS 26.0+
 
 ## Privacy
 
