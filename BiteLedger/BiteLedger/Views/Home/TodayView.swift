@@ -22,6 +22,7 @@ struct TodayView: View {
     @State private var currentStreak = 0
     @State private var yesterdayLogs: [FoodLog] = []
     @AppStorage("firstRunBannerDismissed") private var firstRunBannerDismissed: Bool = false
+    @State private var streakMilestoneToast: Int?  // T-03
 
     // MARK: - Computed
 
@@ -94,7 +95,20 @@ struct TodayView: View {
                 loadPreferences()  // must run before loadStreak so cache is available
                 loadStreak()
             }
+            .onChange(of: currentStreak) { _, newStreak in
+                checkStreakMilestone(newStreak)
+            }
         }
+        .overlay(alignment: .top) {
+            // T-03: Streak milestone toast — auto-dismisses after 2 seconds
+            if let milestone = streakMilestoneToast {
+                StreakMilestoneToast(days: milestone)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .padding(.top, 12)
+                    .zIndex(999)
+            }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: streakMilestoneToast)
         .sheet(item: $selectedMeal) { meal in
             FoodSearchView(mealType: meal) { addedItem in
                 let timestamp: Date
@@ -295,6 +309,24 @@ struct TodayView: View {
         }
     }
     
+    // T-03: Check if the new streak value hits a milestone that hasn't been celebrated yet.
+    private func checkStreakMilestone(_ streak: Int) {
+        let milestones = [3, 7, 14, 30, 60, 100]
+        guard let milestone = milestones.last(where: { streak >= $0 }) else { return }
+        let alreadyCelebrated = preferences?.lastCelebratedMilestone ?? 0
+        guard milestone > alreadyCelebrated else { return }
+
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        withAnimation { streakMilestoneToast = milestone }
+        preferences?.lastCelebratedMilestone = milestone
+        try? modelContext.save()
+
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation { streakMilestoneToast = nil }
+        }
+    }
+
     private func loadPreferences() {
         let descriptor = FetchDescriptor<UserPreferences>()
         do {
@@ -555,6 +587,29 @@ struct TodayView: View {
         }
         
         return formatter.string(from: selectedDate)
+    }
+}
+
+// MARK: - T-03: Streak Milestone Toast
+
+private struct StreakMilestoneToast: View {
+    let days: Int
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "flame.fill")
+                .foregroundStyle(.orange)
+            Text("\(days) day streak! Keep it going")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color("TextPrimary"))
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(
+            Capsule().fill(Color("SurfaceElevated"))
+                .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
+        )
+        .accessibilityLabel("\(days) day logging streak milestone")
     }
 }
 

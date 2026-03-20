@@ -2,6 +2,17 @@ import SwiftUI
 import SwiftData
 import BiteLedgerCore
 
+/// Returns true if `text` contains `query` as a contiguous phrase OR contains
+/// every whitespace-separated word in `query` (any order). Trims trailing spaces.
+/// Used by My Foods, Meals, and Recipes tab filters for consistent local search.
+private func matchesQuery(_ text: String, query: String) -> Bool {
+    let t = text.lowercased()
+    let q = query.lowercased().trimmingCharacters(in: .whitespaces)
+    guard !q.isEmpty else { return true }
+    if t.contains(q) { return true }
+    return q.split(separator: " ").allSatisfy { t.contains($0) }
+}
+
 /// Unified food search view - handles barcode, search, and manual entry
 struct FoodSearchView: View {
     @Environment(\.dismiss) private var dismiss
@@ -589,7 +600,7 @@ struct FoodSearchView: View {
 
     private var filteredRecipes: [Recipe] {
         guard !searchText.isEmpty else { return allRecipes }
-        return allRecipes.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        return allRecipes.filter { matchesQuery($0.name, query: searchText) }
     }
 
     @ViewBuilder
@@ -733,7 +744,10 @@ struct FoodSearchView: View {
         }
 
         let filtered = searchText.isEmpty ? sorted : sorted.filter { meal in
-            meal.logs.contains { $0.foodItem?.name.localizedCaseInsensitiveContains(searchText) ?? false }
+            meal.logs.contains { log in
+                guard let name = log.foodItem?.name else { return false }
+                return matchesQuery(name, query: searchText)
+            }
         }
 
         // Cap at 60 meal groups to keep the list fast to render
@@ -1533,10 +1547,8 @@ struct MyFoodsListView: View {
         
         let filteredFoods = uniqueFoods.filter { food in
             if searchText.isEmpty { return true }
-            let name = food.name.lowercased()
-            let brand = food.brand?.lowercased() ?? ""
-            let combinedText = "\(name) \(brand)"
-            return combinedText.contains(searchText.lowercased())
+            let combined = "\(food.name) \(food.brand ?? "")"
+            return matchesQuery(combined, query: searchText)
         }
         return filteredFoods.sorted { $0.name < $1.name }
     }
@@ -1679,6 +1691,11 @@ struct RecentFoodsForMealView: View {
     let mealType: MealType
     let onFoodSelected: (FoodItem) -> Void
 
+    /// Number of distinct calendar days with at least one log entry.
+    private var distinctLogDays: Int {
+        Set(allLogs.map { Calendar.current.startOfDay(for: $0.timestamp) }).count
+    }
+
     private var lastUsedDates: [UUID: Date] {
         var result: [UUID: Date] = [:]
         for log in allLogs {
@@ -1688,47 +1705,38 @@ struct RecentFoodsForMealView: View {
         return result
     }
 
+    /// Top 8 most-frequently logged foods for this meal type, excluding foods
+    /// already logged today. Only populated after 3+ distinct log days.
     private var recentFoods: [FoodItem] {
-        // Get all logs for this meal type
-        let mealLogs = allLogs.filter { $0.mealType == mealType }
-        
-        // Get food items already logged today for this meal
+        guard distinctLogDays >= 3 else { return [] }
+
         let todaysFoodIDs = Set(
             allLogs
                 .filter { Calendar.current.isDate($0.timestamp, inSameDayAs: Date()) && $0.mealType == mealType }
                 .compactMap { $0.foodItem?.id }
         )
-        
-        // Get unique food items, excluding today's foods
-        var seenFoodIDs = Set<UUID>()
-        var uniqueFoods: [FoodItem] = []
-        
-        for log in mealLogs {
-            guard let foodItem = log.foodItem else { continue }
-            
-            // Skip if already logged today
-            if todaysFoodIDs.contains(foodItem.id) { continue }
-            
-            // Skip if we've already added this food
-            if seenFoodIDs.contains(foodItem.id) { continue }
-            
-            seenFoodIDs.insert(foodItem.id)
-            uniqueFoods.append(foodItem)
-            
-            // Stop at 10 items
-            if uniqueFoods.count >= 10 { break }
+
+        // Count frequency per food within this meal type
+        var freq: [UUID: (food: FoodItem, count: Int)] = [:]
+        for log in allLogs where log.mealType == mealType {
+            guard let food = log.foodItem else { continue }
+            freq[food.id] = (food, (freq[food.id]?.count ?? 0) + 1)
         }
-        
-        return uniqueFoods
+
+        return freq.values
+            .filter { !todaysFoodIDs.contains($0.food.id) }
+            .sorted { $0.count > $1.count }
+            .prefix(8)
+            .map { $0.food }
     }
-    
+
     var body: some View {
         Group {
             if recentFoods.isEmpty {
                 ContentUnavailableView {
-                    Label("No Recent Foods", systemImage: "clock")
+                    Label("Search for Food", systemImage: "magnifyingglass")
                 } description: {
-                    Text("Foods you've added to \(mealType.rawValue.lowercased()) will appear here")
+                    Text("Type to search 900,000+ foods, scan a barcode, or add manually")
                 }
             } else {
                 ScrollView {
@@ -1738,7 +1746,7 @@ struct RecentFoodsForMealView: View {
                             .foregroundStyle(.secondary)
                             .padding(.horizontal)
                             .padding(.top, 8)
-                        
+
                         LazyVStack(spacing: 8) {
                             ForEach(recentFoods, id: \.id) { foodItem in
                                 FoodItemRow(foodItem: foodItem, lastUsed: lastUsedDates[foodItem.id], onTap: {

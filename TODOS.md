@@ -32,15 +32,6 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ## Engineering Decisions (from /plan-eng-review)
 
-### E-5: Fix O(n²) cleanUpDuplicates in SettingsView
-**What:** `SettingsView.cleanUpDuplicates()` fetches all FoodLogs inside a loop over duplicate food groups. With 50 duplicate groups × 5,000 logs = 250,000 DB scans.
-**Why:** This operation is run by users after LoseIt import, which is exactly when they have the most data. Performance degrades quadratically.
-**Pros:** Fetch once, build `[UUID: [FoodLog]]` dictionary, O(n) lookup. Trivial change.
-**Cons:** None.
-**Context:** `SettingsView.swift` line 506 — `let logDescriptor = FetchDescriptor<FoodLog>()` is inside the `for (_, duplicates) in groupedByBarcode where duplicates.count > 1` loop. Move it above the loop.
-**Effort:** XS (human: ~30 min / CC: ~5 min) | **Priority:** P2
-
----
 
 ## P1 — Ship-Quality
 
@@ -56,44 +47,8 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ---
 
-### T-02: Quick-Add Recent/Frequent Foods
-**What:** "Recent" section at the top of FoodSearchView (Search tab) showing the user's most-logged foods.
-**Why:** Daily users always log the same 10–15 foods. Currently they search from scratch every time. A recents section would make repeat-logging take 2 taps instead of 5.
-**Pros:** `allLogs` is already loaded in `.task {}` — the data is in memory. Group by `foodItem.id`, sort by frequency descending, show top 8. Zero API calls.
-**Cons:** Only useful after the user has some history — show after 3+ distinct log days.
-**Context:** `FoodSearchView` has `@State private var allLogs: [FoodLog]` loaded on appear. Derive `recentFoods: [FoodItem]` from allLogs grouped by food, sorted by count. Show as a horizontal scroll strip or inline list above search results when search text is empty.
-**Effort:** S (human: ~4 hr / CC: ~10 min)
-**Priority:** P1
-**Depends on:** None
-
----
 
 ## P2 — Retention & Polish
-
-### T-03: Streak Milestone Celebrations
-**What:** Haptic feedback + ephemeral banner when user hits 7, 30, 100-day logging streak.
-**Why:** The streak counter is the strongest retention mechanic in the app. Without milestones, hitting day 30 feels identical to hitting day 3.
-**Pros:** `currentStreak` is already computed in TodayView on each load. On change from N-1 to N where N is a milestone (7, 30, 100): fire `UIImpactFeedbackGenerator` + show a 2-second overlay banner ("30 day streak! Keep it going 🎯").
-**Cons:** Requires storing `lastCelebratedMilestone` in UserPreferences to avoid re-celebrating on reopen. Minor schema touch.
-**Context:** `loadStreak()` in TodayView already sets `currentStreak`. Add a `didSet` observer or compare after loading. Milestones: 3, 7, 14, 30, 60, 100.
-**Effort:** S (human: ~4 hr / CC: ~10 min)
-**Priority:** P2
-**Depends on:** None
-
----
-
-
-### T-05: NutritionTile VoiceOver Accessibility
-**What:** Add `.accessibilityLabel` and `.accessibilityValue` to NutritionTile and MacroBalanceTile.
-**Why:** Currently VoiceOver reads "CALORIES 842" with no goal context. A user tracking with accessibility needs hears no indication of whether they're on track.
-**Pros:** App Store accessibility compliance. Inclusive product. ~5 lines of code.
-**Cons:** None — pure upside.
-**Context:** NutritionTile already has `goal: NutrientGoal?` and `value: Double`. Synthesize: "Calories: 842 of 2000 calorie goal — 42% complete" or "Sodium: 1450 milligrams, approaching 2300 milligram limit — 63% of limit." MacroBalanceTile: "Macro balance: 35% protein, 40% carbs, 25% fat."
-**Effort:** S (human: ~1 hr / CC: ~5 min)
-**Priority:** P2 (required before App Store submission)
-**Depends on:** None
-
----
 
 ## P3 — Future
 
@@ -191,5 +146,15 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 - **T-01: 7-Day Rolling Average History View** — Hero chart in HistoryView with Catmull-Rom line, FDA DV reference, nutrient tab picker, graceful empty state. **Completed:** v0.1.0.0 (2026-03-20)
 
 - **NEW-1: Weekly Logging Recap Share Card** — Shareable `ImageRenderer` card with days-logged, avg calories, streak. Available from HistoryView toolbar. **Completed:** v0.1.0.0 (2026-03-20)
+
+- **E-5: Fix O(n²) cleanUpDuplicates** — Already fixed prior to this session. Single fetch + `[UUID: [FoodLog]]` dictionary replaces per-group DB scans. **Completed:** pre-v0.1.0.0
+
+- **T-03: Streak Milestone Celebrations** — `lastCelebratedMilestone: Int?` added to `UserPreferences`. `.onChange(of: currentStreak)` calls `checkStreakMilestone()` in TodayView; milestones [3,7,14,30,60,100] trigger haptic + `StreakMilestoneToast` overlay (2s auto-dismiss). **Completed:** 2026-03-20
+
+- **T-05: NutritionTile VoiceOver Accessibility** — Already implemented prior to this session. Both `NutritionTile` and `MacroBalanceTile` have `.accessibilityElement(children: .ignore)` + synthesized labels with goal context. **Completed:** pre-v0.1.0.0
+
+- **T-02: Quick-Add Recent/Frequent Foods** — Top 8 most-frequently logged foods per meal type shown when search is empty (after 3+ distinct log days). Frequency sort, excludes already-logged-today foods. **Completed:** 2026-03-20
+
+- **Local Search Word-Order Fix** — `matchesQuery()` free function in `FoodSearchView.swift` replaces bare `contains` in My Foods, Meals, and Recipes tab filters. Matches exact phrase first, then falls back to all words present in any order. "margherita pizza" now finds "pizza, margherita". **Completed:** 2026-03-20
 
 - **T-04: Schema Migration (VersionedSchema)** — `BiteLedgerMigrationPlan` + `RecipeCardMigrationPlan` active; both apps use `Schema(versionedSchema:)` + `migrationPlan:` in `ModelContainer`. `BiteLedgerSchema.swift` and `RecipeCardSchema.swift` are the single sources of truth for version history. **Completed:** v0.1.0.0 (2026-03-20)

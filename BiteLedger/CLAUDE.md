@@ -138,12 +138,27 @@ Files: `LoseItEnrichmentService.swift`, `LoseItEnrichmentView.swift`,
 
 ---
 
+## FoodSearchView — Local Search Algorithm (Do Not Regress)
+
+My Foods, Meals, and Recipes tabs filter in memory via `matchesQuery(_:query:)` (free
+function at the top of `FoodSearchView.swift`):
+
+1. **Exact phrase** — `text.contains(query)` fast path
+2. **All words, any order** — `query.split(separator: " ").allSatisfy { text.contains($0) }`
+
+This means "margherita pizza" correctly finds "pizza, margherita". Do not replace with a
+bare `contains` or `localizedCaseInsensitiveContains` — that regresses to phrase-only matching.
+
+The Search tab's My Foods sub-search (inside `searchMyFoods`) already used word-split
+independently and is correct as-is.
+
 ## FoodSearchView — Recipes Tab
 
 `FoodSearchView` has four tabs: **Search**, **My Foods**, **Meals**, **Recipes**.
 
 The Recipes tab loads all `Recipe` objects in `.task` (same async pattern as `allLogs` —
-not `@Query`, to avoid blocking keyboard appearance). It filters by `searchText` in memory.
+not `@Query`, to avoid blocking keyboard appearance). It filters by `searchText` in memory
+via `matchesQuery`.
 
 ### Logging a recipe (`findOrCreateRecipeFoodItem`)
 Recipes are logged via a synthetic `FoodItem` in `.perServing` mode:

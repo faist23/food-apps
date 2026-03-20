@@ -27,6 +27,9 @@ public class UserPreferences {
     // NEW-1: Weekly share card — tracks which ISO week the last card was generated
     public var lastShareCardGeneratedWeek: Date?
 
+    // T-03: Streak milestone celebrations — highest milestone already celebrated
+    public var lastCelebratedMilestone: Int?
+
     public init(pinnedNutrient: String? = nil, goalsData: Data? = nil, showMacroBalanceTile: Bool? = nil) {
         self.pinnedNutrient = pinnedNutrient
         self.goalsData = goalsData
