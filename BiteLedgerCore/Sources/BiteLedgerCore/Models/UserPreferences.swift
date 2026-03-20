@@ -114,7 +114,7 @@ public enum Nutrient: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .calories:
             return "cal"
-        case .sodium, .potassium, .calcium, .vitaminC, .vitaminD, .iron, .magnesium, .zinc, .caffeine:
+        case .sodium, .potassium, .calcium, .vitaminC, .vitaminD, .iron, .magnesium, .zinc, .caffeine, .cholesterol:
             return "mg"
         case .vitaminA, .vitaminK, .folate, .vitaminB12:
             return "mcg"

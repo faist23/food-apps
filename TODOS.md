@@ -82,17 +82,6 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ---
 
-### T-04: Schema Migration (VersionedSchema) — PRE-SHIP BLOCKER
-**What:** Replace the current delete-and-recreate store strategy with VersionedSchema + SchemaMigrationPlan.
-**Why:** Currently, any schema change destroys the user's data. Cannot ship to the App Store with this pattern. This is a one-way door — must be done before any user has data.
-**Pros:** Data safe across app updates. Enables schema evolution without data loss.
-**Cons:** SwiftData migration plan syntax is somewhat verbose. Must be coordinated across both apps (same schema version = same migration plan in both BiteLedger and RecipeCard).
-**Context:** See workspace CLAUDE.md "Schema Migration Policy" section. Both apps must ship the migration in the same release. Follow non-destructive pattern: add nullable fields, migrate data forward, never drop.
-**Effort:** L (human: ~1 week / CC: ~1 hr)
-**Priority:** P1 (blocks App Store submission)
-**Depends on:** Nothing — must be done before any other schema-touching feature
-
----
 
 ### T-05: NutritionTile VoiceOver Accessibility
 **What:** Add `.accessibilityLabel` and `.accessibilityValue` to NutritionTile and MacroBalanceTile.
@@ -202,3 +191,5 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 - **T-01: 7-Day Rolling Average History View** — Hero chart in HistoryView with Catmull-Rom line, FDA DV reference, nutrient tab picker, graceful empty state. **Completed:** v0.1.0.0 (2026-03-20)
 
 - **NEW-1: Weekly Logging Recap Share Card** — Shareable `ImageRenderer` card with days-logged, avg calories, streak. Available from HistoryView toolbar. **Completed:** v0.1.0.0 (2026-03-20)
+
+- **T-04: Schema Migration (VersionedSchema)** — `BiteLedgerMigrationPlan` + `RecipeCardMigrationPlan` active; both apps use `Schema(versionedSchema:)` + `migrationPlan:` in `ModelContainer`. `BiteLedgerSchema.swift` and `RecipeCardSchema.swift` are the single sources of truth for version history. **Completed:** v0.1.0.0 (2026-03-20)

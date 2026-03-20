@@ -80,19 +80,8 @@ struct RecipeDetailView: View {
             VStack(alignment: .leading, spacing: 20) {
 
                 // D-8: Hero photo — always show 220pt frame; placeholder when no image
-                Group {
-                    if let urlStr = recipe.imageURL, let url = URL(string: urlStr) {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .success(let img):
-                                img.resizable().scaledToFill()
-                            default:
-                                recipeHeroPlaceholder
-                            }
-                        }
-                    } else {
-                        recipeHeroPlaceholder
-                    }
+                RecipePhotoView(urlString: recipe.imageURL, contentMode: .fill) {
+                    recipeHeroPlaceholder
                 }
                 .frame(maxWidth: .infinity).frame(height: 220)
                 .clipped()

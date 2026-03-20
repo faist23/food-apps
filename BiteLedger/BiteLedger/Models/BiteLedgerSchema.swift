@@ -4,45 +4,39 @@
 //
 //  Defines the versioned SwiftData schema history and migration plan.
 //
-//  ## Why there is no active migration plan yet
+//  ## Adding a new schema version
 //
-//  SwiftData's MigrationStage.custom requires each VersionedSchema to produce
-//  a DISTINCT schema fingerprint. That only works when old schema versions are
-//  defined as FROZEN nested model types inside their schema enum (like Core Data
-//  NSManagedObject subclasses per version). If both SchemaV1 and SchemaV2
-//  reference the same live Swift model types, SwiftData sees identical fingerprints
-//  and throws "current model reference and next model reference cannot be equal."
+//  For LIGHTWEIGHT changes (nullable field additions, removing properties):
+//    1. Define a new BiteLedgerSchemaVN enum with the same live model types
+//       and a bumped versionIdentifier.
+//    2. Add a MigrationStage.lightweight(fromVersion:toVersion:) stage to
+//       BiteLedgerMigrationPlan.stages.
+//    3. Append the new version to BiteLedgerMigrationPlan.schemas.
+//    4. Do the same in RecipeCardSchema.swift (coordinated release required).
 //
-//  Adding `unit: String?` (an optional with a nil default) is a lightweight
-//  migration that SwiftData handles automatically at the SQLite level — it just
-//  adds a nullable column. No explicit migration plan is needed for this change.
-//  Existing records get `unit = nil`; the startup backfill in BiteLedgerApp.swift
-//  then populates them using ServingSizeParser.
-//
-//  ## When to add a real migration plan
-//
-//  Use VersionedSchema + SchemaMigrationPlan when a future change CANNOT be
-//  handled automatically:
-//    - Renaming a stored property
-//    - Changing a property type (e.g. String → Int)
-//    - Splitting or merging model types
-//    - Adding a required (non-optional) property with a non-nil default
-//
-//  For those cases, define frozen nested model types inside the old schema enum
-//  (separate Swift classes mirroring the old model structure), then reference
-//  those frozen types in the fromVersion schema and the live types in toVersion.
-//  Wire BiteLedgerMigrationPlan back into ModelContainer at that point.
+//  For BREAKING changes (rename, type change, required field with non-nil default):
+//    1. Add FROZEN nested model types inside the old schema enum — separate
+//       @Model classes that mirror the old structure exactly.
+//    2. Reference the frozen types in the fromVersion schema and the live types
+//       in the toVersion schema (gives SwiftData distinct fingerprints).
+//    3. Use MigrationStage.custom(fromVersion:toVersion:willMigrate:didMigrate:)
+//       to transform data.
+//    4. Coordinate both apps — both must ship the migration in the same release.
 //
 
 import SwiftData
 import BiteLedgerCore
 
-// MARK: - SchemaV1 (current)
+// MARK: - SchemaV1 (baseline — shipping v1.0)
 //
-// Lists all 9 live model types in canonical order (must match RecipeCardApp.swift).
-// Used as the baseline for any future SchemaMigrationPlan.
-// Nullable field additions (Bool?, Date?) are handled automatically by SwiftData —
-// no explicit migration stage needed; just define SchemaV2 with the same models.
+// Lists all 9 live model types in canonical order.
+// Must match RecipeCardSchema.swift exactly.
+//
+// Includes all fields present at v1.0 launch:
+//   - ServingSize.unit (String?) — auto-migrated, nullable
+//   - UserPreferences.lastShareCardGeneratedWeek (Date?) — auto-migrated, nullable
+//   All nullable field additions are handled automatically by SwiftData
+//   (no explicit migration stage required).
 //
 enum BiteLedgerSchemaV1: VersionedSchema {
     static let versionIdentifier = Schema.Version(1, 0, 0)
@@ -61,9 +55,14 @@ enum BiteLedgerSchemaV1: VersionedSchema {
     }
 }
 
-// MARK: - Future migration plan (uncomment when a breaking schema change is needed)
+// MARK: - Migration plan (active)
 //
-// enum BiteLedgerMigrationPlan: SchemaMigrationPlan {
-//     static var schemas: [any VersionedSchema.Type] { [BiteLedgerSchemaV1.self] }
-//     static var stages: [MigrationStage] { [] }
-// }
+// Wired into ModelContainer in BiteLedgerApp.loadContainer().
+// Add new schema versions and stages here as the app evolves.
+//
+enum BiteLedgerMigrationPlan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] {
+        [BiteLedgerSchemaV1.self]
+    }
+    static var stages: [MigrationStage] { [] }
+}

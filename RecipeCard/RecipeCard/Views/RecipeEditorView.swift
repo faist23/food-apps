@@ -65,10 +65,9 @@ struct RecipeEditorView: View {
                         if let img = pendingImage {
                             Image(uiImage: img)
                                 .resizable().scaledToFill()
-                        } else if let urlStr = currentImageURL, let url = URL(string: urlStr) {
-                            AsyncImage(url: url) { phase in
-                                if let img = phase.image { img.resizable().scaledToFill() }
-                                else { Color.secondary.opacity(0.1) }
+                        } else if currentImageURL != nil {
+                            RecipePhotoView(urlString: currentImageURL, contentMode: .fill) {
+                                Color.secondary.opacity(0.1)
                             }
                         } else {
                             ZStack {
@@ -236,7 +235,7 @@ struct RecipeEditorView: View {
         if let newImage = pendingImage {
             if let old = existingRecipe?.imageURL { RecipeImportService.deleteLocalImage(urlString: old) }
             let data = newImage.jpegData(compressionQuality: 0.82)
-            resolvedImageURL = data.flatMap { RecipeImportService.saveImageDataLocally($0) }
+            resolvedImageURL = data.flatMap { RecipeImportService.saveImageDataLocally($0, appGroupIdentifier: "group.com.ridepro.biteledger") }
         } else if currentImageURL == nil, let old = existingRecipe?.imageURL {
             // User cleared the photo
             RecipeImportService.deleteLocalImage(urlString: old)

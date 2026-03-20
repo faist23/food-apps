@@ -72,18 +72,6 @@ struct BiteLedgerApp: App {
 
     @MainActor
     private func loadContainer() {
-        // Canonical schema order — must match RecipeCardApp.swift exactly.
-        let schema = Schema([
-            FoodItem.self,
-            ServingSize.self,
-            FoodLog.self,
-            UserPreferences.self,
-            Recipe.self,
-            RecipeIngredient.self,
-            CanonicalFood.self,
-            ServingConversion.self,
-            FallbackSource.self,
-        ])
         let groupID = "group.com.ridepro.biteledger"
         guard let containerURL = FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: groupID) else {
@@ -92,8 +80,9 @@ struct BiteLedgerApp: App {
         }
         let storeURL = containerURL.appendingPathComponent("biteledger.store")
         do {
+            let schema = Schema(versionedSchema: BiteLedgerSchemaV1.self)
             let config = ModelConfiguration(schema: schema, url: storeURL, cloudKitDatabase: .none)
-            modelContainer = try ModelContainer(for: schema, configurations: [config])
+            modelContainer = try ModelContainer(for: schema, migrationPlan: BiteLedgerMigrationPlan.self, configurations: [config])
         } catch {
             storeError = error
         }

@@ -54,13 +54,20 @@ fail to open on whichever app launches second.
 
 ### Schema Migration Policy (Critical — Read Before Any Schema Change)
 
-**Current state:** both apps handle schema mismatches by deleting and recreating
-the store. Acceptable during development with no external users. Must be replaced
-before shipping.
+**Current state:** both apps use `VersionedSchema` + `SchemaMigrationPlan`
+(`BiteLedgerMigrationPlan` / `RecipeCardMigrationPlan`), wired into
+`ModelContainer` via the `migrationPlan:` parameter. Schema V1 is the shipping
+baseline. Data is never deleted on mismatch — an error screen + Retry is shown
+instead.
 
 **Required for all future schema changes:**
-- Use `VersionedSchema` and `SchemaMigrationPlan` — never delete and recreate the store
-- Every change needs a new schema version + migration stage
+- **Lightweight changes** (nullable field additions, removing properties): define a
+  new `BiteLedgerSchemaVN` enum (same live model types, bumped version), add a
+  `MigrationStage.lightweight(fromVersion:toVersion:)` stage, append the new
+  version to `schemas`. Mirror in `RecipeCardSchema.swift`.
+- **Breaking changes** (rename, type change, required field with non-nil default):
+  define FROZEN nested `@Model` types inside the old schema enum so SwiftData sees
+  distinct fingerprints; use `MigrationStage.custom` with a data transform.
 - Migrations must be non-destructive: add nullable fields, migrate data forward,
   never drop columns with live data
 - Both apps must ship the migration in the same release

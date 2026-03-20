@@ -1152,12 +1152,21 @@ public struct RecipeImportService {
 
     // MARK: - Local Image Storage
 
-    /// Saves raw JPEG data for a scanned recipe image to the app's Documents directory.
+    /// Saves raw JPEG data for a recipe image.
+    /// Prefers the App Group container (stable path across simulator rebuilds) when
+    /// `appGroupIdentifier` is provided; falls back to the app's own Documents directory.
     /// Returns a `file://` URL string, or nil on failure.
     /// The caller is responsible for deleting the file when the recipe is deleted.
-    public static func saveImageDataLocally(_ jpegData: Data) -> String? {
+    public static func saveImageDataLocally(_ jpegData: Data,
+                                            appGroupIdentifier: String? = nil) -> String? {
         let filename = "recipe-\(UUID().uuidString).jpg"
-        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dir: URL
+        if let groupID = appGroupIdentifier,
+           let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID) {
+            dir = groupURL
+        } else {
+            dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        }
         let fileURL = dir.appendingPathComponent(filename)
         do {
             try jpegData.write(to: fileURL, options: .atomic)

@@ -203,6 +203,7 @@ struct FoodSearchView: View {
                     mealType: mealType
                 ) { addedItem in
                     onFoodAdded(addedItem)
+                    refreshLogs()
                     dismiss()
                 }
             }
@@ -234,6 +235,7 @@ struct FoodSearchView: View {
                     initialUnit: context.initialUnit
                 ) { addedItem in
                     onFoodAdded(addedItem)
+                    refreshLogs()
                     selectedProductContext = nil
                     dismiss()
                 }
@@ -241,6 +243,7 @@ struct FoodSearchView: View {
             .sheet(isPresented: $showManualEntry) {
                 ManualFoodEntryView(mealType: mealType) { addedItem in
                     onFoodAdded(addedItem)
+                    refreshLogs()
                     dismiss()
                 }
             }
@@ -655,6 +658,7 @@ struct FoodSearchView: View {
             loggedUnit: servingCount == 1 ? "serving" : "servings"
         )
         onFoodAdded(addedItem)
+        refreshLogs()
         dismiss()
     }
 
@@ -833,6 +837,7 @@ struct FoodSearchView: View {
                             onFoodAdded(addedItem)
                         }
                     }
+                    refreshLogs()
                     dismiss()
                 }
             )
@@ -964,7 +969,14 @@ struct FoodSearchView: View {
         )
         
         onFoodAdded(addedItem)
+        refreshLogs()
         dismiss()
+    }
+
+    private func refreshLogs() {
+        var d = FetchDescriptor<FoodLog>(sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)])
+        d.fetchLimit = 1000
+        allLogs = (try? modelContext.fetch(d)) ?? []
     }
 
     private func searchMyFoods(query: String) -> [ProductInfo] {

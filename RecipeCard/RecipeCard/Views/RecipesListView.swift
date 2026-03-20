@@ -154,18 +154,8 @@ private struct RecipeRowView: View {
     var body: some View {
         HStack(spacing: 12) {
             // D-3: Thumbnail — show fork.knife placeholder on SurfaceCard when no image
-            Group {
-                if let urlStr = recipe.imageURL, let url = URL(string: urlStr) {
-                    AsyncImage(url: url) { phase in
-                        if let img = phase.image {
-                            img.resizable().scaledToFill()
-                        } else {
-                            recipeThumbnailPlaceholder
-                        }
-                    }
-                } else {
-                    recipeThumbnailPlaceholder
-                }
+            RecipePhotoView(urlString: recipe.imageURL, contentMode: .fill) {
+                recipeThumbnailPlaceholder
             }
             .frame(width: 56, height: 56)
             .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -195,6 +185,40 @@ private struct RecipeRowView: View {
             Image(systemName: "fork.knife")
                 .font(.system(size: 22))
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Loads a recipe photo from either a remote https:// URL (via AsyncImage) or a
+/// local file:// URL (via UIImage(contentsOfFile:)).  AsyncImage silently fails
+/// on file:// URLs in some iOS versions; using UIImage avoids that issue.
+struct RecipePhotoView<Placeholder: View>: View {
+    let urlString: String?
+    let contentMode: ContentMode
+    @ViewBuilder let placeholder: () -> Placeholder
+
+    var body: some View {
+        if let urlStr = urlString {
+            if urlStr.hasPrefix("file://"),
+               let url = URL(string: urlStr),
+               let path = url.path.removingPercentEncoding,
+               let uiImage = UIImage(contentsOfFile: path) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .aspectRatio(contentMode: contentMode)
+            } else if let url = URL(string: urlStr) {
+                AsyncImage(url: url) { phase in
+                    if let img = phase.image {
+                        img.resizable().aspectRatio(contentMode: contentMode)
+                    } else {
+                        placeholder()
+                    }
+                }
+            } else {
+                placeholder()
+            }
+        } else {
+            placeholder()
         }
     }
 }

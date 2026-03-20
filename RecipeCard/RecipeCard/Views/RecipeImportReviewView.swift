@@ -540,7 +540,7 @@ struct RecipeImportReviewView: View {
             // The source field doubles as the author attribution (auto-filled from detectedSource).
             if let image = scannedImage,
                let jpegData = image.jpegData(compressionQuality: 0.82) {
-                recipe.imageURL = RecipeImportService.saveImageDataLocally(jpegData)
+                recipe.imageURL = RecipeImportService.saveImageDataLocally(jpegData, appGroupIdentifier: "group.com.ridepro.biteledger")
             }
             let trimmedAuthor = source.trimmingCharacters(in: .whitespaces)
             recipe.author = trimmedAuthor.isEmpty ? nil : trimmedAuthor
