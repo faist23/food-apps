@@ -22,6 +22,8 @@ struct HistoryView: View {
     @State private var selectedTimeRange: TimeRange = .thirtyDays
     @AppStorage("historyExtraNutrients") private var extraNutrientKeys: String = ""
     @State private var heroNutrient: Nutrient = .calories
+    @State private var shareItems: [Any] = []
+    @State private var showShareSheet = false
 
     // MARK: - Persistence helpers
 
@@ -72,10 +74,54 @@ struct HistoryView: View {
             }
             .background(Color("SurfacePrimary"))
             .navigationTitle("History")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        generateAndShareRecap()
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .accessibilityLabel("Share weekly recap")
+                    .disabled(allLogs.isEmpty)
+                }
+            }
+            .sheet(isPresented: $showShareSheet) {
+                ShareSheet(items: shareItems)
+                    .presentationDetents([.medium, .large])
+            }
             .onAppear {
                 loadRecentLogs()
             }
         }
+    }
+
+    // MARK: - Share Weekly Recap (NEW-1)
+
+    @MainActor
+    private func generateAndShareRecap() {
+        let calendar = Calendar(identifier: .iso8601)
+        // Last complete ISO week: Monday of (today - 7 days)
+        let lastWeekAny = calendar.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+        let weekStart = calendar.date(
+            from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: lastWeekAny)
+        ) ?? lastWeekAny
+
+        let recapData = WeeklyRecapData.build(
+            from: allLogs,
+            weekStart: weekStart,
+            streak: calculatedStreak
+        )
+
+        guard let image = renderWeeklyRecapCard(recapData) else { return }
+
+        // Mark the week as shared on UserPreferences
+        if let prefs = preferences.first {
+            prefs.lastShareCardGeneratedWeek = weekStart
+            try? modelContext.save()
+        }
+
+        shareItems = [image]
+        showShareSheet = true
     }
 
     // MARK: - Sticky Trends Header
