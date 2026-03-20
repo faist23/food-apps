@@ -32,38 +32,6 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ## Engineering Decisions (from /plan-eng-review)
 
-### E-1: Startup Backfill Completion Flags
-**What:** Add `Bool` completion flags to `UserPreferences` for all 6 startup backfill functions in `BiteLedgerApp.swift`. Backfills check their flag on launch and skip if already done.
-**Why:** All 6 backfills run on every cold launch, scanning entire tables. With 10,000+ logs, startup is visibly frozen.
-**Pros:** Cold launch after first run becomes near-instant. Idempotency is explicit and guaranteed.
-**Cons:** Adds 6 optional Bool fields to UserPreferences (schema change — nullable, auto-handled).
-**Context:** `UserPreferences` gains `hasBackfilledServingUnits`, `hasBackfilledStaleLogs`, `hasBackfilledServingAmounts`, `hasNormalizedPerServingFoods`, `hasBackfilledGramAmounts`, `hasFixedLoseItGramUnits` — all `Bool? = nil`. Each backfill checks its flag before fetching, sets it after a successful `context.save()`.
-**Effort:** S (human: ~2 hr / CC: ~10 min) | **Priority:** P1
-
-### E-2: Replace fatalError with AppStoreErrorView
-**What:** Replace `fatalError` calls in `BiteLedgerApp.swift` and `RecipeCardApp.swift` (App Group guard + ModelContainer init failure) with a SwiftUI error screen + Retry button.
-**Why:** `fatalError` crashes the app silently with no user feedback. An iOS update or device restore could trigger this, leaving the app permanently unusable.
-**Pros:** Graceful recovery path. User sees a meaningful error + Retry. Support can diagnose from logs.
-**Cons:** Slightly more complex app init (State-driven vs computed property). Worth it.
-**Context:** `BiteLedgerApp.swift` line 41 and line 54 use `fatalError`. Replace the `var sharedModelContainer: ModelContainer = { ... }()` initializer with a throwing init, handle in `App.body` via `@State var storeError: Error?`.
-**Effort:** S (human: ~1 hr / CC: ~5 min) | **Priority:** P1
-
-### E-3: Move `defaultGoalValue` to `Nutrient` enum
-**What:** The `defaultGoalValue(for:)` function is duplicated identically at `SettingsView:301` and `GoalRow:626`. Move it to `Nutrient.defaultGoalValue: Double` computed property in `UserPreferences.swift`.
-**Why:** DRY — any future nutrient addition requires updating both copies.
-**Pros:** Single source of truth. Testable. Sits next to `defaultGoalType` which it logically belongs with.
-**Cons:** Tiny schema touch (no data change).
-**Context:** Both copies are identical 20-case switch statements. The `Nutrient` enum in `UserPreferences.swift` already has `defaultGoalType` — `defaultGoalValue` is the natural companion.
-**Effort:** XS (human: ~15 min / CC: ~3 min) | **Priority:** P2
-
-### E-4: Write Unit Tests for Critical Math Paths
-**What:** Write real unit tests for `NutritionCalculator`, `ingredientScore`, `resolveGrams`, and `FoodLog.create()`.
-**Why:** These are the core mathematical functions of both apps. A bug shows users wrong calorie counts silently. Zero test coverage = cannot ship responsibly.
-**Pros:** Catches regressions. Makes refactoring safe. 30 test cases covers 90% of the risk.
-**Cons:** Requires setting up an in-memory SwiftData stack for FoodLog.create() tests.
-**Context:** `BiteLedgerTests.swift` and `RecipeCardTests.swift` are empty stubs. `NutritionCalculator.swift` is in `BiteLedgerCore` — needs a `BiteLedgerCoreTests` target or include BiteLedgerCore in `@testable import BiteLedger`. See test plan at `~/.gstack/projects/faist23-food-apps/craigfaist-main-test-plan-20260319-225448.md`.
-**Effort:** M (human: ~1 day / CC: ~15 min) | **Priority:** P1 (pre-ship blocker)
-
 ### E-5: Fix O(n²) cleanUpDuplicates in SettingsView
 **What:** `SettingsView.cleanUpDuplicates()` fetches all FoodLogs inside a loop over duplicate food groups. With 50 duplicate groups × 5,000 logs = 250,000 DB scans.
 **Why:** This operation is run by users after LoseIt import, which is exactly when they have the most data. Performance degrades quadratically.
@@ -218,3 +186,19 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 **Effort:** L (human: ~2 weeks / CC: ~1 hr)
 **Priority:** P3
 **Depends on:** RecipeCard core stability
+
+---
+
+## Completed
+
+- **E-1: Startup Backfill Completion Flags** — `has*` flags added to `UserPreferences`; each backfill skips on subsequent launches. **Completed:** v0.1.0.0 (2026-03-20)
+
+- **E-2: Replace fatalError with AppStoreErrorView** — BiteLedger and RecipeCard app init now shows graceful error screen + Retry button instead of crashing. **Completed:** v0.1.0.0 (2026-03-20)
+
+- **E-3: Move `defaultGoalValue` to `Nutrient` enum** — Consolidated into `NutritionCalculator.DailyValues` + `Nutrient.defaultGoalValue`; removed duplicated switch statements from SettingsView and GoalRow. **Completed:** v0.1.0.0 (2026-03-20)
+
+- **E-4: Write Unit Tests for Critical Math Paths** — 17 `NutritionCalculator` tests in BiteLedgerTests, 38 ingredient-matching tests in RecipeCardTests. All pass. **Completed:** v0.1.0.0 (2026-03-20)
+
+- **T-01: 7-Day Rolling Average History View** — Hero chart in HistoryView with Catmull-Rom line, FDA DV reference, nutrient tab picker, graceful empty state. **Completed:** v0.1.0.0 (2026-03-20)
+
+- **NEW-1: Weekly Logging Recap Share Card** — Shareable `ImageRenderer` card with days-logged, avg calories, streak. Available from HistoryView toolbar. **Completed:** v0.1.0.0 (2026-03-20)
