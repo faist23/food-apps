@@ -10,13 +10,73 @@ import SwiftData
 import CoreData
 import BiteLedgerCore
 
+// E-2: Graceful error screen replacing fatalError for App Group and ModelContainer failures.
+enum AppStoreError: LocalizedError {
+    case appGroupNotConfigured(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .appGroupNotConfigured(let id):
+            return "App Group '\(id)' is not configured. Please reinstall the app or contact support if this persists."
+        }
+    }
+}
+
+struct AppStoreErrorView: View {
+    let error: Error
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 24) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 52))
+                .foregroundStyle(.orange)
+            Text("Unable to Load Data")
+                .font(.title2.bold())
+            Text(error.localizedDescription)
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 32)
+            Button("Retry", action: onRetry)
+                .buttonStyle(.borderedProminent)
+        }
+        .padding(32)
+    }
+}
+
 @main
 struct BiteLedgerApp: App {
-    var sharedModelContainer: ModelContainer = {
+    // E-2: State-driven container — no fatalError on failure, shows Retry screen instead.
+    @State private var modelContainer: ModelContainer?
+    @State private var storeError: Error?
+
+    var body: some Scene {
+        WindowGroup {
+            Group {
+                if let error = storeError {
+                    AppStoreErrorView(error: error) {
+                        storeError = nil
+                        loadContainer()
+                    }
+                } else if let container = modelContainer {
+                    SafeContentView(modelContainer: container)
+                        .modelContainer(container)
+                } else {
+                    Color.clear
+                        .onAppear { loadContainer() }
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func loadContainer() {
+        // Canonical schema order — must match RecipeCardApp.swift exactly.
         let schema = Schema([
             FoodItem.self,
-            FoodLog.self,
             ServingSize.self,
+            FoodLog.self,
             UserPreferences.self,
             Recipe.self,
             RecipeIngredient.self,
@@ -24,44 +84,19 @@ struct BiteLedgerApp: App {
             ServingConversion.self,
             FallbackSource.self,
         ])
-
-        // Store in the shared App Group container so RecipeCard can access the same
-        // food library. Both targets must have the App Group capability enabled in
-        // Xcode → Signing & Capabilities → + App Groups → group.com.ridepro.biteledger.
-        //
-        // cloudKitDatabase: .none — CloudKit capability in entitlements would cause
-        // SwiftData to attempt CloudKit integration unless explicitly disabled here.
-        //
-        // NOTE: First launch after this change will create a fresh store at the new
-        // App Group path. Export your data (Settings → Export) before updating, then
-        // re-import (Settings → Import CSV) after.
         let groupID = "group.com.ridepro.biteledger"
         guard let containerURL = FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: groupID) else {
-            fatalError("""
-                App Group '\(groupID)' is not configured.
-                In Xcode: select the BiteLedger target → Signing & Capabilities
-                → + Capability → App Groups → add group.com.ridepro.biteledger.
-                """)
+            storeError = AppStoreError.appGroupNotConfigured(groupID)
+            return
         }
         let storeURL = containerURL.appendingPathComponent("biteledger.store")
         do {
-            let modelConfiguration = ModelConfiguration(
-                schema: schema,
-                url: storeURL,
-                cloudKitDatabase: .none
-            )
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+            let config = ModelConfiguration(schema: schema, url: storeURL, cloudKitDatabase: .none)
+            modelContainer = try ModelContainer(for: schema, configurations: [config])
         } catch {
-            fatalError("Could not create ModelContainer: \(error)")
+            storeError = error
         }
-    }()
-
-    var body: some Scene {
-        WindowGroup {
-            SafeContentView(modelContainer: sharedModelContainer)
-        }
-        .modelContainer(sharedModelContainer)
     }
 }
 
@@ -73,6 +108,7 @@ struct SafeContentView: View {
         ZStack {
             ContentView()
                 .task {
+                    // E-1: Each backfill checks its completion flag — skips on subsequent launches.
                     await backfillServingUnits(container: modelContainer)
                     await backfillStaleLogs(container: modelContainer)
                     await backfillServingAmounts(container: modelContainer)
@@ -135,6 +171,10 @@ private struct IngredientSeedingOverlay: View {
 private func backfillStaleLogs(container: ModelContainer) async {
     let context = container.mainContext
     do {
+        // E-1: Skip on subsequent launches once complete
+        let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first
+        guard prefs?.hasBackfilledStaleLogs != true else { return }
+
         let allServings = try context.fetch(FetchDescriptor<ServingSize>())
         let stale = allServings.filter { serving in
             // Must have unit="g" (gram) — indicates a gram-based origin
@@ -145,26 +185,27 @@ private func backfillStaleLogs(container: ModelContainer) async {
                           ?? ServingSizeParser.parseUnit(serving.label)
             return parsedUnit != nil && parsedUnit != .gram && parsedUnit != .serving
         }
-        guard !stale.isEmpty else { return }
-
-        for serving in stale {
-            guard let newGW = serving.gramWeight, newGW > 1 else { continue }
-            let parsedUnit = ServingSizeParser.parse(serving.label)?.unit
-                          ?? ServingSizeParser.parseUnit(serving.label)
-            if let pu = parsedUnit {
-                serving.unit = pu.rawValue
+        if !stale.isEmpty {
+            for serving in stale {
+                guard let newGW = serving.gramWeight, newGW > 1 else { continue }
+                let parsedUnit = ServingSizeParser.parse(serving.label)?.unit
+                              ?? ServingSizeParser.parseUnit(serving.label)
+                if let pu = parsedUnit {
+                    serving.unit = pu.rawValue
+                }
+                // Rescale any FoodLog.quantity that was stored as grams
+                let servingId = serving.id
+                let logs = try context.fetch(FetchDescriptor<FoodLog>(
+                    predicate: #Predicate { $0.servingSize?.id == servingId }
+                ))
+                for log in logs {
+                    log.quantity = log.quantity / newGW
+                }
             }
-            // Rescale any FoodLog.quantity that was stored as grams
-            let servingId = serving.id
-            let logs = try context.fetch(FetchDescriptor<FoodLog>(
-                predicate: #Predicate { $0.servingSize?.id == servingId }
-            ))
-            for log in logs {
-                log.quantity = log.quantity / newGW
-            }
+            print("✅ backfillStaleLogs: fixed \(stale.count) serving(s)")
         }
+        prefs?.hasBackfilledStaleLogs = true
         try context.save()
-        print("✅ backfillStaleLogs: fixed \(stale.count) serving(s)")
     } catch {
         print("⚠️ backfillStaleLogs failed: \(error)")
     }
@@ -183,38 +224,44 @@ private func backfillStaleLogs(container: ModelContainer) async {
 private func normalizeExistingPerServingFoods(container: ModelContainer) async {
     let context = container.mainContext
     do {
+        // E-1: Skip on subsequent launches once complete
+        let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first
+        guard prefs?.hasNormalizedPerServingFoods != true else { return }
+
         let foods = try context.fetch(FetchDescriptor<FoodItem>())
         let perServingFoods = foods.filter { $0.nutritionMode == .perServing }
-        guard !perServingFoods.isEmpty else { return }
 
-        for food in perServingFoods {
-            let defaultServing = food.defaultServing
+        if !perServingFoods.isEmpty {
+            for food in perServingFoods {
+                let defaultServing = food.defaultServing
 
-            // Determine effective gram weight
-            let gramWeight: Double?
-            if let gw = defaultServing?.gramWeight, gw > 0 {
-                gramWeight = gw
-            } else if let unitStr = defaultServing?.unit,
-                      let su = ServingUnit.fromAbbreviation(unitStr),
-                      su != .serving, su != .container {
-                let amount = defaultServing?.amount ?? 1.0
-                let density = ServingUnit.densityFor(foodType: FoodType.infer(from: food.name))
-                let estimated = su.toGrams(amount: amount, density: density)
-                gramWeight = estimated > 0 ? estimated : nil
-            } else {
-                gramWeight = nil  // will use 100g nominal
+                // Determine effective gram weight
+                let gramWeight: Double?
+                if let gw = defaultServing?.gramWeight, gw > 0 {
+                    gramWeight = gw
+                } else if let unitStr = defaultServing?.unit,
+                          let su = ServingUnit.fromAbbreviation(unitStr),
+                          su != .serving, su != .container {
+                    let amount = defaultServing?.amount ?? 1.0
+                    let density = ServingUnit.densityFor(foodType: FoodType.infer(from: food.name))
+                    let estimated = su.toGrams(amount: amount, density: density)
+                    gramWeight = estimated > 0 ? estimated : nil
+                } else {
+                    gramWeight = nil  // will use 100g nominal
+                }
+
+                let effectiveGrams = gramWeight ?? 100.0
+                food.normalizeToPerHundredGrams(gramWeightPerServing: gramWeight)
+
+                // Ensure all servings for this food have gramWeight set
+                if let serving = defaultServing, serving.gramWeight == nil {
+                    serving.gramWeight = effectiveGrams
+                }
             }
-
-            let effectiveGrams = gramWeight ?? 100.0
-            food.normalizeToPerHundredGrams(gramWeightPerServing: gramWeight)
-
-            // Ensure all servings for this food have gramWeight set
-            if let serving = defaultServing, serving.gramWeight == nil {
-                serving.gramWeight = effectiveGrams
-            }
+            print("✅ normalizeExistingPerServingFoods: normalized \(perServingFoods.count) food(s)")
         }
+        prefs?.hasNormalizedPerServingFoods = true
         try context.save()
-        print("✅ normalizeExistingPerServingFoods: normalized \(perServingFoods.count) food(s)")
     } catch {
         print("⚠️ normalizeExistingPerServingFoods failed: \(error)")
     }
@@ -227,6 +274,10 @@ private func normalizeExistingPerServingFoods(container: ModelContainer) async {
 private func backfillServingAmounts(container: ModelContainer) async {
     let context = container.mainContext
     do {
+        // E-1: Skip on subsequent launches once complete
+        let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first
+        guard prefs?.hasBackfilledServingAmounts != true else { return }
+
         let servings = try context.fetch(FetchDescriptor<ServingSize>())
         var changed = 0
         for serving in servings {
@@ -237,9 +288,10 @@ private func backfillServingAmounts(container: ModelContainer) async {
             }
         }
         if changed > 0 {
-            try context.save()
             print("✅ backfillServingAmounts: updated \(changed) serving(s)")
         }
+        prefs?.hasBackfilledServingAmounts = true
+        try context.save()
     } catch {
         print("⚠️ backfillServingAmounts failed: \(error)")
     }
@@ -252,9 +304,12 @@ private func backfillServingAmounts(container: ModelContainer) async {
 private func backfillFoodLogGramAmounts(container: ModelContainer) async {
     let context = container.mainContext
     do {
+        // E-1: Skip on subsequent launches once complete
+        let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first
+        guard prefs?.hasBackfilledGramAmounts != true else { return }
+
         let logs = try context.fetch(FetchDescriptor<FoodLog>())
         let unset = logs.filter { $0.gramAmount == 0 }
-        guard !unset.isEmpty else { return }
         for log in unset {
             let resolvedServing = log.servingSize ?? log.foodItem?.defaultServing
             if let gw = resolvedServing?.gramWeight {
@@ -277,8 +332,11 @@ private func backfillFoodLogGramAmounts(container: ModelContainer) async {
             if log.loggedAmount == nil { log.loggedAmount = log.quantity }
             if log.loggedUnit == nil { log.loggedUnit = resolvedServing?.unit }
         }
+        if !unset.isEmpty {
+            print("✅ backfillFoodLogGramAmounts: set gramAmount on \(unset.count) log(s)")
+        }
+        prefs?.hasBackfilledGramAmounts = true
         try context.save()
-        print("✅ backfillFoodLogGramAmounts: set gramAmount on \(unset.count) log(s)")
     } catch {
         print("⚠️ backfillFoodLogGramAmounts failed: \(error)")
     }
@@ -290,12 +348,15 @@ private func backfillFoodLogGramAmounts(container: ModelContainer) async {
 private func backfillServingUnits(container: ModelContainer) async {
     let context = container.mainContext
     do {
+        // E-1: Skip on subsequent launches once complete
+        let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first
+        guard prefs?.hasBackfilledServingUnits != true else { return }
+
         let servings = try context.fetch(
             FetchDescriptor<ServingSize>(
                 predicate: #Predicate { $0.unit == nil }
             )
         )
-        guard !servings.isEmpty else { return }
         for serving in servings {
             if let parsed = ServingSizeParser.parse(serving.label),
                parsed.unit != .serving {
@@ -304,8 +365,11 @@ private func backfillServingUnits(container: ModelContainer) async {
                 serving.unit = unit.rawValue
             }
         }
+        if !servings.isEmpty {
+            print("✅ backfillServingUnits: set unit on \(servings.count) ServingSize records")
+        }
+        prefs?.hasBackfilledServingUnits = true
         try context.save()
-        print("✅ Backfilled unit on \(servings.count) ServingSize records")
     } catch {
         print("⚠️ backfillServingUnits failed: \(error)")
     }
@@ -326,13 +390,16 @@ private func backfillServingUnits(container: ModelContainer) async {
 private func fixLoseItGramUnitFoods(container: ModelContainer) async {
     let context = container.mainContext
     do {
+        // E-1: Skip on subsequent launches once complete
+        let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first
+        guard prefs?.hasFixedLoseItGramUnits != true else { return }
+
         // Only look at LoseIt-imported foods
         let foods = try context.fetch(
             FetchDescriptor<FoodItem>(
                 predicate: #Predicate { $0.source.contains("LoseIt") }
             )
         )
-        guard !foods.isEmpty else { return }
 
         var nutritionFixed = 0
         var gramWeightFixed = 0
@@ -402,9 +469,10 @@ private func fixLoseItGramUnitFoods(container: ModelContainer) async {
         }
 
         if nutritionFixed > 0 || gramWeightFixed > 0 {
-            try context.save()
             print("✅ fixLoseItGramUnitFoods: fixed nutrition on \(nutritionFixed) food(s), gramWeight on \(gramWeightFixed) serving(s)")
         }
+        prefs?.hasFixedLoseItGramUnits = true
+        try context.save()
     } catch {
         print("⚠️ fixLoseItGramUnitFoods failed: \(error)")
     }

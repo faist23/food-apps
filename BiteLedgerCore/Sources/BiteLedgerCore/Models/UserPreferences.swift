@@ -16,6 +16,17 @@ public class UserPreferences {
     public var cachedStreak: Int = 0
     public var streakCachedDate: Date? = nil
 
+    // E-1: Startup backfill completion flags (nil = not yet run; true = done)
+    public var hasBackfilledServingUnits: Bool?
+    public var hasBackfilledStaleLogs: Bool?
+    public var hasBackfilledServingAmounts: Bool?
+    public var hasNormalizedPerServingFoods: Bool?
+    public var hasBackfilledGramAmounts: Bool?
+    public var hasFixedLoseItGramUnits: Bool?
+
+    // NEW-1: Weekly share card — tracks which ISO week the last card was generated
+    public var lastShareCardGeneratedWeek: Date?
+
     public init(pinnedNutrient: String? = nil, goalsData: Data? = nil, showMacroBalanceTile: Bool? = nil) {
         self.pinnedNutrient = pinnedNutrient
         self.goalsData = goalsData
@@ -129,6 +140,28 @@ public enum Nutrient: String, CaseIterable, Codable, Identifiable {
         }
     }
     
+    // E-3: Default goal value for this nutrient (single source of truth — no duplication in views)
+    public var defaultGoalValue: Double {
+        switch self {
+        case .calories: return 2000
+        case .protein: return 150
+        case .carbs: return 250
+        case .fat: return 65
+        case .fiber: return 30
+        case .sugar: return 50
+        case .sodium: return 2300
+        case .saturatedFat: return 20
+        case .cholesterol: return 300
+        case .potassium: return 3500
+        case .calcium: return 1000
+        case .iron: return 18
+        case .vitaminC: return 90
+        case .vitaminD: return 20
+        case .caffeine: return 400
+        default: return 100
+        }
+    }
+
     // Default goal type for this nutrient
     public var defaultGoalType: GoalType {
         switch self {

@@ -298,27 +298,6 @@ struct SettingsView: View {
         }
     }
     
-    private func defaultGoalValue(for nutrient: Nutrient) -> Double {
-        switch nutrient {
-        case .calories: return 2000
-        case .protein: return 150
-        case .carbs: return 250
-        case .fat: return 65
-        case .fiber: return 30
-        case .sugar: return 50
-        case .sodium: return 2300
-        case .saturatedFat: return 20
-        case .cholesterol: return 300
-        case .potassium: return 3500
-        case .calcium: return 1000
-        case .iron: return 18
-        case .vitaminC: return 90
-        case .vitaminD: return 20
-        case .caffeine: return 400
-        default: return 100
-        }
-    }
-    
     private func deleteAllData() {
         isDeleting = true
         deleteProgress = "Preparing deletion..."
@@ -492,30 +471,33 @@ struct SettingsView: View {
         // Group foods by barcode
         let groupedByBarcode = Dictionary(grouping: currentFoodItems.filter { $0.barcode != nil && !$0.barcode!.isEmpty }) { $0.barcode! }
         
+        // E-5: Fetch all logs once (outside the loop) to avoid O(n²) DB scans.
+        let logDescriptor = FetchDescriptor<FoodLog>()
+        guard let allLogs = try? modelContext.fetch(logDescriptor) else {
+            cleanupResultMessage = "Failed to fetch food logs."
+            showingCleanupResult = true
+            return
+        }
+        // Build a lookup map from foodItem.id → [FoodLog] for O(1) access per group.
+        var logsByFoodID: [UUID: [FoodLog]] = [:]
+        for log in allLogs {
+            if let foodID = log.foodItem?.id {
+                logsByFoodID[foodID, default: []].append(log)
+            }
+        }
+
         // Process each group with duplicates
         for (_, duplicates) in groupedByBarcode where duplicates.count > 1 {
             mergedGroups += 1
-            
+
             // Keep the most recently added item
-            let keeper = duplicates.sorted { (a, b) in
-                return a.dateAdded > b.dateAdded
-            }.first!
-            
-            // Get all logs fresh from the database
-            let logDescriptor = FetchDescriptor<FoodLog>()
-            guard let currentLogs = try? modelContext.fetch(logDescriptor) else { continue }
-            
+            let keeper = duplicates.sorted { $0.dateAdded > $1.dateAdded }.first!
+
             // Update all logs pointing to duplicates to point to the keeper
             for duplicate in duplicates where duplicate.id != keeper.id {
-                // Find all logs using this duplicate
-                let logsUsingDuplicate = currentLogs.filter { $0.foodItem?.id == duplicate.id }
-                
-                // Point them to the keeper
-                for log in logsUsingDuplicate {
+                for log in logsByFoodID[duplicate.id, default: []] {
                     log.foodItem = keeper
                 }
-                
-                // Delete the duplicate
                 modelContext.delete(duplicate)
                 removedCount += 1
             }
@@ -590,7 +572,7 @@ struct GoalRow: View {
             }
         } else {
             Button {
-                let defaultValue = defaultGoalValue(for: nutrient)
+                let defaultValue = nutrient.defaultGoalValue
                 let defaultGoal = NutrientGoal(
                     targetValue: defaultValue,
                     goalType: nutrient.defaultGoalType,
@@ -623,26 +605,6 @@ struct GoalRow: View {
         }
     }
     
-    private func defaultGoalValue(for nutrient: Nutrient) -> Double {
-        switch nutrient {
-        case .calories: return 2000
-        case .protein: return 150
-        case .carbs: return 250
-        case .fat: return 65
-        case .fiber: return 30
-        case .sugar: return 50
-        case .sodium: return 2300
-        case .saturatedFat: return 20
-        case .cholesterol: return 300
-        case .potassium: return 3500
-        case .calcium: return 1000
-        case .iron: return 18
-        case .vitaminC: return 90
-        case .vitaminD: return 20
-        case .caffeine: return 400
-        default: return 100
-        }
-    }
 }
 
 

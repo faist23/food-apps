@@ -37,5 +37,33 @@
 import SwiftData
 import BiteLedgerCore
 
-// Placeholder — wire into ModelContainer when a real migration plan is needed.
-// enum BiteLedgerMigrationPlan: SchemaMigrationPlan { ... }
+// MARK: - SchemaV1 (current)
+//
+// Lists all 9 live model types in canonical order (must match RecipeCardApp.swift).
+// Used as the baseline for any future SchemaMigrationPlan.
+// Nullable field additions (Bool?, Date?) are handled automatically by SwiftData —
+// no explicit migration stage needed; just define SchemaV2 with the same models.
+//
+enum BiteLedgerSchemaV1: VersionedSchema {
+    static let versionIdentifier = Schema.Version(1, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        [
+            FoodItem.self,
+            ServingSize.self,
+            FoodLog.self,
+            UserPreferences.self,
+            Recipe.self,
+            RecipeIngredient.self,
+            CanonicalFood.self,
+            ServingConversion.self,
+            FallbackSource.self,
+        ]
+    }
+}
+
+// MARK: - Future migration plan (uncomment when a breaking schema change is needed)
+//
+// enum BiteLedgerMigrationPlan: SchemaMigrationPlan {
+//     static var schemas: [any VersionedSchema.Type] { [BiteLedgerSchemaV1.self] }
+//     static var stages: [MigrationStage] { [] }
+// }

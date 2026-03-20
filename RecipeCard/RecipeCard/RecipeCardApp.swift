@@ -14,11 +14,80 @@ extension Notification.Name {
     static let recipeCardImportURL = Notification.Name("recipeCardImportURL")
 }
 
+// E-2: App store error types for graceful failure handling.
+enum RecipeCardError: LocalizedError {
+    case appGroupNotConfigured(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .appGroupNotConfigured(let id):
+            return "App Group '\(id)' is not configured. Please reinstall the app or contact support if this persists."
+        }
+    }
+}
+
+// E-2: Graceful error screen replacing fatalError for store init failures.
+private struct RecipeCardErrorView: View {
+    let error: Error
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 24) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 52))
+                .foregroundStyle(.orange)
+            Text("Unable to Load Data")
+                .font(.title2.bold())
+            Text(error.localizedDescription)
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 32)
+            Button("Retry", action: onRetry)
+                .buttonStyle(.borderedProminent)
+        }
+        .padding(32)
+    }
+}
+
 @main
 struct RecipeCardApp: App {
+    // E-2: State-driven container — no fatalError or force-unwrap on failure.
+    @State private var modelContainer: ModelContainer?
+    @State private var storeError: Error?
 
-    var sharedModelContainer: ModelContainer = {
-        // Shared App Group container — same store as BiteLedger
+    var body: some Scene {
+        WindowGroup {
+            Group {
+                if let error = storeError {
+                    RecipeCardErrorView(error: error) {
+                        storeError = nil
+                        loadContainer()
+                    }
+                } else if let container = modelContainer {
+                    RecipeCardRootView()
+                        .modifier(SeedingModifier(container: container))
+                        .modelContainer(container)
+                        .onOpenURL { url in
+                            // Launched via recipecard://import from the Share Extension.
+                            // The extension already wrote the URL to shared UserDefaults.
+                            guard url.scheme == "recipecard", url.host == "import" else { return }
+                            consumePendingRecipeURL()
+                        }
+                        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                            // Also check when returning to foreground in case the app was already open.
+                            consumePendingRecipeURL()
+                        }
+                } else {
+                    Color.clear.onAppear { loadContainer() }
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func loadContainer() {
+        // Canonical schema order — must match BiteLedgerApp.swift exactly.
         let schema = Schema([
             FoodItem.self,
             ServingSize.self,
@@ -31,33 +100,18 @@ struct RecipeCardApp: App {
             FallbackSource.self,
         ])
         let groupID = "group.com.ridepro.biteledger"
-        let storeURL = FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: groupID)!
-            .appendingPathComponent("biteledger.store")
-        let config = ModelConfiguration(schema: schema, url: storeURL)
+        guard let containerURL = FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: groupID) else {
+            storeError = RecipeCardError.appGroupNotConfigured(groupID)
+            return
+        }
+        let storeURL = containerURL.appendingPathComponent("biteledger.store")
         do {
-            return try ModelContainer(for: schema, configurations: [config])
+            let config = ModelConfiguration(schema: schema, url: storeURL)
+            modelContainer = try ModelContainer(for: schema, configurations: [config])
         } catch {
-            fatalError("Could not create shared ModelContainer: \(error)")
+            storeError = error
         }
-    }()
-
-    var body: some Scene {
-        WindowGroup {
-            RecipeCardRootView()
-                .modifier(SeedingModifier(container: sharedModelContainer))
-                .onOpenURL { url in
-                    // Launched via recipecard://import from the Share Extension.
-                    // The extension already wrote the URL to shared UserDefaults.
-                    guard url.scheme == "recipecard", url.host == "import" else { return }
-                    consumePendingRecipeURL()
-                }
-                .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-                    // Also check when returning to foreground in case the app was already open.
-                    consumePendingRecipeURL()
-                }
-        }
-        .modelContainer(sharedModelContainer)
     }
 
     private func consumePendingRecipeURL() {
