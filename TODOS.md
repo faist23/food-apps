@@ -79,22 +79,14 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ---
 
-### T-11: RecipeCard Kitchen Intelligence (v1.1 scope — 4 features)
-**What:** Four features that make RecipeCard a kitchen companion, not just a recipe storage app:
-1. **Recipe Scaling** — segmented picker (0.5x/1x/2x/3x) already implemented in RecipeDetailView; no new code needed beyond wiring shopping list to scale
-2. **Cooking Mode** — full-screen CookingModeView; uses `recipe.directions: [String]` (already in model, no parsing needed); screen stays awake; timer detection
-3. **Shopping List** — generate from recipe (respects current scaleFactor); grouped by category; share via iOS share sheet; persists to UserDefaults via ShoppingCart @Observable + @Environment (not @EnvironmentObject)
-4. **Log to BiteLedger** — RecipeServingSheet (new, needs building); uses `recipe.foodItem` directly; FoodLog.create() to shared store
-**Context:** v1.1 scope = Features 1–3 only. Feature 4 (Log to BiteLedger) moved to v1.2 — requires RecipeServingSheet (new) + BiteLedger `biteledger://` URL scheme declaration.
-Feature 1 (scaling) is already implemented; nearly zero additional work.
-**Effort:** XS+M+M = M total | **Priority:** P1 (v1.1) | **Depends on:** RecipeCard core stable (done)
-
-**v1.2 addition (Feature 4 — Log to BiteLedger):**
+### T-11: Log to BiteLedger (v1.2 — Feature 4 only)
+**What:** Allow RecipeCard users to log a recipe directly into BiteLedger's food diary from RecipeDetailView.
 - Build RecipeServingSheet (meal type + quantity picker)
 - BiteLedger declares `biteledger://` URL scheme in Info.plist
 - RecipeCard adds `biteledger` to LSApplicationQueriesSchemes
 - RecipeDetailView shows "Log to BiteLedger" button when `UIApplication.canOpenURL(biteledger://)` returns true
 - `FoodLog.create(food: recipe.foodItem, serving: nil, quantity: selectedQty)` writes to shared store
+**Effort:** M | **Priority:** P1 (v1.2) | **Depends on:** v1.1 shipped (done)
 
 ---
 
@@ -132,3 +124,4 @@ Feature 1 (scaling) is already implemented; nearly zero additional work.
 - **T-05: NutritionTile VoiceOver Accessibility** — Both tiles have `.accessibilityElement(children: .ignore)` + synthesized labels with goal context. **Completed:** pre-v0.1.0.0
 - **NEW-1: Weekly Logging Recap Share Card** — `ImageRenderer` share card from HistoryView toolbar. **Completed:** v0.1.0.0 (2026-03-20)
 - **Local Search Word-Order Fix** — `matchesQuery()` in FoodSearchView: exact phrase first, then all words any order. Fixes "margherita pizza" → "pizza, margherita". **Completed:** 2026-03-20
+- **T-11: RecipeCard Kitchen Intelligence (v1.1 — Features 1–3)** — Recipe Scaling (already in RecipeDetailView), Cooking Mode (`CookingModeView` full-screen step navigation, screen always-on), Shopping List (`ShoppingCart` @Observable + UserDefaults persistence, `ShoppingListView` with categorized sections, swipe actions, share sheet). Feature 4 (Log to BiteLedger) deferred to v1.2. **Completed:** v0.1.1.0 (2026-03-20)
