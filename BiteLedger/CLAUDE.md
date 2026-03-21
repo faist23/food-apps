@@ -53,18 +53,23 @@ and passes them to `NutritionDashboard` and `MealSection`.
 
 ## USDA Nutriments Invariant (Critical — Do Not Regress)
 
-`USDAFoodDetail.toProductInfo()` must set **all `*Serving` fields to `nil`**:
+`USDAFoodDetail.toProductInfo()` must set **all `*Serving` fields to `nil`** for
+SR Legacy and Foundation data types:
 ```swift
 energyKcalServing: nil, proteinsServing: nil, carbohydratesServing: nil,
 sugarsServing: nil, fatServing: nil, saturatedFatServing: nil,
 fiberServing: nil, sodiumServing: nil
 ```
-USDA is a per-100g database. Any non-nil `*Serving` field causes
-`ImprovedServingPicker.nutritionMultiplier` to take the `hasServingData = true`
+USDA SR Legacy and Foundation are per-100g databases. Any non-nil `*Serving` field
+causes `ImprovedServingPicker.nutritionMultiplier` to take the `hasServingData = true`
 branch, returning `resolvedServingCount` (= 1.0) × the serving value —
 producing wildly wrong calories (e.g. 1452 cal for one frankfurter instead of ~142).
-All USDA nutrition must flow through the `totalGrams / 100` path using `*100g`
-fields only.
+
+**Exception — USDA Branded Foods:** Branded Foods carry a declared `servingSize` (in
+grams) from the FDA label. `toProductInfo()` computes `*Serving = nutrientPer100g ×
+(servingSize / 100)` for Branded foods only. The `*100g` fields are also populated so
+the per-100g path still works for free entry. SR Legacy and Foundation are never
+affected — their `*Serving` fields remain nil.
 
 ---
 

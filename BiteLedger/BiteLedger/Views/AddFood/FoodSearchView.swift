@@ -1691,11 +1691,6 @@ struct RecentFoodsForMealView: View {
     let mealType: MealType
     let onFoodSelected: (FoodItem) -> Void
 
-    /// Number of distinct calendar days with at least one log entry.
-    private var distinctLogDays: Int {
-        Set(allLogs.map { Calendar.current.startOfDay(for: $0.timestamp) }).count
-    }
-
     private var lastUsedDates: [UUID: Date] {
         var result: [UUID: Date] = [:]
         for log in allLogs {
@@ -1706,10 +1701,8 @@ struct RecentFoodsForMealView: View {
     }
 
     /// Top 8 most-frequently logged foods for this meal type, excluding foods
-    /// already logged today. Only populated after 3+ distinct log days.
+    /// already logged today.
     private var recentFoods: [FoodItem] {
-        guard distinctLogDays >= 3 else { return [] }
-
         let todaysFoodIDs = Set(
             allLogs
                 .filter { Calendar.current.isDate($0.timestamp, inSameDayAs: Date()) && $0.mealType == mealType }

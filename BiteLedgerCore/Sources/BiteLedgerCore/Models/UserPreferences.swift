@@ -30,6 +30,9 @@ public class UserPreferences {
     // T-03: Streak milestone celebrations — highest milestone already celebrated
     public var lastCelebratedMilestone: Int?
 
+    // T-08: First-log micro-celebration — nil = never fired, true = fired (one-time)
+    public var hasSeenFirstLogCelebration: Bool?
+
     public init(pinnedNutrient: String? = nil, goalsData: Data? = nil, showMacroBalanceTile: Bool? = nil) {
         self.pinnedNutrient = pinnedNutrient
         self.goalsData = goalsData

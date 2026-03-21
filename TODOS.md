@@ -59,10 +59,9 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ---
 
-### T-08: First-Log Micro-Celebration
-**What:** A brief, delightful animation when the user logs their very first food item ever.
-**Context:** Detect: `logs.count == 1` after saving, and `UserPreferences.hasEverLogged == false`. Set flag, fire haptic, show 2-second overlay.
-**Effort:** XS | **Priority:** P3
+### ~~T-08: First-Log Micro-Celebration~~ — COMPLETED feature/v1-ship
+**What:** ~~A brief, delightful animation when the user logs their very first food item ever.~~
+**Shipped:** `hasSeenFirstLogCelebration: Bool?` in `UserPreferences`; haptic + 2-second overlay in `TodayView`; fires on nil flag only.
 
 ---
 
@@ -125,3 +124,4 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 - **NEW-1: Weekly Logging Recap Share Card** — `ImageRenderer` share card from HistoryView toolbar. **Completed:** v0.1.0.0 (2026-03-20)
 - **Local Search Word-Order Fix** — `matchesQuery()` in FoodSearchView: exact phrase first, then all words any order. Fixes "margherita pizza" → "pizza, margherita". **Completed:** 2026-03-20
 - **T-11: RecipeCard Kitchen Intelligence (v1.1 — Features 1–3)** — Recipe Scaling (already in RecipeDetailView), Cooking Mode (`CookingModeView` full-screen step navigation, screen always-on), Shopping List (`ShoppingCart` @Observable + UserDefaults persistence, `ShoppingListView` with categorized sections, swipe actions, share sheet). Feature 4 (Log to BiteLedger) deferred to v1.2. **Completed:** v0.1.1.0 (2026-03-20)
+- **v1.2 Phase 1 — Search quality + micro-celebration:** (1) USDA data types changed from SR Legacy + Survey (FNDDS) to Foundation + SR Legacy + Branded; `USDAFoodDetail.toProductInfo()` now branches on Branded to populate *Serving fields from FDA label serving size; `ProductInfo` gains `dataType: String?`; (2) 3-day gate removed from `RecentFoodsForMealView` — recent foods show immediately on first log; (3) T-08 micro-celebration shipped (`hasSeenFirstLogCelebration: Bool?` in UserPreferences, haptic + 2s overlay in TodayView fires exactly once); (4) `AddFoodView.swift` dead code deleted; (5) 5 tests added: USDA Branded/Foundation/SR Legacy branching + micro-celebration flag. **Completed:** feature/v1-ship (2026-03-21)

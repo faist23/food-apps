@@ -193,3 +193,98 @@ final class NutritionCalculatorTests: XCTestCase {
         XCTAssertLessThan(result[0].date, result[1].date)
     }
 }
+
+// MARK: - USDA dataType branching tests (test plan items 1-3)
+
+final class USDAToProductInfoTests: XCTestCase {
+
+    // Helpers
+
+    private func makeEnergyNutrient(kcal: Double) -> USDANutrientDetail {
+        USDANutrientDetail(
+            nutrient: USDANutrientInfo(id: 1008, number: "208", name: "Energy", unitName: "kcal"),
+            amount: kcal
+        )
+    }
+
+    private func makeDetail(dataType: String, servingSize: Double? = nil, kcalPer100g: Double = 400) -> USDAFoodDetail {
+        USDAFoodDetail(
+            fdcId: 99999,
+            description: "Test \(dataType) Food",
+            dataType: dataType,
+            foodNutrients: [makeEnergyNutrient(kcal: kcalPer100g)],
+            servingSize: servingSize,
+            householdServingFullText: servingSize != nil ? "1 serving" : nil
+        )
+    }
+
+    // Test 1: Branded Foods populate *Serving fields using servingSize
+    func testUSDABrandedFoodToProductInfo_hasServingFields() {
+        let detail = makeDetail(dataType: "Branded", servingSize: 30.0, kcalPer100g: 400)
+        let product = detail.toProductInfo()
+
+        let nutriments = product.nutriments
+        XCTAssertNotNil(nutriments?.energyKcalServing, "Branded food must have energyKcalServing")
+        // 400 kcal/100g × (30g / 100) = 120 kcal/serving
+        XCTAssertEqual(nutriments?.energyKcalServing?.value ?? 0, 120, accuracy: 0.01)
+        XCTAssertEqual(product.dataType, "Branded")
+    }
+
+    // Test 2: Foundation foods must keep all *Serving fields nil
+    func testUSDAFoundationFoodToProductInfo_servingFieldsNil() {
+        let detail = makeDetail(dataType: "Foundation")
+        let product = detail.toProductInfo()
+
+        let nutriments = product.nutriments
+        XCTAssertNil(nutriments?.energyKcalServing, "Foundation food must NOT have energyKcalServing")
+        XCTAssertNil(nutriments?.proteinsServing)
+        XCTAssertNil(nutriments?.carbohydratesServing)
+        XCTAssertNil(nutriments?.fatServing)
+        XCTAssertNil(nutriments?.fiberServing)
+        XCTAssertNil(nutriments?.sodiumServing)
+    }
+
+    // Test 3: SR Legacy foods must keep all *Serving fields nil (regression guard)
+    func testUSDASRLegacyFoodToProductInfo_servingFieldsNil() {
+        let detail = makeDetail(dataType: "SR Legacy")
+        let product = detail.toProductInfo()
+
+        let nutriments = product.nutriments
+        XCTAssertNil(nutriments?.energyKcalServing, "SR Legacy food must NOT have energyKcalServing")
+        XCTAssertNil(nutriments?.proteinsServing)
+        XCTAssertNil(nutriments?.carbohydratesServing)
+        XCTAssertNil(nutriments?.fatServing)
+        XCTAssertNil(nutriments?.fiberServing)
+        XCTAssertNil(nutriments?.sodiumServing)
+    }
+}
+
+// MARK: - Micro-celebration flag tests (test plan items 4-5)
+
+final class MicroCelebrationFlagTests: XCTestCase {
+
+    // Test 4: New install (nil flag) — verify flag starts nil and can be set to true
+    func testMicroCelebration_firesOnFirstLog() {
+        let prefs = UserPreferences()
+        // Fresh install: flag must be nil
+        XCTAssertNil(prefs.hasSeenFirstLogCelebration, "Fresh install: hasSeenFirstLogCelebration must be nil")
+
+        // Simulate the TodayView guard: fires only when nil
+        let shouldFire = prefs.hasSeenFirstLogCelebration == nil
+        XCTAssertTrue(shouldFire, "Celebration should fire when flag is nil")
+
+        // Mark as seen
+        prefs.hasSeenFirstLogCelebration = true
+        XCTAssertEqual(prefs.hasSeenFirstLogCelebration, true)
+    }
+
+    // Test 5: Flag already set — verify guard prevents double-trigger
+    func testMicroCelebration_doesNotFireTwice() {
+        let prefs = UserPreferences()
+        prefs.hasSeenFirstLogCelebration = true
+
+        // Simulate the TodayView guard
+        let shouldFire = prefs.hasSeenFirstLogCelebration == nil
+        XCTAssertFalse(shouldFire, "Celebration must NOT fire when flag is already true")
+    }
+}

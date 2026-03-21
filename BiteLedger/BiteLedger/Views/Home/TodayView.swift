@@ -23,6 +23,7 @@ struct TodayView: View {
     @State private var yesterdayLogs: [FoodLog] = []
     @AppStorage("firstRunBannerDismissed") private var firstRunBannerDismissed: Bool = false
     @State private var streakMilestoneToast: Int?  // T-03
+    @State private var showFirstLogCelebration = false  // T-08
 
     // MARK: - Computed
 
@@ -108,7 +109,19 @@ struct TodayView: View {
                     .zIndex(999)
             }
         }
+        .overlay(alignment: .top) {
+            // T-08: First-log micro-celebration — fires exactly once, auto-dismisses after 2s
+            if showFirstLogCelebration {
+                FirstLogCelebrationToast {
+                    withAnimation { showFirstLogCelebration = false }
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .padding(.top, 12)
+                .zIndex(1000)
+            }
+        }
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: streakMilestoneToast)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showFirstLogCelebration)
         .sheet(item: $selectedMeal) { meal in
             FoodSearchView(mealType: meal) { addedItem in
                 let timestamp: Date
@@ -147,6 +160,19 @@ struct TodayView: View {
                 modelContext.insert(foodLog)
                 try? modelContext.save()
                 loadLogsForSelectedDate()
+
+                // T-08: First-log micro-celebration — fire exactly once when the flag is nil.
+                // Set the flag immediately before showing the overlay to prevent double-trigger.
+                if let prefs = preferences, prefs.hasSeenFirstLogCelebration == nil {
+                    prefs.hasSeenFirstLogCelebration = true
+                    try? modelContext.save()
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    withAnimation { showFirstLogCelebration = true }
+                    Task {
+                        try? await Task.sleep(for: .seconds(2))
+                        withAnimation { showFirstLogCelebration = false }
+                    }
+                }
 
                 // Invalidate the streak cache so the next loadStreak() recomputes.
                 // Only needed when logging for today — past-date edits don't change
@@ -610,6 +636,29 @@ private struct StreakMilestoneToast: View {
                 .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
         )
         .accessibilityLabel("\(days) day logging streak milestone")
+    }
+}
+
+// T-08: First-log micro-celebration — shown exactly once after the user's first ever food log.
+private struct FirstLogCelebrationToast: View {
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "star.fill")
+                .foregroundStyle(.yellow)
+            Text("You logged your first meal!")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color("TextPrimary"))
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(
+            Capsule().fill(Color("SurfaceElevated"))
+                .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
+        )
+        .onTapGesture { onDismiss() }
+        .accessibilityLabel("You logged your first meal")
     }
 }
 
