@@ -15,7 +15,7 @@ Last updated: 2026-03-19 by /plan-design-review.
 
 ## Color Tokens
 
-All colors live in `BiteLedger/Assets.xcassets`. RecipeCard **must** add these same tokens to its `Assets.xcassets` (or consume them from a shared location). Never use raw system colors (`Color.secondary`, `.accentColor`) in new code — always use a named token.
+All colors live in `BiteLedger/Assets.xcassets`. RecipeCard has these same tokens in its own `Assets.xcassets` (added in v0.1.1.0). RecipeCard also has two additional CookingMode tokens: `CookingModeSurface` and `CookingModeText` (full-screen cooking overlay). Never use raw system colors (`Color.secondary`, `.accentColor`) in new code — always use a named token.
 
 ### Brand
 | Token | Usage |

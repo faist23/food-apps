@@ -8,6 +8,8 @@ A privacy-first food tracking app for iOS.
 - 🔒 All data stays on your device
 - 📈 7-day rolling average history chart
 - 📤 Weekly recap share card
+- ⚡ Quick-Add recent/frequent foods per meal type
+- 🔥 Streak milestone celebrations (3, 7, 14, 30, 60, 100 days)
 - 🎯 No account required
 - 💪 Comprehensive nutrition tracking
 
