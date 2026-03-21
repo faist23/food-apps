@@ -14,6 +14,12 @@ struct RecipesListView: View {
     @State private var showingImport = false
     @State private var showingOCRImport = false
     @State private var pendingImportURL: String? = nil
+    @Environment(\.editMode) private var editMode
+
+    private let gridColumns = [
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12)
+    ]
 
     var body: some View {
         NavigationStack {
@@ -21,21 +27,42 @@ struct RecipesListView: View {
                 if recipes.isEmpty {
                     recipeEmptyState
                 } else {
-                    List {
-                        ForEach(recipes) { recipe in
-                            NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
-                                RecipeRowView(recipe: recipe)
+                    ScrollView {
+                        LazyVGrid(columns: gridColumns, spacing: 12) {
+                            ForEach(recipes) { recipe in
+                                NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
+                                    RecipeCardView(recipe: recipe)
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button(role: .destructive) {
+                                        deleteRecipe(recipe)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
                             }
                         }
-                        .onDelete(perform: deleteRecipes)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
                     }
                 }
             }
             .navigationTitle("Recipes")
             .toolbar {
-                // D-1: Consolidate import actions into ⋯ More menu
-                ToolbarItem(placement: .navigationBarTrailing) {
+                // Design: [•••] leading menu (Edit + Import + Scan + New), [+] trailing primary
+                ToolbarItem(placement: .navigationBarLeading) {
                     Menu {
+                        if !recipes.isEmpty {
+                            Button {
+                                withAnimation {
+                                    editMode?.wrappedValue = editMode?.wrappedValue == .active ? .inactive : .active
+                                }
+                            } label: {
+                                Label("Edit", systemImage: "pencil")
+                            }
+                            Divider()
+                        }
                         Button { showingImport = true } label: {
                             Label("Import from URL", systemImage: "link.badge.plus")
                         }
@@ -43,7 +70,7 @@ struct RecipesListView: View {
                             Label("Scan Recipe Card", systemImage: "camera.viewfinder")
                         }
                         Button { showingNewRecipe = true } label: {
-                            Label("New Recipe", systemImage: "square.and.pencil")
+                            Label("Create Manually", systemImage: "square.and.pencil")
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
@@ -53,9 +80,6 @@ struct RecipesListView: View {
                 ToolbarItem(placement: .primaryAction) {
                     Button { showingImport = true } label: { Image(systemName: "plus") }
                         .accessibilityLabel("Import recipe from URL")
-                }
-                if !recipes.isEmpty {
-                    ToolbarItem(placement: .navigationBarLeading) { EditButton() }
                 }
             }
             .sheet(isPresented: $showingImport, onDismiss: { pendingImportURL = nil }) {
@@ -76,12 +100,9 @@ struct RecipesListView: View {
         }
     }
 
-    private func deleteRecipes(offsets: IndexSet) {
-        for index in offsets {
-            let recipe = recipes[index]
-            if let url = recipe.imageURL { RecipeImportService.deleteLocalImage(urlString: url) }
-            modelContext.delete(recipe)
-        }
+    private func deleteRecipe(_ recipe: Recipe) {
+        if let url = recipe.imageURL { RecipeImportService.deleteLocalImage(urlString: url) }
+        modelContext.delete(recipe)
     }
 
     // D-2: Custom empty state with 3 import options
@@ -138,58 +159,7 @@ struct RecipesListView: View {
     }
 }
 
-private struct RecipeRowView: View {
-    let recipe: Recipe
-
-    var caloriesPerServing: Double? {
-        if let n = recipe.importedNutrition { return n.calories }
-        let total = recipe.sortedIngredients.reduce(NutritionCalculator.Result.zero) { acc, ing in
-            guard let food = ing.foodItem else { return acc }
-            return acc + NutritionCalculator.calculate(food: food, serving: ing.servingSize, quantity: ing.quantity)
-        }
-        guard total.calories > 0 else { return nil }
-        return total.calories / recipe.servingsYield
-    }
-
-    var body: some View {
-        HStack(spacing: 12) {
-            // D-3: Thumbnail — show fork.knife placeholder on SurfaceCard when no image
-            RecipePhotoView(urlString: recipe.imageURL, contentMode: .fill) {
-                recipeThumbnailPlaceholder
-            }
-            .frame(width: 56, height: 56)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(recipe.name).font(.headline)
-                HStack(spacing: 10) {
-                    if let time = recipe.displayTime {
-                        Label(time, systemImage: "clock")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Label("\(Int(recipe.servingsYield)) servings", systemImage: "person.2")
-                        .font(.caption).foregroundStyle(.secondary)
-                    if let cal = caloriesPerServing {
-                        Text("\(Int(cal)) cal")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-        .padding(.vertical, 2)
-    }
-
-    private var recipeThumbnailPlaceholder: some View {
-        ZStack {
-            Color("SurfaceCard")
-            Image(systemName: "fork.knife")
-                .font(.system(size: 22))
-                .foregroundStyle(.secondary)
-        }
-    }
-}
-
-/// Loads a recipe photo from either a remote https:// URL (via AsyncImage) or a
+///Loads a recipe photo from either a remote https:// URL (via AsyncImage) or a
 /// local file:// URL (via UIImage(contentsOfFile:)).  AsyncImage silently fails
 /// on file:// URLs in some iOS versions; using UIImage avoids that issue.
 struct RecipePhotoView<Placeholder: View>: View {

@@ -55,6 +55,7 @@ struct RecipeCardApp: App {
     // E-2: State-driven container — no fatalError or force-unwrap on failure.
     @State private var modelContainer: ModelContainer?
     @State private var storeError: Error?
+    @State private var shoppingCart = ShoppingCart()
 
     var body: some Scene {
         WindowGroup {
@@ -66,6 +67,7 @@ struct RecipeCardApp: App {
                     }
                 } else if let container = modelContainer {
                     RecipeCardRootView()
+                        .environment(shoppingCart)
                         .modifier(SeedingModifier(container: container))
                         .modelContainer(container)
                         .onOpenURL { url in

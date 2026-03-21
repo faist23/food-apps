@@ -3,6 +3,7 @@
 Tracked design and product work. Created by /plan-design-review on 2026-03-19.
 Engineering items added by /plan-eng-review on 2026-03-19.
 Product vision + new items added by /plan-ceo-review on 2026-03-19.
+Post-v1 roadmap + iPad strategy added by /plan-ceo-review on 2026-03-20.
 
 ---
 
@@ -25,12 +26,25 @@ This app is for **reluctant loggers, not nutrition optimizers.**
 Future implication: BiteLedger needs manual + URL recipe creation for segment 1.
 RecipeCard's differentiators: URL import, OCR, cooking mode, shopping list.
 
+### iPad Strategy (from /plan-ceo-review 2026-03-20)
+**Adaptive layout, not exclusive.** Meal planning and pantry use `horizontalSizeClass` to adapt:
+- `.compact` (iPhone): simplified list views (7-day planner as list, ingredient filter chips)
+- `.regular` (iPad): full grid views (week calendar with drag-and-drop, pantry inventory sidebar)
+Same SwiftData models underneath. Same App Store download. iPhone users get full planning features in list form; iPad users get the full grid experience.
+
 ### Schema Compatibility Policy (from /plan-ceo-review)
 Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 store without crashing. If backwards compat fails, require simultaneous App Store release of both apps.
 
 ---
 
 ## P3 — Future
+
+### T-15: RecipeDetailView — Segmented Ingredients/Directions
+**What:** Add a segmented control (Ingredients | Directions) to RecipeDetailView to let users jump between sections without scrolling past 15+ ingredient rows.
+**Context:** Single scroll is fine for small recipes but degrades with large ones. The scale picker already anchors the top of the view; a segmented picker below it would give clear section navigation. In-memory toggle — no schema change.
+**Effort:** XS (human: ~2 hours / CC: ~10 min) | **Priority:** P3 | **Depends on:** RecipeDetailView sticky bar shipped (v1.1)
+
+---
 
 ### T-06: HistoryView Design Overhaul
 **What:** Redesign HistoryView to be the "look back" surface. Ideal: trend chart + calendar strip + day detail.
@@ -65,10 +79,43 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ---
 
-### T-11: RecipeCard Cooking Mode + Shopping List
-**What:** Full-screen step-by-step cooking mode + grocery list from recipe ingredients.
-**Context:** RecipeCard differentiators vs BiteLedger. Build after initial App Store ship.
-**Effort:** L | **Priority:** P3 | **Depends on:** RecipeCard core stability
+### T-11: RecipeCard Kitchen Intelligence (v1.1 scope — 4 features)
+**What:** Four features that make RecipeCard a kitchen companion, not just a recipe storage app:
+1. **Recipe Scaling** — segmented picker (0.5x/1x/2x/3x) already implemented in RecipeDetailView; no new code needed beyond wiring shopping list to scale
+2. **Cooking Mode** — full-screen CookingModeView; uses `recipe.directions: [String]` (already in model, no parsing needed); screen stays awake; timer detection
+3. **Shopping List** — generate from recipe (respects current scaleFactor); grouped by category; share via iOS share sheet; persists to UserDefaults via ShoppingCart @Observable + @Environment (not @EnvironmentObject)
+4. **Log to BiteLedger** — RecipeServingSheet (new, needs building); uses `recipe.foodItem` directly; FoodLog.create() to shared store
+**Context:** v1.1 scope = Features 1–3 only. Feature 4 (Log to BiteLedger) moved to v1.2 — requires RecipeServingSheet (new) + BiteLedger `biteledger://` URL scheme declaration.
+Feature 1 (scaling) is already implemented; nearly zero additional work.
+**Effort:** XS+M+M = M total | **Priority:** P1 (v1.1) | **Depends on:** RecipeCard core stable (done)
+
+**v1.2 addition (Feature 4 — Log to BiteLedger):**
+- Build RecipeServingSheet (meal type + quantity picker)
+- BiteLedger declares `biteledger://` URL scheme in Info.plist
+- RecipeCard adds `biteledger` to LSApplicationQueriesSchemes
+- RecipeDetailView shows "Log to BiteLedger" button when `UIApplication.canOpenURL(biteledger://)` returns true
+- `FoodLog.create(food: recipe.foodItem, serving: nil, quantity: selectedQty)` writes to shared store
+
+---
+
+### T-12: Meal Planning
+**What:** Adaptive layout: iPhone shows 7-day list planner (Mon: Chicken Soup); iPad shows full week calendar grid with drag-and-drop. Shopping list generates from the full week's plan.
+**Context:** SchemaV2 required — needs `MealPlan` model. iPhone uses `.compact` sizeClass (list), iPad uses `.regular` (grid). Depends on T-11 shopping list shipping first.
+**Effort:** L (human: ~1 week / CC: ~1 hour) | **Priority:** P3 | **Depends on:** T-11, T-14 (SchemaV2)
+
+---
+
+### T-13: Pantry Filter / "What can I make?"
+**What:** Adaptive layout: iPhone shows ingredient chip filter bar at top of RecipesListView ("I have chicken + garlic" → filters recipes). iPad shows full pantry inventory sidebar panel.
+**Context:** Reuses `IngredientMatching.swift` scoring logic. More useful after library has 20+ recipes. iPhone-first interaction (standing at fridge); iPad gets full management view.
+**Effort:** M (human: ~2 days / CC: ~20 min) | **Priority:** P3 | **Depends on:** Recipe library maturity
+
+---
+
+### T-14: SchemaV2 Migration
+**What:** Add `MealPlan` model (enables T-12 meal planning). `steps: [String]` is no longer needed — `recipe.directions: [String]` already exists in the model stored as `directionsData: Data?`.
+**Context:** Coordinated release of both apps required per schema policy. Export via CSV before migrating during development. SchemaV2 scope is now smaller than planned.
+**Effort:** S (human: ~1 day / CC: ~15 min) | **Priority:** P2 | **Depends on:** T-11 shipped, both apps stable
 
 ---
 

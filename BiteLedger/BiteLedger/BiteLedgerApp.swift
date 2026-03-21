@@ -160,9 +160,10 @@ private struct IngredientSeedingOverlay: View {
 private func backfillStaleLogs(container: ModelContainer) async {
     let context = container.mainContext
     do {
-        // E-1: Skip on subsequent launches once complete
-        let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first
-        guard prefs?.hasBackfilledStaleLogs != true else { return }
+        // E-1: Skip on subsequent launches once complete.
+        // guard let ensures the flag assignment below actually persists (optional chaining is a no-op on nil).
+        guard let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first,
+              prefs.hasBackfilledStaleLogs != true else { return }
 
         let allServings = try context.fetch(FetchDescriptor<ServingSize>())
         let stale = allServings.filter { serving in
@@ -193,7 +194,7 @@ private func backfillStaleLogs(container: ModelContainer) async {
             }
             print("✅ backfillStaleLogs: fixed \(stale.count) serving(s)")
         }
-        prefs?.hasBackfilledStaleLogs = true
+        prefs.hasBackfilledStaleLogs = true
         try context.save()
     } catch {
         print("⚠️ backfillStaleLogs failed: \(error)")
@@ -213,9 +214,10 @@ private func backfillStaleLogs(container: ModelContainer) async {
 private func normalizeExistingPerServingFoods(container: ModelContainer) async {
     let context = container.mainContext
     do {
-        // E-1: Skip on subsequent launches once complete
-        let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first
-        guard prefs?.hasNormalizedPerServingFoods != true else { return }
+        // E-1: Skip on subsequent launches once complete.
+        // guard let ensures the flag assignment below actually persists (optional chaining is a no-op on nil).
+        guard let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first,
+              prefs.hasNormalizedPerServingFoods != true else { return }
 
         let foods = try context.fetch(FetchDescriptor<FoodItem>())
         let perServingFoods = foods.filter { $0.nutritionMode == .perServing }
@@ -249,7 +251,7 @@ private func normalizeExistingPerServingFoods(container: ModelContainer) async {
             }
             print("✅ normalizeExistingPerServingFoods: normalized \(perServingFoods.count) food(s)")
         }
-        prefs?.hasNormalizedPerServingFoods = true
+        prefs.hasNormalizedPerServingFoods = true
         try context.save()
     } catch {
         print("⚠️ normalizeExistingPerServingFoods failed: \(error)")
@@ -263,9 +265,10 @@ private func normalizeExistingPerServingFoods(container: ModelContainer) async {
 private func backfillServingAmounts(container: ModelContainer) async {
     let context = container.mainContext
     do {
-        // E-1: Skip on subsequent launches once complete
-        let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first
-        guard prefs?.hasBackfilledServingAmounts != true else { return }
+        // E-1: Skip on subsequent launches once complete.
+        // guard let ensures the flag assignment below actually persists (optional chaining is a no-op on nil).
+        guard let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first,
+              prefs.hasBackfilledServingAmounts != true else { return }
 
         let servings = try context.fetch(FetchDescriptor<ServingSize>())
         var changed = 0
@@ -279,7 +282,7 @@ private func backfillServingAmounts(container: ModelContainer) async {
         if changed > 0 {
             print("✅ backfillServingAmounts: updated \(changed) serving(s)")
         }
-        prefs?.hasBackfilledServingAmounts = true
+        prefs.hasBackfilledServingAmounts = true
         try context.save()
     } catch {
         print("⚠️ backfillServingAmounts failed: \(error)")
@@ -293,9 +296,10 @@ private func backfillServingAmounts(container: ModelContainer) async {
 private func backfillFoodLogGramAmounts(container: ModelContainer) async {
     let context = container.mainContext
     do {
-        // E-1: Skip on subsequent launches once complete
-        let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first
-        guard prefs?.hasBackfilledGramAmounts != true else { return }
+        // E-1: Skip on subsequent launches once complete.
+        // guard let ensures the flag assignment below actually persists (optional chaining is a no-op on nil).
+        guard let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first,
+              prefs.hasBackfilledGramAmounts != true else { return }
 
         let logs = try context.fetch(FetchDescriptor<FoodLog>())
         let unset = logs.filter { $0.gramAmount == 0 }
@@ -324,7 +328,7 @@ private func backfillFoodLogGramAmounts(container: ModelContainer) async {
         if !unset.isEmpty {
             print("✅ backfillFoodLogGramAmounts: set gramAmount on \(unset.count) log(s)")
         }
-        prefs?.hasBackfilledGramAmounts = true
+        prefs.hasBackfilledGramAmounts = true
         try context.save()
     } catch {
         print("⚠️ backfillFoodLogGramAmounts failed: \(error)")
@@ -337,9 +341,10 @@ private func backfillFoodLogGramAmounts(container: ModelContainer) async {
 private func backfillServingUnits(container: ModelContainer) async {
     let context = container.mainContext
     do {
-        // E-1: Skip on subsequent launches once complete
-        let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first
-        guard prefs?.hasBackfilledServingUnits != true else { return }
+        // E-1: Skip on subsequent launches once complete.
+        // guard let ensures the flag assignment below actually persists (optional chaining is a no-op on nil).
+        guard let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first,
+              prefs.hasBackfilledServingUnits != true else { return }
 
         let servings = try context.fetch(
             FetchDescriptor<ServingSize>(
@@ -357,7 +362,7 @@ private func backfillServingUnits(container: ModelContainer) async {
         if !servings.isEmpty {
             print("✅ backfillServingUnits: set unit on \(servings.count) ServingSize records")
         }
-        prefs?.hasBackfilledServingUnits = true
+        prefs.hasBackfilledServingUnits = true
         try context.save()
     } catch {
         print("⚠️ backfillServingUnits failed: \(error)")
@@ -379,9 +384,10 @@ private func backfillServingUnits(container: ModelContainer) async {
 private func fixLoseItGramUnitFoods(container: ModelContainer) async {
     let context = container.mainContext
     do {
-        // E-1: Skip on subsequent launches once complete
-        let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first
-        guard prefs?.hasFixedLoseItGramUnits != true else { return }
+        // E-1: Skip on subsequent launches once complete.
+        // guard let ensures the flag assignment below actually persists (optional chaining is a no-op on nil).
+        guard let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first,
+              prefs.hasFixedLoseItGramUnits != true else { return }
 
         // Only look at LoseIt-imported foods
         let foods = try context.fetch(
@@ -460,7 +466,7 @@ private func fixLoseItGramUnitFoods(container: ModelContainer) async {
         if nutritionFixed > 0 || gramWeightFixed > 0 {
             print("✅ fixLoseItGramUnitFoods: fixed nutrition on \(nutritionFixed) food(s), gramWeight on \(gramWeightFixed) serving(s)")
         }
-        prefs?.hasFixedLoseItGramUnits = true
+        prefs.hasFixedLoseItGramUnits = true
         try context.save()
     } catch {
         print("⚠️ fixLoseItGramUnitFoods failed: \(error)")

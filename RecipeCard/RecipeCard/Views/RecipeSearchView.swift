@@ -12,29 +12,14 @@ struct RecipeSearchView: View {
     @State private var searchText = ""
     @State private var results: [Recipe] = []
 
+    private let gridColumns = [
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12)
+    ]
+
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(results) { recipe in
-                    NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(recipe.name)
-                                .font(.headline)
-                            if let servings = Optional(recipe.servingsYield) {
-                                Text("\(Int(servings)) servings")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .padding(.vertical, 2)
-                    }
-                }
-            }
-            .navigationTitle("Search")
-            .searchable(text: $searchText, prompt: "Search recipes")
-            .onChange(of: searchText) { _, query in search(query) }
-            .onAppear { search("") }
-            .overlay {
+            Group {
                 if results.isEmpty {
                     ContentUnavailableView(
                         searchText.isEmpty ? "No Recipes" : "No Results",
@@ -43,8 +28,25 @@ struct RecipeSearchView: View {
                             ? "Create recipes in the Recipes tab."
                             : "Try a different search term.")
                     )
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: gridColumns, spacing: 12) {
+                            ForEach(results) { recipe in
+                                NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
+                                    RecipeCardView(recipe: recipe)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                    }
                 }
             }
+            .navigationTitle("Search")
+            .searchable(text: $searchText, prompt: "Search recipes")
+            .onChange(of: searchText) { _, query in search(query) }
+            .onAppear { search("") }
         }
     }
 

@@ -9,10 +9,13 @@ import BiteLedgerCore
 
 struct RecipeDetailView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(ShoppingCart.self) private var shoppingCart
     @Bindable var recipe: Recipe
     @State private var showingEditor = false
     @State private var showingNutrition = false
+    @State private var showingCookingMode = false
     @State private var scaleFactor: Double = 1.0
+    @State private var showingAddedToast = false
 
     /// True when nutrition is sourced from the website rather than ingredient calculations.
     private var usingWebsiteNutrition: Bool {
@@ -75,7 +78,10 @@ struct RecipeDetailView: View {
         )
     }
 
+    private var hasDirections: Bool { !recipe.directions.isEmpty }
+
     var body: some View {
+        ZStack(alignment: .bottom) {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
 
@@ -253,7 +259,14 @@ struct RecipeDetailView: View {
                 }
             }
             .padding(.vertical)
+            // Bottom padding so sticky bar doesn't obscure last content
+            .padding(.bottom, 80)
         }
+
+        // Sticky bottom action bar
+        stickyActionBar
+
+        } // end ZStack
         .navigationTitle(recipe.name)
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
@@ -275,6 +288,67 @@ struct RecipeDetailView: View {
                 servings: recipe.servingsYield,
                 perServing: perServing
             )
+        }
+        .fullScreenCover(isPresented: $showingCookingMode) {
+            CookingModeView(recipe: recipe)
+        }
+    }
+
+    // MARK: - Sticky bottom action bar
+
+    private var stickyActionBar: some View {
+        VStack(spacing: 0) {
+            Divider()
+            HStack(spacing: 12) {
+                // Primary: Start Cooking — disabled when no directions
+                Button {
+                    showingCookingMode = true
+                } label: {
+                    Label("Start Cooking", systemImage: "frying.pan")
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!hasDirections)
+                .overlay(alignment: .bottom) {
+                    if !hasDirections {
+                        Text("Add directions first.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .offset(y: 16)
+                    }
+                }
+
+                // Secondary: Add to Shopping List
+                Button {
+                    shoppingCart.addRecipe(recipe, scaleFactor: scaleFactor)
+                    withAnimation { showingAddedToast = true }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        withAnimation { showingAddedToast = false }
+                    }
+                } label: {
+                    Label("Shopping", systemImage: "cart.badge.plus")
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                }
+                .buttonStyle(.bordered)
+                .tint(Color("BrandPrimary"))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(.regularMaterial)
+        }
+        .overlay(alignment: .top) {
+            if showingAddedToast {
+                Text("Added to shopping list")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color("BrandPrimary"), in: Capsule())
+                    .offset(y: -52)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
     }
 
