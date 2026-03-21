@@ -39,6 +39,16 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ## P3 — Future
 
+### T-16: RecipeCard — Auto-total time unit tests
+**What:** Unit tests for the `onChange` condition that auto-fills Total time from Prep + Cook in RecipeEditorView and RecipeImportReviewView.
+**Why:** The guard "only auto-update total if total == prev sum OR total is nil" is the only non-trivial logic in the metadata PR. Without tests, a future refactor could silently break the "don't override user's manual total" invariant.
+**Pros:** Protects a subtle invariant that is easy to break silently.
+**Cons:** SwiftUI @State is not unit-testable directly — logic must be extracted to a pure function first (e.g., `func resolveAutoTotal(prep: Int?, cook: Int?, currentTotal: Int?) -> Int?`).
+**Context:** Introduced by feature/v1-ship toolbar + metadata PR. Auto-total fires when prep or cook changes and total is nil or equals the previous prep+cook sum. The interesting edge case: user sets total=60, then edits prep to 20 (cook=30) — total must stay 60.
+**Effort:** XS (human: ~1 hour / CC: ~10 min) | **Priority:** P3 | **Depends on:** metadata PR shipped
+
+---
+
 ### T-15: RecipeDetailView — Segmented Ingredients/Directions
 **What:** Add a segmented control (Ingredients | Directions) to RecipeDetailView to let users jump between sections without scrolling past 15+ ingredient rows.
 **Context:** Single scroll is fine for small recipes but degrades with large ones. The scale picker already anchors the top of the view; a segmented picker below it would give clear section navigation. In-memory toggle — no schema change.
@@ -110,6 +120,16 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ---
 
+### D-9: RecipeCard Toolbar Consolidation
+**What:** Consolidate RecipeCard's `RecipesListView` toolbar actions into a `.menu` button to stay compliant with DESIGN.md's max-2-leading-items rule. Adding the Settings gear icon during the Backup & Restore feature will push the toolbar beyond 4 items.
+**Why:** DESIGN.md explicitly flags 4+ leading toolbar items as an anti-pattern. A menu button groups Import/Scan/Import-OCR behind a single `+` or `ellipsis` icon.
+**Pros:** Cleaner toolbar, consistent with iOS conventions, room for future toolbar additions.
+**Cons:** Minor interaction change for existing users (import taps go through one extra tap).
+**Context:** RecipesListView currently has: Edit, Import (URL), Scan (OCR), + (new recipe). Adding a gear icon will make 5. DESIGN.md toolbar rule: max 1-2 leading items. This was deferred when adding Settings gear in the Backup & Restore feature (feature/v1-ship).
+**Effort:** XS (human: ~1 hour / CC: ~10 min) | **Priority:** P2 | **Depends on:** Backup & Restore shipped
+
+---
+
 ## Completed
 
 - **E-1: Startup Backfill Completion Flags** — `has*` flags added to `UserPreferences`; each backfill skips on subsequent launches. **Completed:** v0.1.0.0 (2026-03-20)
@@ -125,3 +145,4 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 - **Local Search Word-Order Fix** — `matchesQuery()` in FoodSearchView: exact phrase first, then all words any order. Fixes "margherita pizza" → "pizza, margherita". **Completed:** 2026-03-20
 - **T-11: RecipeCard Kitchen Intelligence (v1.1 — Features 1–3)** — Recipe Scaling (already in RecipeDetailView), Cooking Mode (`CookingModeView` full-screen step navigation, screen always-on), Shopping List (`ShoppingCart` @Observable + UserDefaults persistence, `ShoppingListView` with categorized sections, swipe actions, share sheet). Feature 4 (Log to BiteLedger) deferred to v1.2. **Completed:** v0.1.1.0 (2026-03-20)
 - **v1.2 Phase 1 — Search quality + micro-celebration:** (1) USDA data types changed from SR Legacy + Survey (FNDDS) to Foundation + SR Legacy + Branded; `USDAFoodDetail.toProductInfo()` now branches on Branded to populate *Serving fields from FDA label serving size; `ProductInfo` gains `dataType: String?`; (2) 3-day gate removed from `RecentFoodsForMealView` — recent foods show immediately on first log; (3) T-08 micro-celebration shipped (`hasSeenFirstLogCelebration: Bool?` in UserPreferences, haptic + 2s overlay in TodayView fires exactly once); (4) `AddFoodView.swift` dead code deleted; (5) 5 tests added: USDA Branded/Foundation/SR Legacy branching + micro-celebration flag. **Completed:** feature/v1-ship (2026-03-21)
+- **Backup & Restore (both apps):** ZIP-based backup/restore via `BackupService` in BiteLedgerCore. `createBackup` stages manifest.json + 5 CSVs + recipe images into a temp dir, zips with ZIPFoundation, returns shareable URL. `restoreBackup` extracts, validates, and imports with `.replaceAll` or `.merge` (UUID-based skip). `resetDatabase` supports 4 scopes (logsOnly/allFoodData/recipesOnly/everything). Both BiteLedger and RecipeCard have `BackupRestoreView` + `SettingsView` accessed from their respective settings/toolbar gear. `CSVImporter.importBiteLedger` gained `skipExistingUUIDs: Bool` with O(n) seed map pre-fetch. **Completed:** feature/v1-ship (2026-03-21)

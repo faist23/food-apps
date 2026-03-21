@@ -13,12 +13,12 @@ struct RecipesListView: View {
     @State private var showingNewRecipe = false
     @State private var showingImport = false
     @State private var showingOCRImport = false
+    @State private var showingSettings = false
     @State private var pendingImportURL: String? = nil
-    @Environment(\.editMode) private var editMode
 
     private let gridColumns = [
         GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12)
+        GridItem(.flexible())
     ]
 
     var body: some View {
@@ -34,6 +34,7 @@ struct RecipesListView: View {
                                     RecipeCardView(recipe: recipe)
                                 }
                                 .buttonStyle(.plain)
+                                .frame(maxHeight: .infinity, alignment: .top)
                                 .contextMenu {
                                     Button(role: .destructive) {
                                         deleteRecipe(recipe)
@@ -50,19 +51,15 @@ struct RecipesListView: View {
             }
             .navigationTitle("Recipes")
             .toolbar {
-                // Design: [•••] leading menu (Edit + Import + Scan + New), [+] trailing primary
+                // Design: [gear] leading (Settings), [+▾] trailing menu (3 add methods)
                 ToolbarItem(placement: .navigationBarLeading) {
+                    Button { showingSettings = true } label: {
+                        Image(systemName: "gear")
+                    }
+                    .accessibilityLabel("Settings")
+                }
+                ToolbarItem(placement: .primaryAction) {
                     Menu {
-                        if !recipes.isEmpty {
-                            Button {
-                                withAnimation {
-                                    editMode?.wrappedValue = editMode?.wrappedValue == .active ? .inactive : .active
-                                }
-                            } label: {
-                                Label("Edit", systemImage: "pencil")
-                            }
-                            Divider()
-                        }
                         Button { showingImport = true } label: {
                             Label("Import from URL", systemImage: "link.badge.plus")
                         }
@@ -73,13 +70,9 @@ struct RecipesListView: View {
                             Label("Create Manually", systemImage: "square.and.pencil")
                         }
                     } label: {
-                        Image(systemName: "ellipsis.circle")
+                        Image(systemName: "plus")
                     }
-                    .accessibilityLabel("More options")
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Button { showingImport = true } label: { Image(systemName: "plus") }
-                        .accessibilityLabel("Import recipe from URL")
+                    .accessibilityLabel("Add recipe")
                 }
             }
             .sheet(isPresented: $showingImport, onDismiss: { pendingImportURL = nil }) {
@@ -90,6 +83,9 @@ struct RecipesListView: View {
             }
             .sheet(isPresented: $showingNewRecipe) {
                 RecipeEditorView(recipe: nil)
+            }
+            .sheet(isPresented: $showingSettings) {
+                SettingsView()
             }
             .onReceive(NotificationCenter.default.publisher(for: .recipeCardImportURL)) { note in
                 if let url = note.userInfo?["url"] as? URL {

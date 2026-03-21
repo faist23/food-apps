@@ -25,7 +25,7 @@ struct LoseItImportView: View {
     
     enum ImportType: String, CaseIterable, Identifiable {
         case logsOnly = "Food Logs Only (Single CSV)"
-        case complete = "Complete Database (3 CSV Files)"
+        case complete = "Complete Database (5 CSV Files + Images)"
 
         var id: String { rawValue }
     }
@@ -34,14 +34,14 @@ struct LoseItImportView: View {
         if isImporting {
             return "Importing..."
         } else if importType == .complete {
-            return "Select 3 CSV Files"
+            return "Select All Exported Files"
         } else {
             return "Select CSV File"
         }
     }
 
     private var descriptionText: String {
-        importType == .complete ? "Import complete database from 3 CSV files" : "Import your food logs from a CSV file"
+        importType == .complete ? "Import complete database from a BiteLedger export" : "Import your food logs from a CSV file"
     }
 
     private var buttonIcon: String {
@@ -86,7 +86,7 @@ struct LoseItImportView: View {
                     .cornerRadius(10)
                     
                     if importType == .complete {
-                        Text("Select all 3 files from your BiteLedger export: the foods, servings, and logs CSVs.")
+                        Text("Select all files from your BiteLedger export: the 5 CSV files and any recipe image files (.jpg).")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
@@ -139,7 +139,9 @@ struct LoseItImportView: View {
             }
             .fileImporter(
                 isPresented: $showingPicker,
-                allowedContentTypes: [.commaSeparatedText, .text],
+                allowedContentTypes: importType == .complete
+                    ? [.commaSeparatedText, .text, .jpeg, .png, .heic]
+                    : [.commaSeparatedText, .text],
                 allowsMultipleSelection: importType == .complete
             ) { result in
                 if importType == .complete {
@@ -274,12 +276,29 @@ struct LoseItImportView: View {
                     }
                 }
 
-                // Auto-detect which file is foods / servings / logs by checking headers
+                // Auto-detect which file is which by inspecting CSV headers.
+                // Supports the legacy 3-file format, the current 5-file format,
+                // and optional recipe image files ({uuid}.jpg).
                 var foodsCSV: String?
                 var servingsCSV: String?
                 var logsCSV: String?
+                var recipesCSV: String?
+                var ingredientsCSV: String?
+                // Image map: recipe UUID string → JPEG data
+                var imageMap: [String: Data] = [:]
 
                 for url in urls {
+                    let ext = url.pathExtension.lowercased()
+
+                    // Image file — filename is "{uuid}.jpg"
+                    if ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "heic" {
+                        let uuidString = url.deletingPathExtension().lastPathComponent
+                        if let data = try? Data(contentsOf: url), !uuidString.isEmpty {
+                            imageMap[uuidString] = data
+                        }
+                        continue
+                    }
+
                     let csv = try String(contentsOf: url, encoding: .utf8)
                     let firstLine = csv.components(separatedBy: .newlines).first?.lowercased() ?? ""
                     if firstLine.contains("caloriesatlogtime") {
@@ -288,6 +307,10 @@ struct LoseItImportView: View {
                         foodsCSV = csv
                     } else if firstLine.contains("gramweight") || firstLine.contains("isdefault") {
                         servingsCSV = csv
+                    } else if firstLine.contains("servingsyield") || firstLine.contains("recipecategory") {
+                        recipesCSV = csv
+                    } else if firstLine.contains("recipeid") || firstLine.contains("recipeunit") {
+                        ingredientsCSV = csv
                     }
                 }
 
@@ -309,6 +332,9 @@ struct LoseItImportView: View {
                         foodsCSV: foods,
                         servingsCSV: servings,
                         logsCSV: logs,
+                        recipesCSV: recipesCSV,
+                        ingredientsCSV: ingredientsCSV,
+                        imageMap: imageMap,
                         context: modelContext
                     )
                 }

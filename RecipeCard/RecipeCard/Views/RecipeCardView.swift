@@ -15,13 +15,18 @@ struct RecipeCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Photo area: 150pt full-bleed. Gradient placeholder when no image.
-            RecipePhotoView(urlString: recipe.imageURL, contentMode: .fill) {
-                recipeCardPlaceholder
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 150)
-            .clipped()
+            // Photo area: Rectangle anchors layout — AsyncImage overlaid so it
+            // can never inflate the card's width/height.
+            Rectangle()
+                .fill(Color("SurfaceCard"))
+                .frame(maxWidth: .infinity)
+                .frame(height: 150)
+                .overlay(
+                    RecipePhotoView(urlString: recipe.imageURL, contentMode: .fill) {
+                        recipeCardPlaceholder
+                    }
+                )
+                .clipped()
 
             // Name + time metadata
             VStack(alignment: .leading, spacing: 4) {

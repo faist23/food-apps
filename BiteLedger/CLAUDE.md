@@ -100,14 +100,42 @@ unit words to `.serving` and would display "Serving".
 
 ## CSV Import/Export
 
-`CSVExporter` produces three files for full round-trip backup:
-`foods.csv`, `servings.csv`, `logs.csv`.
+`CSVExporter` produces five files for full round-trip backup:
+`foods.csv`, `servings.csv`, `logs.csv`, `recipes.csv`, `ingredients.csv`.
 
 `CSVImporter` auto-detects format:
 - **LoseIt export** — single CSV with daily logs
-- **BiteLedger full export** — three-file set (foods + servings + logs)
+- **BiteLedger full export** — five-file set (foods + servings + logs + recipes + ingredients)
+- **BiteLedger legacy export** — three-file set (foods + servings + logs); recipes/ingredients
+  gracefully skipped (nil parameters to `importBiteLedger`)
 
 Guarantee: export → delete app → import produces identical data.
+
+### JSON array fields in recipes.csv
+`directions`, `keywords`, `dietTags`, and `importedNutrition` are stored as
+**base64-encoded JSON Data** to keep each recipe on a single CSV line without
+embedded newlines breaking the parser. Decode with `Data(base64Encoded:)` on import.
+
+### Recipe images (separate files, not in CSV)
+Local `file://` images (OCR scans, camera photos) are exported as **`{recipeId}.jpg`** files
+written into an `images/` subdirectory of the temp export folder alongside the 5 CSVs.
+Remote `https://` images are **not** exported — `AsyncImage` re-fetches them naturally.
+
+On import: `LoseItImportView` detects `.jpg`/`.jpeg`/`.png`/`.heic` files, reads their data,
+and builds an `imageMap: [String: Data]` keyed by the UUID filename stem.
+`importBiteLedger(imageMap:)` passes the map to `importBiteLedgerRecipes()`, which calls
+`RecipeImportService.saveImageDataLocally()` to write each JPEG to Documents on the new device.
+Dead `file://` URLs without a matching image file are left nil.
+
+### Auto-detection signatures (LoseItImportView)
+| File | Detection |
+|---|---|
+| foods.csv | header contains `nutritionmode` |
+| servings.csv | header contains `gramweight` or `isdefault` |
+| logs.csv | header contains `caloriesatlogtime` |
+| recipes.csv | header contains `servingsyield` or `recipecategory` |
+| ingredients.csv | header contains `recipeid` or `recipeunit` |
+| `{uuid}.jpg` | file extension is `.jpg`/`.jpeg`/`.png`/`.heic`; UUID from filename stem |
 
 ---
 

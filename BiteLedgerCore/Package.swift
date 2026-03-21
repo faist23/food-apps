@@ -13,10 +13,13 @@ let package = Package(
             targets: ["BiteLedgerCore"]
         ),
     ],
+    dependencies: [
+        .package(url: "https://github.com/weichsel/ZipFoundation.git", from: "0.9.19"),
+    ],
     targets: [
         .target(
             name: "BiteLedgerCore",
-            dependencies: [],
+            dependencies: [.product(name: "ZIPFoundation", package: "ZipFoundation")],
             path: "Sources/BiteLedgerCore",
             resources: [
                 .process("Resources"),

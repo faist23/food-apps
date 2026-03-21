@@ -15,6 +15,7 @@ struct DataExportView: View {
     
     @Query(sort: \FoodLog.timestamp, order: .reverse) private var allLogs: [FoodLog]
     @Query(sort: \FoodItem.name) private var allFoods: [FoodItem]
+    @Query(sort: \Recipe.dateAdded) private var allRecipes: [Recipe]
     
     @State private var exportType: ExportType = .logsOnly
     @State private var exportRange: ExportRange = .all
@@ -28,8 +29,8 @@ struct DataExportView: View {
 
     enum ExportType: String, CaseIterable, Identifiable {
         case logsOnly = "Food Logs Only (CSV)"
-        case complete = "Complete Database (3 CSV Files)"
-        
+        case complete = "Complete Database (5 CSV Files)"
+
         var id: String { rawValue }
     }
     
@@ -57,7 +58,7 @@ struct DataExportView: View {
                         .font(.title)
                         .fontWeight(.bold)
                     
-                    Text(exportType == .complete ? "Export complete database with foods and portions" : "Export your food logs as a CSV file")
+                    Text(exportType == .complete ? "Export complete database with foods, portions, and recipes" : "Export your food logs as a CSV file")
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -111,7 +112,7 @@ struct DataExportView: View {
                         Image(systemName: "doc.text.fill")
                             .foregroundStyle(.orange)
                         if exportType == .complete {
-                            Text("\(allLogs.count) log entries, \(allFoods.count) foods, \(totalPortions) portions")
+                            Text("\(allLogs.count) log entries, \(allFoods.count) foods, \(totalPortions) portions, \(totalRecipes) recipes")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         } else {
@@ -181,6 +182,8 @@ struct DataExportView: View {
     private var totalPortions: Int {
         allFoods.reduce(0) { $0 + $1.servingSizes.count }
     }
+
+    private var totalRecipes: Int { allRecipes.count }
     
     private func getFilteredLogs() -> [FoodLog] {
         let calendar = Calendar.current
@@ -224,15 +227,32 @@ struct DataExportView: View {
                         .appendingPathComponent(package.filePrefix)
                     try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
 
-                    let foodsURL    = tempDir.appendingPathComponent("\(package.filePrefix)_foods.csv")
-                    let servingsURL = tempDir.appendingPathComponent("\(package.filePrefix)_servings.csv")
-                    let logsURL     = tempDir.appendingPathComponent("\(package.filePrefix)_logs.csv")
+                    let foodsURL       = tempDir.appendingPathComponent("\(package.filePrefix)_foods.csv")
+                    let servingsURL    = tempDir.appendingPathComponent("\(package.filePrefix)_servings.csv")
+                    let logsURL        = tempDir.appendingPathComponent("\(package.filePrefix)_logs.csv")
+                    let recipesURL     = tempDir.appendingPathComponent("\(package.filePrefix)_recipes.csv")
+                    let ingredientsURL = tempDir.appendingPathComponent("\(package.filePrefix)_ingredients.csv")
 
                     try package.foodsCSV.write(to: foodsURL, atomically: true, encoding: .utf8)
                     try package.servingsCSV.write(to: servingsURL, atomically: true, encoding: .utf8)
                     try package.logsCSV.write(to: logsURL, atomically: true, encoding: .utf8)
+                    try package.recipesCSV.write(to: recipesURL, atomically: true, encoding: .utf8)
+                    try package.ingredientsCSV.write(to: ingredientsURL, atomically: true, encoding: .utf8)
 
-                    fileURLs = [foodsURL, servingsURL, logsURL]
+                    var urls: [URL] = [foodsURL, servingsURL, logsURL, recipesURL, ingredientsURL]
+
+                    // Write local recipe images as {uuid}.jpg files
+                    if !package.recipeImages.isEmpty {
+                        let imagesDir = tempDir.appendingPathComponent("images")
+                        try FileManager.default.createDirectory(at: imagesDir, withIntermediateDirectories: true)
+                        for (filename, data) in package.recipeImages {
+                            let imgURL = imagesDir.appendingPathComponent(filename)
+                            try data.write(to: imgURL)
+                            urls.append(imgURL)
+                        }
+                    }
+
+                    fileURLs = urls
                 } else {
                     let logs = getFilteredLogs()
                     let csvString = CSVExporter.exportLogs(logs)

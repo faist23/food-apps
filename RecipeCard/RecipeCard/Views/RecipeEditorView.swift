@@ -23,11 +23,33 @@ struct RecipeEditorView: View {
     @State private var newDirection: String = ""
     @State private var showingIngredientPicker = false
 
+    // Metadata fields (model fields already exist — pure UI addition)
+    @State private var recipeDesc: String
+    @State private var prepMinutes: String
+    @State private var cookMinutes: String
+    @State private var totalMinutes: String
+    @State private var recipeCategory: String
+    @State private var recipeCuisine: String
+    /// Tracks the last auto-computed total so we don't clobber a user's manual edit.
+    @State private var prevAutoTotal: Int
+
     // Photo editing
     @State private var currentImageURL: String?       // existing saved URL (remote or file://)
     @State private var pendingImage: UIImage?         // new selection — written to disk on save
     @State private var photoItem: PhotosPickerItem?
     @State private var showingCamera = false
+
+    static let categoryOptions = [
+        "Appetizer", "Breakfast", "Bread", "Dessert", "Drink",
+        "Main Dish", "Salad", "Sauce", "Side Dish", "Snack", "Soup"
+    ]
+
+    static let cuisineOptions = [
+        "American", "BBQ", "British", "Caribbean", "Chinese",
+        "French", "Greek", "Indian", "Italian", "Japanese",
+        "Korean", "Mediterranean", "Mexican", "Middle Eastern",
+        "Spanish", "Thai", "Vietnamese"
+    ]
 
     init(recipe: Recipe?) {
         self.existingRecipe = recipe
@@ -37,6 +59,15 @@ struct RecipeEditorView: View {
         _directions       = State(initialValue: recipe?.directions ?? [])
         _ingredients      = State(initialValue: recipe?.sortedIngredients ?? [])
         _currentImageURL  = State(initialValue: recipe?.imageURL)
+        _recipeDesc       = State(initialValue: recipe?.recipeDescription ?? "")
+        _prepMinutes      = State(initialValue: recipe?.prepMinutes.map(String.init) ?? "")
+        _cookMinutes      = State(initialValue: recipe?.cookMinutes.map(String.init) ?? "")
+        _totalMinutes     = State(initialValue: recipe?.totalMinutes.map(String.init) ?? "")
+        _recipeCategory   = State(initialValue: recipe?.recipeCategory ?? "")
+        _recipeCuisine    = State(initialValue: recipe?.recipeCuisine ?? "")
+        let p = recipe?.prepMinutes ?? 0
+        let c = recipe?.cookMinutes ?? 0
+        _prevAutoTotal    = State(initialValue: p + c)
     }
 
     private var totals: NutritionCalculator.Result {
@@ -129,6 +160,55 @@ struct RecipeEditorView: View {
                         .autocorrectionDisabled()
                 }
 
+                Section("Details") {
+                    TextField("Description (optional)", text: $recipeDesc, axis: .vertical)
+                        .lineLimit(2...4)
+                    HStack {
+                        Text("Prep Time")
+                        Spacer()
+                        TextField("0", text: $prepMinutes)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 60)
+                        Text("min")
+                            .foregroundStyle(Color("TextSecondary"))
+                    }
+                    HStack {
+                        Text("Cook Time")
+                        Spacer()
+                        TextField("0", text: $cookMinutes)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 60)
+                        Text("min")
+                            .foregroundStyle(Color("TextSecondary"))
+                    }
+                    HStack {
+                        Text("Total Time")
+                        Spacer()
+                        TextField("0", text: $totalMinutes)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 60)
+                        Text("min")
+                            .foregroundStyle(Color("TextSecondary"))
+                    }
+                    Picker("Category", selection: $recipeCategory) {
+                        Text("None").tag("")
+                        ForEach(RecipeEditorView.categoryOptions, id: \.self) { cat in
+                            Text(cat).tag(cat)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    Picker("Cuisine", selection: $recipeCuisine) {
+                        Text("None").tag("")
+                        ForEach(RecipeEditorView.cuisineOptions, id: \.self) { cuisine in
+                            Text(cuisine).tag(cuisine)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+
                 Section("Ingredients") {
                     ForEach(ingredients) { ing in
                         IngredientEditorRow(ingredient: ing)
@@ -209,6 +289,8 @@ struct RecipeEditorView: View {
                 }
                 .ignoresSafeArea()
             }
+            .onChange(of: prepMinutes) { _, _ in autoUpdateTotal() }
+            .onChange(of: cookMinutes) { _, _ in autoUpdateTotal() }
             .onChange(of: photoItem) { _, newItem in
                 guard let newItem else { return }
                 Task {
@@ -220,6 +302,19 @@ struct RecipeEditorView: View {
                     photoItem = nil
                 }
             }
+        }
+    }
+
+    /// Auto-fills Total when Prep or Cook changes, unless the user has manually set Total
+    /// to a value different from the previously auto-computed sum.
+    private func autoUpdateTotal() {
+        let p = Int(prepMinutes) ?? 0
+        let c = Int(cookMinutes) ?? 0
+        let newSum = p + c
+        let currentTotal = Int(totalMinutes)
+        if totalMinutes.isEmpty || currentTotal == prevAutoTotal {
+            totalMinutes = newSum > 0 ? String(newSum) : ""
+            prevAutoTotal = newSum
         }
     }
 
@@ -244,12 +339,20 @@ struct RecipeEditorView: View {
             resolvedImageURL = currentImageURL
         }
 
+        let descTrimmed = recipeDesc.trimmingCharacters(in: .whitespaces)
+
         if let recipe = existingRecipe {
             recipe.name = name.trimmingCharacters(in: .whitespaces)
             recipe.servingsYield = yield
             recipe.sourceURL = url
             recipe.directions = directions
             recipe.imageURL = resolvedImageURL
+            recipe.recipeDescription = descTrimmed.isEmpty ? nil : descTrimmed
+            recipe.prepMinutes       = Int(prepMinutes)
+            recipe.cookMinutes       = Int(cookMinutes)
+            recipe.totalMinutes      = Int(totalMinutes)
+            recipe.recipeCategory    = recipeCategory.isEmpty ? nil : recipeCategory
+            recipe.recipeCuisine     = recipeCuisine.trimmingCharacters(in: .whitespaces).isEmpty ? nil : recipeCuisine.trimmingCharacters(in: .whitespaces)
             for (i, ing) in ingredients.enumerated() { ing.sortOrder = i; ing.recipe = recipe }
         } else {
             let recipe = Recipe(
@@ -258,7 +361,13 @@ struct RecipeEditorView: View {
                 sourceURL: url,
                 directions: directions
             )
-            recipe.imageURL = resolvedImageURL
+            recipe.imageURL          = resolvedImageURL
+            recipe.recipeDescription = descTrimmed.isEmpty ? nil : descTrimmed
+            recipe.prepMinutes       = Int(prepMinutes)
+            recipe.cookMinutes       = Int(cookMinutes)
+            recipe.totalMinutes      = Int(totalMinutes)
+            recipe.recipeCategory    = recipeCategory.isEmpty ? nil : recipeCategory
+            recipe.recipeCuisine     = recipeCuisine.trimmingCharacters(in: .whitespaces).isEmpty ? nil : recipeCuisine.trimmingCharacters(in: .whitespaces)
             for (i, ing) in ingredients.enumerated() { ing.sortOrder = i; ing.recipe = recipe }
             modelContext.insert(recipe)
         }
@@ -280,8 +389,10 @@ private struct IngredientEditorRow: View {
                 }
             }
             Spacer()
-            // Only show quantity editor for matched (foodItem-linked) ingredients
-            if ingredient.foodItem != nil {
+            // Only show quantity for manually-added ingredients (no rawText).
+            // URL-imported / OCR ingredients store quantity as an internal gram-based
+            // serving count — meaningless to the user. rawText is their source of truth.
+            if ingredient.foodItem != nil && ingredient.rawText == nil {
                 TextField("Qty", value: $ingredient.quantity, format: .number)
                     .keyboardType(.decimalPad)
                     .multilineTextAlignment(.trailing)

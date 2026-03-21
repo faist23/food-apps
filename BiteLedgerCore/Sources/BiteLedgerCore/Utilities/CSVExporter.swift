@@ -11,10 +11,13 @@ import SwiftData
 
 // MARK: - CSVExporter
 //
-// Exports BiteLedger data as three CSV files for full round-trip restore.
-// foods.csv → servings.csv → logs.csv
+// Exports BiteLedger data as five CSV files for full round-trip restore.
+// foods.csv → servings.csv → logs.csv → recipes.csv → ingredients.csv
 //
 // Design guarantee: export → delete app → import produces identical data.
+//
+// JSON array fields (directions, keywords, dietTags, importedNutrition) are stored
+// as base64-encoded JSON data to keep the CSV single-line and unambiguous.
 
 public struct CSVExporter {
 
@@ -24,6 +27,12 @@ public struct CSVExporter {
         public let foodsCSV: String
         public let servingsCSV: String
         public let logsCSV: String
+        public let recipesCSV: String
+        public let ingredientsCSV: String
+        /// Local recipe images: (filename e.g. "{uuid}.jpg", jpeg data).
+        /// Only populated for recipes whose imageURL starts with "file://".
+        /// Remote https:// images are not included — AsyncImage re-fetches them.
+        public let recipeImages: [(filename: String, data: Data)]
         public let exportDate: Date
 
         /// Suggested filename prefix
@@ -39,15 +48,32 @@ public struct CSVExporter {
     /// Exports all data for a full round-trip backup.
     @MainActor
     public static func exportAll(context: ModelContext) throws -> ExportPackage {
-        let foods    = try context.fetch(FetchDescriptor<FoodItem>())
-        let servings = try context.fetch(FetchDescriptor<ServingSize>())
-        let logs     = try context.fetch(FetchDescriptor<FoodLog>())
+        let foods       = try context.fetch(FetchDescriptor<FoodItem>())
+        let servings    = try context.fetch(FetchDescriptor<ServingSize>())
+        let logs        = try context.fetch(FetchDescriptor<FoodLog>())
+        let recipes     = try context.fetch(FetchDescriptor<Recipe>())
+        let ingredients = try context.fetch(FetchDescriptor<RecipeIngredient>())
+
+        // Collect local recipe images as (filename, jpegData) pairs.
+        // Filename is "{recipeId}.jpg" so the importer can match by UUID.
+        var recipeImages: [(filename: String, data: Data)] = []
+        for recipe in recipes {
+            guard let urlString = recipe.imageURL,
+                  urlString.hasPrefix("file://"),
+                  let url = URL(string: urlString),
+                  let data = try? Data(contentsOf: url)
+            else { continue }
+            recipeImages.append(("\(recipe.id.uuidString).jpg", data))
+        }
 
         return ExportPackage(
-            foodsCSV:    exportFoods(foods),
-            servingsCSV: exportServings(servings),
-            logsCSV:     exportLogs(logs),
-            exportDate:  Date()
+            foodsCSV:       exportFoods(foods),
+            servingsCSV:    exportServings(servings),
+            logsCSV:        exportLogs(logs),
+            recipesCSV:     exportRecipes(recipes),
+            ingredientsCSV: exportIngredients(ingredients),
+            recipeImages:   recipeImages,
+            exportDate:     Date()
         )
     }
 
@@ -197,6 +223,82 @@ public struct CSVExporter {
         return csvString(rows)
     }
 
+    // MARK: - Recipes CSV
+    //
+    // JSON array fields (directions, keywords, dietTags, importedNutrition) are
+    // base64-encoded to avoid embedded commas/newlines breaking CSV line parsing.
+
+    public static func exportRecipes(_ recipes: [Recipe]) -> String {
+        let headers = [
+            "id", "name", "servingsYield", "sourceURL",
+            "prepMinutes", "cookMinutes", "totalMinutes",
+            "imageURL",
+            "recipeDescription", "recipeCategory", "recipeCuisine",
+            "author", "ratingValue", "ratingCount", "notes",
+            "keywords", "dietTags", "directions", "importedNutrition",
+            "dateAdded", "foodItemId"
+        ]
+        var rows: [[String]] = [headers]
+        let iso = ISO8601DateFormatter()
+
+        for recipe in recipes {
+            let row: [String] = [
+                recipe.id.uuidString,
+                recipe.name,
+                String(recipe.servingsYield),
+                recipe.sourceURL ?? "",
+                recipe.prepMinutes.map(String.init) ?? "",
+                recipe.cookMinutes.map(String.init) ?? "",
+                recipe.totalMinutes.map(String.init) ?? "",
+                recipe.imageURL ?? "",
+                recipe.recipeDescription ?? "",
+                recipe.recipeCategory ?? "",
+                recipe.recipeCuisine ?? "",
+                recipe.author ?? "",
+                recipe.ratingValue.map { String(format: "%.2g", $0) } ?? "",
+                recipe.ratingCount.map(String.init) ?? "",
+                recipe.notes ?? "",
+                base64Data(recipe.keywordsData),
+                base64Data(recipe.dietTagsData),
+                base64Data(recipe.directionsData),
+                base64Data(recipe.importedNutritionData),
+                iso.string(from: recipe.dateAdded),
+                recipe.foodItem?.id.uuidString ?? ""
+            ]
+            rows.append(row)
+        }
+
+        return csvString(rows)
+    }
+
+    // MARK: - Ingredients CSV
+
+    public static func exportIngredients(_ ingredients: [RecipeIngredient]) -> String {
+        let headers = [
+            "id", "recipeId", "foodItemId", "servingSizeId",
+            "quantity", "sortOrder", "rawText", "recipeQuantity", "recipeUnit"
+        ]
+        var rows: [[String]] = [headers]
+
+        for ingredient in ingredients {
+            guard let recipeId = ingredient.recipe?.id else { continue }
+            let row: [String] = [
+                ingredient.id.uuidString,
+                recipeId.uuidString,
+                ingredient.foodItem?.id.uuidString ?? "",
+                ingredient.servingSize?.id.uuidString ?? "",
+                String(ingredient.quantity),
+                String(ingredient.sortOrder),
+                ingredient.rawText ?? "",
+                ingredient.recipeQuantity.map { String(format: "%.4g", $0) } ?? "",
+                ingredient.recipeUnit ?? ""
+            ]
+            rows.append(row)
+        }
+
+        return csvString(rows)
+    }
+
     // MARK: - Helpers
 
     private static func optStr(_ value: Double?) -> String {
@@ -205,6 +307,12 @@ public struct CSVExporter {
         return v.truncatingRemainder(dividingBy: 1) == 0
             ? String(Int(v))
             : String(format: "%.4g", v)
+    }
+
+    /// Base64-encodes a Data blob for safe storage in a CSV cell.
+    /// Empty string when data is nil. Decode with Data(base64Encoded:).
+    private static func base64Data(_ data: Data?) -> String {
+        data?.base64EncodedString() ?? ""
     }
 
     private static func csvString(_ rows: [[String]]) -> String {

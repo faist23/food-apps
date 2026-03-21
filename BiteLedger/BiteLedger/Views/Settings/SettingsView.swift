@@ -14,17 +14,10 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var preferences: [UserPreferences]
 
-    @State private var logCount: Int = 0
-    @State private var foodItemsCount: Int = 0
-
     @State private var showingImport = false
-    @State private var showingExport = false
-    @State private var showingDeleteConfirmation = false
     @State private var showingCleanupConfirmation = false
     @State private var cleanupResultMessage = ""
     @State private var showingCleanupResult = false
-    @State private var isDeleting = false
-    @State private var deleteProgress = ""
     @State private var showingBackfillConfirmation = false
     @State private var backfillResultMessage = ""
     @State private var showingBackfillResult = false
@@ -99,24 +92,13 @@ struct SettingsView: View {
                         }
                     }
                     
-                    Button {
-                        showingExport = true
+                    NavigationLink {
+                        BackupRestoreView()
                     } label: {
                         HStack {
-                            Image(systemName: "square.and.arrow.up")
-                                .foregroundStyle(.green)
-                            Text("Export Data")
-                                .foregroundStyle(.primary)
-                        }
-                    }
-                    
-                    Button {
-                        showingImport = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "square.and.arrow.down")
-                                .foregroundStyle(.orange)
-                            Text("Import from CSV")
+                            Image(systemName: "externaldrive.fill")
+                                .foregroundStyle(Color("BrandPrimary"))
+                            Text("Backup & Restore")
                                 .foregroundStyle(.primary)
                         }
                     }
@@ -154,19 +136,8 @@ struct SettingsView: View {
                         }
                     }
 
-                    Button(role: .destructive) {
-                        showingDeleteConfirmation = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "trash")
-                            Text("Delete All Food Logs")
-                        }
-                    }
                 } header: {
                     Text("Data")
-                } footer: {
-                    Text("You have \(logCount) food logs and \(foodItemsCount) food items")
-                        .font(.caption)
                 }
                 
                 Section("About") {
@@ -176,22 +147,6 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .onAppear {
                 loadPreferences()
-                logCount = (try? modelContext.fetchCount(FetchDescriptor<FoodLog>())) ?? 0
-                foodItemsCount = (try? modelContext.fetchCount(FetchDescriptor<FoodItem>())) ?? 0
-            }
-            .sheet(isPresented: $showingImport) {
-                LoseItImportView()
-            }
-            .sheet(isPresented: $showingExport) {
-                DataExportView()
-            }
-            .alert("Delete All Food Logs?", isPresented: $showingDeleteConfirmation) {
-                Button("Cancel", role: .cancel) { }
-                Button("Delete All", role: .destructive) {
-                    deleteAllData()
-                }
-            } message: {
-                Text("This will permanently delete all \(logCount) food logs and \(foodItemsCount) food items. This cannot be undone.")
             }
             .alert("Clean Up Duplicates?", isPresented: $showingCleanupConfirmation) {
                 Button("Cancel", role: .cancel) { }
@@ -238,33 +193,6 @@ struct SettingsView: View {
                     }
                 }
             }
-            .overlay {
-                if isDeleting {
-                    ZStack {
-                        Color.black.opacity(0.4)
-                            .ignoresSafeArea()
-                        
-                        VStack(spacing: 20) {
-                            ProgressView()
-                                .scaleEffect(1.5)
-                                .tint(.white)
-                            
-                            Text("Deleting all data...")
-                                .font(.headline)
-                                .foregroundStyle(.white)
-                            
-                            if !deleteProgress.isEmpty {
-                                Text(deleteProgress)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.white.opacity(0.8))
-                            }
-                        }
-                        .padding(40)
-                        .background(Color(UIColor.systemGray6))
-                        .cornerRadius(20)
-                    }
-                }
-            }
         }
     }
     
@@ -295,96 +223,6 @@ struct SettingsView: View {
             newPrefs.goals = goals
             modelContext.insert(newPrefs)
             try? modelContext.save()
-        }
-    }
-    
-    private func deleteAllData() {
-        isDeleting = true
-        deleteProgress = "Preparing deletion..."
-        
-        let container = modelContext.container
-        Task {
-            // Perform deletion on background thread
-            await Task.detached(priority: .userInitiated) {
-                // Create a new model context for background work
-                let backgroundContext = ModelContext(container)
-                
-                // Step 1: Delete all food logs (no relationships)
-                await MainActor.run {
-                    deleteProgress = "Deleting food logs..."
-                }
-                
-                let logsDescriptor = FetchDescriptor<FoodLog>()
-                if let logs = try? backgroundContext.fetch(logsDescriptor) {
-                    let total = logs.count
-                    await MainActor.run {
-                        deleteProgress = "Deleting \(total) food logs..."
-                    }
-                    
-                    // Delete all at once
-                    for log in logs {
-                        backgroundContext.delete(log)
-                    }
-                    
-                    // Single save for all logs
-                    try? backgroundContext.save()
-                }
-                
-                // Step 2: Delete all serving sizes
-                await MainActor.run {
-                    deleteProgress = "Deleting serving sizes..."
-                }
-                
-                let servingsDescriptor = FetchDescriptor<ServingSize>()
-                if let servings = try? backgroundContext.fetch(servingsDescriptor) {
-                    let total = servings.count
-                    await MainActor.run {
-                        deleteProgress = "Deleting \(total) serving sizes..."
-                    }
-                    
-                    for serving in servings {
-                        backgroundContext.delete(serving)
-                    }
-                    
-                    try? backgroundContext.save()
-                }
-                
-                // Step 3: Delete all food items
-                await MainActor.run {
-                    deleteProgress = "Deleting food items..."
-                }
-                
-                let foodsDescriptor = FetchDescriptor<FoodItem>()
-                if let foods = try? backgroundContext.fetch(foodsDescriptor) {
-                    let total = foods.count
-                    await MainActor.run {
-                        deleteProgress = "Deleting \(total) food items..."
-                    }
-                    
-                    for food in foods {
-                        backgroundContext.delete(food)
-                    }
-                    
-                    try? backgroundContext.save()
-                }
-                
-                await MainActor.run {
-                    deleteProgress = "Finalizing..."
-                }
-            }.value
-            
-            // Back on main thread
-            await MainActor.run {
-                isDeleting = false
-                deleteProgress = ""
-                logCount = 0
-                foodItemsCount = 0
-                if let prefs = preferences.first {
-                    prefs.cachedStreak = 0
-                    prefs.streakCachedDate = nil
-                    try? modelContext.save()
-                }
-            }
         }
     }
     

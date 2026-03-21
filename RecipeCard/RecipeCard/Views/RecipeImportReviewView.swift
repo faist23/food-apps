@@ -63,6 +63,15 @@ struct RecipeImportReviewView: View {
     @State private var servingsYield: String
     @State private var source: String
     @State private var editableDirections: [String]
+
+    // Editable metadata pre-filled from Claude/Schema.org extraction — user can correct before save
+    @State private var recipeDesc: String
+    @State private var prepMinutes: String
+    @State private var cookMinutes: String
+    @State private var totalMinutes: String
+    @State private var recipeCategory: String
+    @State private var recipeCuisine: String
+    @State private var prevAutoTotal: Int
     @State private var matchedIngredients: [MatchedIngredient] = []
     @State private var isMatching = true
     @State private var isSaving = false
@@ -82,6 +91,15 @@ struct RecipeImportReviewView: View {
         _servingsYield = State(initialValue: String(Int(result.servingsYield)))
         _source = State(initialValue: prefilledSource)
         _editableDirections = State(initialValue: result.directions.map(expandUnitAbbreviations))
+        _recipeDesc      = State(initialValue: result.recipeDescription ?? "")
+        _prepMinutes     = State(initialValue: result.prepMinutes.map(String.init) ?? "")
+        _cookMinutes     = State(initialValue: result.cookMinutes.map(String.init) ?? "")
+        _totalMinutes    = State(initialValue: result.totalMinutes.map(String.init) ?? "")
+        _recipeCategory  = State(initialValue: result.recipeCategory ?? "")
+        _recipeCuisine   = State(initialValue: result.recipeCuisine ?? "")
+        let p = result.prepMinutes ?? 0
+        let c = result.cookMinutes ?? 0
+        _prevAutoTotal   = State(initialValue: p + c)
     }
 
     private var activeIngredients: [MatchedIngredient] {
@@ -286,6 +304,56 @@ struct RecipeImportReviewView: View {
                 }
             }
 
+            // MARK: Details (editable — pre-filled from Claude/Schema.org extraction)
+            Section("Details") {
+                TextField("Description (optional)", text: $recipeDesc, axis: .vertical)
+                    .lineLimit(2...4)
+                HStack {
+                    Text("Prep Time")
+                    Spacer()
+                    TextField("0", text: $prepMinutes)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 60)
+                    Text("min")
+                        .foregroundStyle(.secondary)
+                }
+                HStack {
+                    Text("Cook Time")
+                    Spacer()
+                    TextField("0", text: $cookMinutes)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 60)
+                    Text("min")
+                        .foregroundStyle(.secondary)
+                }
+                HStack {
+                    Text("Total Time")
+                    Spacer()
+                    TextField("0", text: $totalMinutes)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 60)
+                    Text("min")
+                        .foregroundStyle(.secondary)
+                }
+                Picker("Category", selection: $recipeCategory) {
+                    Text("None").tag("")
+                    ForEach(RecipeEditorView.categoryOptions, id: \.self) { cat in
+                        Text(cat).tag(cat)
+                    }
+                }
+                .pickerStyle(.menu)
+                Picker("Cuisine", selection: $recipeCuisine) {
+                    Text("None").tag("")
+                    ForEach(RecipeEditorView.cuisineOptions, id: \.self) { cuisine in
+                        Text(cuisine).tag(cuisine)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+
             // MARK: Save
             Section {
                 Button {
@@ -308,6 +376,8 @@ struct RecipeImportReviewView: View {
         .navigationTitle("Review Recipe")
         .navigationBarTitleDisplayMode(.inline)
         .task { await autoMatch(); isMatching = false }
+        .onChange(of: prepMinutes) { _, _ in autoUpdateTotal() }
+        .onChange(of: cookMinutes) { _, _ in autoUpdateTotal() }
         .sheet(item: $selectedIngredient) { m in
             IngredientFoodPickerView(matched: m, onUpdate: { matchVersion += 1 })
         }
@@ -494,6 +564,19 @@ struct RecipeImportReviewView: View {
         return food
     }
 
+    // MARK: - Auto-total
+
+    private func autoUpdateTotal() {
+        let p = Int(prepMinutes) ?? 0
+        let c = Int(cookMinutes) ?? 0
+        let newSum = p + c
+        let currentTotal = Int(totalMinutes)
+        if totalMinutes.isEmpty || currentTotal == prevAutoTotal {
+            totalMinutes = newSum > 0 ? String(newSum) : ""
+            prevAutoTotal = newSum
+        }
+    }
+
     // MARK: - Save
 
     private func save() {
@@ -523,13 +606,14 @@ struct RecipeImportReviewView: View {
             recipe.importedNutrition = n
         }
 
-        // Rich metadata from Schema.org / Claude OCR
-        recipe.prepMinutes       = result.prepMinutes
-        recipe.cookMinutes       = result.cookMinutes
-        recipe.totalMinutes      = result.totalMinutes
-        recipe.recipeDescription = result.recipeDescription
-        recipe.recipeCategory    = result.recipeCategory
-        recipe.recipeCuisine     = result.recipeCuisine
+        // Rich metadata — use editable state (user may have corrected Claude's extraction)
+        let descTrimmed = recipeDesc.trimmingCharacters(in: .whitespaces)
+        recipe.prepMinutes       = Int(prepMinutes)
+        recipe.cookMinutes       = Int(cookMinutes)
+        recipe.totalMinutes      = Int(totalMinutes)
+        recipe.recipeDescription = descTrimmed.isEmpty ? nil : descTrimmed
+        recipe.recipeCategory    = recipeCategory.isEmpty ? nil : recipeCategory
+        recipe.recipeCuisine     = recipeCuisine.trimmingCharacters(in: .whitespaces).isEmpty ? nil : recipeCuisine.trimmingCharacters(in: .whitespaces)
         recipe.ratingValue       = result.ratingValue
         recipe.ratingCount       = result.ratingCount
         recipe.keywords          = result.keywords

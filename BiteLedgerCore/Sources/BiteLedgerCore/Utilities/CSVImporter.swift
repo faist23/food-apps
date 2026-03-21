@@ -46,13 +46,18 @@ public struct CSVImporter {
         public var foodsSkipped: Int = 0
         public var servingsCreated: Int = 0
         public var logsCreated: Int = 0
+        public var recipesCreated: Int = 0
+        public var ingredientsCreated: Int = 0
         public var errors: [String] = []
 
         public init() {}
 
         public var summary: String {
-            "Imported \(foodsCreated) foods, \(logsCreated) log entries."
-            + (errors.isEmpty ? "" : " \(errors.count) warnings.")
+            var parts = ["Imported \(foodsCreated) foods, \(logsCreated) log entries"]
+            if recipesCreated > 0 { parts.append("\(recipesCreated) recipes") }
+            if ingredientsCreated > 0 { parts.append("\(ingredientsCreated) ingredients") }
+            return parts.joined(separator: ", ") + "."
+                + (errors.isEmpty ? "" : " \(errors.count) warnings.")
         }
     }
 
@@ -524,27 +529,89 @@ public struct CSVImporter {
 
     // MARK: - BiteLedger Full Import
 
-    /// Imports BiteLedger's own 3-file export format for full round-trip restore.
+    /// Imports BiteLedger's own export format for full round-trip restore.
     ///
-    /// Pass the contents of all three CSV files.
-    /// Import order: foods → servings → logs (maintains referential integrity)
+    /// Pass the contents of all CSV files. recipesCSV and ingredientsCSV are optional
+    /// for backward compatibility with 3-file exports from earlier versions.
+    ///
+    /// Import order: foods → servings → logs → recipes → ingredients
+    /// (maintains referential integrity throughout)
     @MainActor
     public static func importBiteLedger(
         foodsCSV: String,
         servingsCSV: String,
         logsCSV: String,
+        recipesCSV: String? = nil,
+        ingredientsCSV: String? = nil,
+        /// Keyed by recipe UUID string → JPEG data. Populated from {uuid}.jpg files
+        /// in the export package. nil = no images included in this import.
+        imageMap: [String: Data] = [:],
+        /// When true (merge mode), items whose UUIDs already exist in the store
+        /// are skipped. Existing objects are pre-fetched into seed maps so that
+        /// servings, logs, and ingredients can still link to them.
+        skipExistingUUIDs: Bool = false,
         context: ModelContext
     ) throws -> ImportResult {
         var result = ImportResult()
 
-        // 1. Import foods first
-        let foodMap = try importBiteLedgerFoods(csv: foodsCSV, context: context, result: &result)
+        // Pre-fetch existing objects for merge mode (O(n) pre-fetch, O(1) lookup per row)
+        var existingFoodMap: [UUID: FoodItem] = [:]
+        var existingServingMap: [UUID: ServingSize] = [:]
+        var existingRecipeMap: [UUID: Recipe] = [:]
+
+        if skipExistingUUIDs {
+            let foods = (try? context.fetch(FetchDescriptor<FoodItem>())) ?? []
+            existingFoodMap = Dictionary(uniqueKeysWithValues: foods.map { ($0.id, $0) })
+            let servings = (try? context.fetch(FetchDescriptor<ServingSize>())) ?? []
+            existingServingMap = Dictionary(uniqueKeysWithValues: servings.map { ($0.id, $0) })
+            let recipes = (try? context.fetch(FetchDescriptor<Recipe>())) ?? []
+            existingRecipeMap = Dictionary(uniqueKeysWithValues: recipes.map { ($0.id, $0) })
+        }
+
+        // 1. Import foods first (seed map ensures existing foods are linkable)
+        let foodMap = try importBiteLedgerFoods(
+            csv: foodsCSV,
+            seedMap: existingFoodMap,
+            context: context,
+            result: &result
+        )
 
         // 2. Import servings, linking to foods by ID
-        let servingMap = try importBiteLedgerServings(csv: servingsCSV, foodMap: foodMap, context: context, result: &result)
+        let servingMap = try importBiteLedgerServings(
+            csv: servingsCSV,
+            foodMap: foodMap,
+            seedMap: existingServingMap,
+            context: context,
+            result: &result
+        )
 
-        // 3. Import logs, linking to foods and servings by ID
+        // 3. Import logs (always imported in merge mode — logs are naturally cumulative)
         try importBiteLedgerLogs(csv: logsCSV, foodMap: foodMap, servingMap: servingMap, context: context, result: &result)
+
+        // 4. Import recipes (optional — absent in legacy 3-file exports)
+        if let recipesCSV {
+            let recipeMap = try importBiteLedgerRecipes(
+                csv: recipesCSV,
+                foodMap: foodMap,
+                imageMap: imageMap,
+                seedMap: existingRecipeMap,
+                context: context,
+                result: &result
+            )
+
+            // 5. Import ingredients; skip for recipes that already existed
+            if let ingredientsCSV {
+                try importBiteLedgerIngredients(
+                    csv: ingredientsCSV,
+                    recipeMap: recipeMap,
+                    foodMap: foodMap,
+                    servingMap: servingMap,
+                    existingRecipeIDs: Set(existingRecipeMap.keys),
+                    context: context,
+                    result: &result
+                )
+            }
+        }
 
         try context.save()
         return result
@@ -555,11 +622,12 @@ public struct CSVImporter {
     @MainActor
     private static func importBiteLedgerFoods(
         csv: String,
+        seedMap: [UUID: FoodItem] = [:],
         context: ModelContext,
         result: inout ImportResult
     ) throws -> [UUID: FoodItem] {
         let rows = parseCSV(csv)
-        guard !rows.isEmpty else { return [:] }
+        guard !rows.isEmpty else { return seedMap }
 
         let headers = rows[0].map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
 
@@ -576,7 +644,8 @@ public struct CSVImporter {
             throw ImportError.missingRequiredColumn("foods.csv missing required columns")
         }
 
-        var foodMap: [UUID: FoodItem] = [:]
+        // Start with seed map (existing objects for merge mode)
+        var foodMap: [UUID: FoodItem] = seedMap
 
         for row in rows.dropFirst() {
             guard row.count > max(idIdx, nameIdx, modeIdx, calIdx, protIdx, carbIdx, fatIdx) else { continue }
@@ -585,6 +654,12 @@ public struct CSVImporter {
                 let id = UUID(uuidString: row[idIdx]),
                 !row[nameIdx].isEmpty
             else { continue }
+
+            // Merge mode: skip creation if UUID already in map
+            if foodMap[id] != nil {
+                result.foodsSkipped += 1
+                continue
+            }
 
             let mode: NutritionMode = row[modeIdx] == "per100g" ? .per100g : .perServing
 
@@ -641,11 +716,12 @@ public struct CSVImporter {
     private static func importBiteLedgerServings(
         csv: String,
         foodMap: [UUID: FoodItem],
+        seedMap: [UUID: ServingSize] = [:],
         context: ModelContext,
         result: inout ImportResult
     ) throws -> [UUID: ServingSize] {
         let rows = parseCSV(csv)
-        guard !rows.isEmpty else { return [:] }
+        guard !rows.isEmpty else { return seedMap }
 
         let headers = rows[0].map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
 
@@ -661,7 +737,7 @@ public struct CSVImporter {
 
         let gramIdx = headers.firstIndex(of: "gramweight")
         let unitIdx = headers.firstIndex(of: "unit")
-        var servingMap: [UUID: ServingSize] = [:]
+        var servingMap: [UUID: ServingSize] = seedMap  // Start with existing objects
 
         for row in rows.dropFirst() {
             guard row.count > max(idIdx, foodIdIdx, labelIdx, defaultIdx, orderIdx) else { continue }
@@ -670,6 +746,9 @@ public struct CSVImporter {
                 let foodId = UUID(uuidString: row[foodIdIdx]),
                 let food = foodMap[foodId]
             else { continue }
+
+            // Merge mode: skip if already exists
+            if servingMap[id] != nil { continue }
 
             let storedUnit = unitIdx.flatMap { row[safe: $0] }.flatMap { $0.isEmpty ? nil : $0 }
             let serving = ServingSize(
@@ -779,6 +858,185 @@ public struct CSVImporter {
             )
             context.insert(log)
             result.logsCreated += 1
+        }
+    }
+
+    // MARK: - BiteLedger Recipes Import
+
+    /// Imports recipes.csv from a BiteLedger 5-file export.
+    ///
+    /// JSON array fields (directions, keywords, dietTags, importedNutrition) are stored
+    /// as base64-encoded Data in the CSV and decoded back here.
+    ///
+    /// Returns a [UUID: Recipe] map keyed by the original recipe ID so ingredients
+    /// can be linked in the next pass.
+    @MainActor
+    private static func importBiteLedgerRecipes(
+        csv: String,
+        foodMap: [UUID: FoodItem],
+        imageMap: [String: Data],
+        seedMap: [UUID: Recipe] = [:],
+        context: ModelContext,
+        result: inout ImportResult
+    ) throws -> [UUID: Recipe] {
+        let rows = parseCSV(csv)
+        guard !rows.isEmpty else { return seedMap }
+
+        let headers = rows[0].map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
+
+        guard
+            let idIdx   = headers.firstIndex(of: "id"),
+            let nameIdx = headers.firstIndex(of: "name")
+        else {
+            throw ImportError.missingRequiredColumn("recipes.csv missing required columns (id, name)")
+        }
+
+        let iso = ISO8601DateFormatter()
+
+        func col(_ name: String, row: [String]) -> String? {
+            headers.firstIndex(of: name).flatMap { row[safe: $0] }.flatMap { $0.isEmpty ? nil : $0 }
+        }
+
+        func colData(_ name: String, row: [String]) -> Data? {
+            guard let b64 = col(name, row: row) else { return nil }
+            return Data(base64Encoded: b64)
+        }
+
+        var recipeMap: [UUID: Recipe] = seedMap  // Start with existing recipes
+
+        for row in rows.dropFirst() {
+            guard row.count > max(idIdx, nameIdx) else { continue }
+            guard
+                let id = UUID(uuidString: row[idIdx]),
+                !row[nameIdx].isEmpty
+            else { continue }
+
+            // Merge mode: skip if recipe already exists
+            if recipeMap[id] != nil {
+                result.recipesCreated += 0  // not creating, not an error
+                continue
+            }
+
+            let recipe = Recipe(
+                id: id,
+                name: row[nameIdx],
+                servingsYield: headers.firstIndex(of: "servingsyield").flatMap { Double(row[safe: $0] ?? "") } ?? 1.0,
+                sourceURL: col("sourceurl", row: row),
+                dateAdded: headers.firstIndex(of: "dateadded")
+                    .flatMap { iso.date(from: row[safe: $0] ?? "") } ?? Date()
+            )
+
+            // Rich metadata
+            recipe.prepMinutes    = headers.firstIndex(of: "prepminutes").flatMap { Int(row[safe: $0] ?? "") }
+            recipe.cookMinutes    = headers.firstIndex(of: "cookminutes").flatMap { Int(row[safe: $0] ?? "") }
+            recipe.totalMinutes   = headers.firstIndex(of: "totalminutes").flatMap { Int(row[safe: $0] ?? "") }
+
+            // Restore image:
+            // - Check imageMap for a matching JPEG (keyed by recipe UUID string).
+            //   If found, write it to Documents and point imageURL at the new file:// path.
+            // - Otherwise fall back to the exported imageURL string for https:// URLs.
+            //   Dead file:// paths without a matching image file are left nil.
+            if let jpegData = imageMap[id.uuidString],
+               let restoredURL = RecipeImportService.saveImageDataLocally(jpegData) {
+                recipe.imageURL = restoredURL
+            } else if let urlString = col("imageurl", row: row),
+                      urlString.hasPrefix("https://") {
+                recipe.imageURL = urlString
+            }
+            recipe.recipeDescription = col("recipedescription", row: row)
+            recipe.recipeCategory = col("recipecategory", row: row)
+            recipe.recipeCuisine  = col("recipecuisine", row: row)
+            recipe.author         = col("author", row: row)
+            recipe.ratingValue    = headers.firstIndex(of: "ratingvalue").flatMap { Double(row[safe: $0] ?? "") }
+            recipe.ratingCount    = headers.firstIndex(of: "ratingcount").flatMap { Int(row[safe: $0] ?? "") }
+            recipe.notes          = col("notes", row: row)
+
+            // JSON array fields stored as base64 Data
+            recipe.keywordsData         = colData("keywords", row: row)
+            recipe.dietTagsData         = colData("diettags", row: row)
+            recipe.directionsData       = colData("directions", row: row)
+            recipe.importedNutritionData = colData("importednutrition", row: row)
+
+            // Re-link the synthetic FoodItem if it was in the foods export
+            if let foodItemIdStr = col("fooditemid", row: row),
+               let foodItemId = UUID(uuidString: foodItemIdStr),
+               let food = foodMap[foodItemId] {
+                recipe.foodItem = food
+                food.recipe = recipe
+            }
+
+            context.insert(recipe)
+            recipeMap[id] = recipe
+            result.recipesCreated += 1
+        }
+
+        return recipeMap
+    }
+
+    // MARK: - BiteLedger Ingredients Import
+
+    /// Imports ingredients.csv from a BiteLedger 5-file export.
+    @MainActor
+    private static func importBiteLedgerIngredients(
+        csv: String,
+        recipeMap: [UUID: Recipe],
+        foodMap: [UUID: FoodItem],
+        servingMap: [UUID: ServingSize],
+        existingRecipeIDs: Set<UUID> = [],
+        context: ModelContext,
+        result: inout ImportResult
+    ) throws {
+        let rows = parseCSV(csv)
+        guard !rows.isEmpty else { return }
+
+        let headers = rows[0].map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
+
+        guard
+            let idIdx       = headers.firstIndex(of: "id"),
+            let recipeIdIdx = headers.firstIndex(of: "recipeid"),
+            let qtyIdx      = headers.firstIndex(of: "quantity"),
+            let orderIdx    = headers.firstIndex(of: "sortorder")
+        else {
+            throw ImportError.missingRequiredColumn("ingredients.csv missing required columns (id, recipeId, quantity, sortOrder)")
+        }
+
+        for row in rows.dropFirst() {
+            guard row.count > max(idIdx, recipeIdIdx, qtyIdx, orderIdx) else { continue }
+            guard
+                let id = UUID(uuidString: row[idIdx]),
+                let recipeId = UUID(uuidString: row[recipeIdIdx]),
+                let recipe = recipeMap[recipeId]
+            else { continue }
+
+            // Merge mode: skip ingredients for recipes that already existed
+            if existingRecipeIDs.contains(recipeId) { continue }
+            _ = id  // id is parsed for future use (dedup)
+
+            let ingredient = RecipeIngredient(
+                id: id,
+                quantity: Double(row[qtyIdx]) ?? 1.0,
+                sortOrder: Int(row[orderIdx]) ?? 0,
+                recipeQuantity: headers.firstIndex(of: "recipequantity").flatMap { Double(row[safe: $0] ?? "") },
+                recipeUnit: headers.firstIndex(of: "recipeunit").flatMap { row[safe: $0] }.flatMap { $0.isEmpty ? nil : $0 }
+            )
+            ingredient.rawText = headers.firstIndex(of: "rawtext").flatMap { row[safe: $0] }.flatMap { $0.isEmpty ? nil : $0 }
+            ingredient.recipe = recipe
+
+            // Link food item (may be nil if food was deleted or not found)
+            if let foodIdStr = headers.firstIndex(of: "fooditemid").flatMap({ row[safe: $0] }),
+               let foodId = UUID(uuidString: foodIdStr) {
+                ingredient.foodItem = foodMap[foodId]
+            }
+
+            // Link serving size (may be nil — falls back to food's default)
+            if let servIdStr = headers.firstIndex(of: "servingsizeid").flatMap({ row[safe: $0] }),
+               !servIdStr.isEmpty,
+               let servId = UUID(uuidString: servIdStr) {
+                ingredient.servingSize = servingMap[servId]
+            }
+
+            context.insert(ingredient)
+            result.ingredientsCreated += 1
         }
     }
 

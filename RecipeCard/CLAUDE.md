@@ -97,9 +97,9 @@ auto-fills the source field if the user left it blank.
   explicitly written on the card (e.g. "Prep: 15 min", "Bake 350° for 30 min").
   Never inferred or hallucinated.
 - **Description:** short intro note or tagline before the ingredients, or `null`.
-- **Category:** one of the fixed list ("Dessert", "Bread", "Soup", "Salad",
-  "Appetizer", "Side Dish", "Main Dish", "Breakfast", "Drink", "Snack") inferred
-  from card content; `null` if genuinely ambiguous.
+- **Category:** one of the fixed list ("Appetizer", "Breakfast", "Bread",
+  "Dessert", "Drink", "Main Dish", "Salad", "Sauce", "Side Dish", "Snack", "Soup")
+  inferred from card content; `null` if genuinely ambiguous.
 
 ### Key rule: `MatchedIngredient.editedRawText` and `editedUnit`
 - Always use `editedRawText` (not `parsed.rawString`) for the ingredient's
@@ -291,6 +291,59 @@ The editor supports adding, replacing, or removing the recipe photo:
   - New photo selected → delete the old local file (if any), save new JPEG, assign URL.
   - Photo removed → delete the old local file, set `recipe.imageURL = nil`.
   - No change → leave `currentImageURL` as-is (preserves remote `https://` URLs unchanged).
+
+---
+
+## RecipesListView Toolbar (D-9 — shipped feature/v1-ship)
+
+Toolbar design: **gear (Settings) leading, `+` menu (3 add methods) trailing.**
+
+```
+[gear]                                          [+▾]
+         Import from URL / Scan Recipe Card / Create Manually
+```
+
+- Leading: single `Button` with `gear` icon → `showingSettings = true`
+- Trailing: `Menu` with 3 items: Import from URL, Scan Recipe Card, Create Manually
+- Grid cells use `.frame(maxHeight: .infinity, alignment: .top)` to top-align cards
+  when row heights differ (2-line name, optional time chip).
+
+Do NOT add more leading items — DESIGN.md max-2-leading rule applies.
+
+---
+
+## RecipeEditorView — Details Section
+
+`RecipeEditorView` has a **Details** section between Recipe Info and Ingredients:
+- Description (optional, multiline)
+- Prep Time / Cook Time / Total Time (minutes, `NumberPad`)
+- Category (`Picker` with fixed `categoryOptions` list — no free text)
+- Cuisine (`Picker` with fixed `cuisineOptions` list — no free text)
+
+**Auto-total:** `onChange(of: prepMinutes)` and `onChange(of: cookMinutes)` call
+`autoUpdateTotal()`. It only overwrites Total if Total is empty OR equals the previous
+auto-computed sum (`prevAutoTotal: Int` state var). User-manually-set totals are preserved.
+
+Same Details section + `autoUpdateTotal()` logic exists in `RecipeImportReviewView`
+(editable before saving a URL or OCR import). The cuisine picker reuses
+`RecipeEditorView.cuisineOptions`.
+
+**Cuisine/Category as controlled vocabulary:** Both fields are `Picker` not `TextField`
+to prevent data pollution from misspellings. URL-imported recipes with non-standard
+cuisines (e.g. "Moroccan") will show "None" in the picker if the recipe is edited.
+
+---
+
+## IngredientEditorRow — Quantity Field Visibility
+
+`IngredientEditorRow` only shows the quantity `TextField` when:
+```swift
+ingredient.foodItem != nil && ingredient.rawText == nil
+```
+URL-imported and OCR ingredients store `quantity` as internal serving-unit counts
+(e.g. `7.08737` = ~709g at 100g/serving) — meaningless to users. `rawText` is their
+source of truth for human-visible display. Only manually-added ingredients (no `rawText`)
+show the quantity field.
 
 ---
 
