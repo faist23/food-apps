@@ -3,6 +3,31 @@
 All notable changes to BiteLedger and RecipeCard are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## [0.1.2.0] - 2026-03-22
+
+### Added
+- **Phase 2 Feature 1 — Nutrient Spotlight:** `NutrientSpotlightEngine` pure struct computes high-side patterns for 5 nutrients (sodium, saturated fat, total fat, cholesterol, carbs) over a rolling 7-day window; injectable `minDaysAbove` (default 3) and `dvMultiplier` (default 1.2×) parameters for future calibration; `SpotlightResult` with `Sendable` `Nutrient`
+- **Nutrient Spotlight — HistoryView card:** `NutrientSpotlightCard` shows up to 2 qualifying nutrients with days-above count and curiosity prompt inside `ElevatedCard`; VoiceOver combined element
+- **Nutrient Spotlight — TodayView chip:** dismissible capsule chip above meal sections; shows when ≥2 distinct meal types logged; dismiss persists per local calendar day (fixed UTC timezone bug); swipe or ×-button to dismiss; tap navigates to History tab
+- **Backup & Restore (both apps):** `BackupService` in `BiteLedgerCore`; `createBackup` stages manifest.json + 5 CSVs + recipe images into temp dir, zips with ZIPFoundation; `restoreBackup` extracts, validates, and imports with `.replaceAll` or `.merge` (UUID-based skip); `resetDatabase` with 4 scopes (logsOnly/allFoodData/recipesOnly/everything); BiteLedger and RecipeCard each have `BackupRestoreView` + gear icon in Settings/toolbar; `CSVImporter.importBiteLedger` gained `skipExistingUUIDs: Bool` with O(n) seed-map pre-fetch
+- **T-08 First-log micro-celebration:** `hasSeenFirstLogCelebration: Bool?` in `UserPreferences`; haptic + 2-second overlay in `TodayView` fires exactly once on nil flag
+- **USDA search quality:** data types expanded from SR Legacy + Survey (FNDDS) to Foundation + SR Legacy + Branded; `USDAFoodDetail.toProductInfo()` branches on Branded foods to populate `*Serving` fields from FDA label serving size; `ProductInfo` gains `dataType: String?`
+- **Nutrient spotlight helpers:** `Nutrient.spotlightDisplayName` (FDA-aligned: "Total Fat", "Total Carbohydrate"); `Nutrient.value(from: FoodLog) -> Double?` extension; `Nutrient` gains `Sendable` conformance for Swift 6
+- **RecipeCard toolbar & metadata:** toolbar reduced from 4 items; recipe editor gains cuisine picker, prep/cook/total time fields with auto-total logic; grid alignment fixes in `RecipesListView`
+
+### Changed
+- 3-day gate removed from `RecentFoodsForMealView` — recent foods show immediately on first log
+- Rolling 7-day window corrected from 8 to 7 calendar days (value: -6 not -7)
+- Spotlight chip dismissal uses local `yyyy-MM-dd` format instead of UTC ISO8601 (fixes timezone edge case for UTC+ users)
+- `NutrientSpotlightCard` uses `results.first?.message` instead of force-subscript `results[0]`
+- HistoryView spotlight results moved to `@State` (computed once on load + `onChange`) instead of recomputing on every body pass
+
+### Fixed
+- ZIP path traversal vulnerability in `BackupService.restoreBackup` — entries with `../` paths now skipped
+
+### Removed
+- `AddFoodView.swift` deleted (dead code; replaced by `FoodSearchView` flow)
+
 ## [0.1.1.0] - 2026-03-20
 
 ### Added
