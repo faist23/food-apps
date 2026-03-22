@@ -228,6 +228,8 @@ private struct RecapNutrientTile: View {
                     Text(value)
                         .font(.system(size: 22, weight: .bold))
                         .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                     Text(unit)
                         .font(.system(size: 11, weight: .regular))
                         .foregroundStyle(.white.opacity(0.6))
