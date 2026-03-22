@@ -288,3 +288,124 @@ final class MicroCelebrationFlagTests: XCTestCase {
         XCTAssertFalse(shouldFire, "Celebration must NOT fire when flag is already true")
     }
 }
+
+// MARK: - NutrientSpotlightEngine Tests (Phase 2, Feature 1)
+
+final class NutrientSpotlightEngineTests: XCTestCase {
+
+    // MARK: - Helpers
+
+    /// Creates a FoodLog `daysAgo` days in the past with optional spotlight nutrient values.
+    private func makeSpotlightLog(
+        daysAgo: Int,
+        sodium: Double? = nil,
+        saturatedFat: Double? = nil,
+        fat: Double = 0,
+        cholesterol: Double? = nil,
+        carbs: Double = 0,
+        mealType: MealType = .lunch
+    ) -> FoodLog {
+        let cal = Calendar.current
+        let date = cal.date(byAdding: .day, value: -daysAgo, to: cal.startOfDay(for: Date()))!
+        return FoodLog(
+            timestamp: date,
+            mealType: mealType,
+            quantity: 1,
+            caloriesAtLogTime: 0,
+            proteinAtLogTime: 0,
+            carbsAtLogTime: carbs,
+            fatAtLogTime: fat,
+            sodiumAtLogTime: sodium,
+            saturatedFatAtLogTime: saturatedFat,
+            cholesterolAtLogTime: cholesterol
+        )
+    }
+
+    // Test 1: Empty logs → empty results
+    func testCompute_noLogs_returnsEmpty() {
+        XCTAssertTrue(NutrientSpotlightEngine.compute(logs: []).isEmpty)
+    }
+
+    // Test 2: Logs on only 2 days (< minDaysAbove=3) → empty results
+    func testCompute_insufficientDays_returnsEmpty() {
+        let logs = [
+            makeSpotlightLog(daysAgo: 0, sodium: 4000),
+            makeSpotlightLog(daysAgo: 1, sodium: 4000)
+        ]
+        XCTAssertTrue(NutrientSpotlightEngine.compute(logs: logs).isEmpty)
+    }
+
+    // Test 3: Sodium over 120% DV (2760mg) on exactly 3 days → 1 result for sodium
+    func testCompute_oneNutrientAboveThreshold_returnsIt() {
+        // FDA DV for sodium = 2300mg; 120% = 2760mg. Use 3000mg to clear threshold.
+        let logs = (0..<3).map { makeSpotlightLog(daysAgo: $0, sodium: 3000) }
+        let results = NutrientSpotlightEngine.compute(logs: logs)
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results[0].nutrient, .sodium)
+        XCTAssertEqual(results[0].daysAboveThreshold, 3)
+    }
+
+    // Test 4: Sodium high 5 days, saturated fat high 3 days → sodium ranked first
+    func testCompute_twoNutrientsRankedByDaysAbove() {
+        // sodium DV = 2300; saturated fat DV = 20g
+        var logs: [FoodLog] = []
+        for i in 0..<5 { logs.append(makeSpotlightLog(daysAgo: i, sodium: 3000, saturatedFat: 30)) }
+        for i in 5..<7 { logs.append(makeSpotlightLog(daysAgo: i, sodium: 3000)) }
+        // sodium: 7 days above; saturated fat: 5 days above
+        let results = NutrientSpotlightEngine.compute(logs: logs)
+        XCTAssertGreaterThanOrEqual(results.count, 2)
+        XCTAssertEqual(results[0].nutrient, .sodium, "Sodium (more days) must rank first")
+        XCTAssertTrue(results[1].daysAboveThreshold <= results[0].daysAboveThreshold)
+    }
+
+    // Test 5: Day where ALL logs have nil sodiumAtLogTime → not counted toward sodium threshold
+    func testCompute_nilNutrientDay_excludedFromCount() {
+        // 3 days with real sodium above threshold + 1 day with nil sodium = 3 sodium days
+        var logs = (0..<3).map { makeSpotlightLog(daysAgo: $0, sodium: 3000) }
+        // Day 4: log present but sodium is nil → must NOT count as a sodium day
+        logs.append(makeSpotlightLog(daysAgo: 4, sodium: nil))
+        let results = NutrientSpotlightEngine.compute(logs: logs)
+        // sodium qualifies (3 days above)
+        let sodiumResult = results.first { $0.nutrient == .sodium }
+        XCTAssertNotNil(sodiumResult)
+        XCTAssertEqual(sodiumResult?.daysAboveThreshold, 3, "Nil-sodium day must not inflate the count")
+    }
+
+    // Test 6: Injectable params override defaults (minDaysAbove: 1, dvMultiplier: 0.01)
+    func testCompute_injectableParamsOverrideDefaults() {
+        // One log with sodium 1mg — well below 120% DV but above 1% DV
+        let logs = [makeSpotlightLog(daysAgo: 0, sodium: 1)]
+        let results = NutrientSpotlightEngine.compute(
+            logs: logs,
+            minDaysAbove: 1,
+            dvMultiplier: 0.01   // threshold = 2300 × 0.01 = 23mg; 1mg is NOT above 23mg
+        )
+        // 1mg < 23mg threshold → still empty at this multiplier
+        // Use an even lower multiplier so 1mg clears the bar
+        let results2 = NutrientSpotlightEngine.compute(
+            logs: logs,
+            minDaysAbove: 1,
+            dvMultiplier: 0.0001  // threshold = 2300 × 0.0001 = 0.23mg; 1mg > 0.23mg → qualifies
+        )
+        XCTAssertFalse(results2.isEmpty, "Injectable params must allow qualifying with very low threshold")
+    }
+
+    // Test 7: Nutrient.value(from:) returns the correct *AtLogTime field for each spotlight nutrient
+    func testNutrientValueFromLog_allSpotlightNutrients() {
+        let log = makeSpotlightLog(
+            daysAgo: 0,
+            sodium: 500,
+            saturatedFat: 10,
+            fat: 30,
+            cholesterol: 150,
+            carbs: 200
+        )
+        XCTAssertEqual(Nutrient.sodium.value(from: log), 500)
+        XCTAssertEqual(Nutrient.saturatedFat.value(from: log), 10)
+        XCTAssertEqual(Nutrient.fat.value(from: log), 30)
+        XCTAssertEqual(Nutrient.cholesterol.value(from: log), 150)
+        XCTAssertEqual(Nutrient.carbs.value(from: log), 200)
+        // Non-spotlight nutrient must return nil
+        XCTAssertNil(Nutrient.protein.value(from: log))
+    }
+}

@@ -76,7 +76,7 @@ public enum GoalType: String, Codable, CaseIterable {
 }
 
 // Comprehensive nutrient enum
-public enum Nutrient: String, CaseIterable, Codable, Identifiable {
+public enum Nutrient: String, CaseIterable, Codable, Identifiable, Sendable {
     // Macronutrients (always shown on dashboard)
     case calories = "Calories"
     case protein = "Protein"
@@ -195,5 +195,34 @@ public enum NutrientCategory {
 extension Nutrient {
     public static var pinnableNutrients: [Nutrient] {
         allCases.filter { ![$0].contains(where: { [.calories, .protein, .carbs, .fat].contains($0) }) }
+    }
+}
+
+// MARK: - Spotlight helpers (Phase 2, Feature 1)
+
+extension Nutrient {
+    /// FDA-aligned display name for the Nutrient Spotlight surfaces.
+    /// "Total Fat" and "Total Carbohydrate" match FDA label language;
+    /// all other nutrients use their rawValue.
+    public var spotlightDisplayName: String {
+        switch self {
+        case .fat:   return "Total Fat"
+        case .carbs: return "Total Carbohydrate"
+        default:     return rawValue
+        }
+    }
+
+    /// Returns the *AtLogTime value for this nutrient from a FoodLog.
+    /// Days where the return value is nil for every log are excluded from
+    /// the NutrientSpotlightEngine day count entirely (not counted as 0).
+    public func value(from log: FoodLog) -> Double? {
+        switch self {
+        case .sodium:        return log.sodiumAtLogTime
+        case .saturatedFat:  return log.saturatedFatAtLogTime
+        case .fat:           return log.fatAtLogTime          // non-optional — always present
+        case .cholesterol:   return log.cholesterolAtLogTime
+        case .carbs:         return log.carbsAtLogTime        // non-optional — always present
+        default:             return nil
+        }
     }
 }

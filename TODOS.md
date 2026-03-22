@@ -39,6 +39,26 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ## P3 — Future
 
+### T-18: Nutrient Spotlight — Below-Threshold Patterns (Fiber, Protein)
+**What:** Add support for nutrients consistently BELOW 80% DV. Engine gets a `thresholdDirection: .above/.below` injectable parameter. Copy: "Fiber has been low this week. Curious what foods are high in it?" Different copy logic required for low-side patterns.
+**Why:** Fiber and protein are the most common nutritional gaps for the target user (reluctant logger). The high-side spotlight covers sodium/fat/cholesterol — the low-side covers the "you're missing this" awareness without judgment.
+**Pros:** Doubles feature coverage. Engine is already structured for this — one parameter addition, separate copy template.
+**Cons:** "Low" patterns need separate user validation — doesn't feel like judgment? The copy "has been low this week" is more ambiguous in tone than "has been high." Should not ship before high-side patterns are validated.
+**Context:** Introduced as a deferred item from Nutrient Spotlight v1 design review (2026-03-21). Copy template: "{Nutrient} has been low this week. Curious what foods are high in it?" Threshold direction is separate from the high-side threshold — would be a new injectable param, not a modification of existing defaults.
+**Effort:** XS (human: ~2 hrs / CC: ~10 min) | **Priority:** P3 | **Depends on:** T-17 (threshold calibration validated), Nutrient Spotlight v1 live for 4+ weeks
+
+---
+
+### T-17: Nutrient Spotlight — Threshold Calibration
+**What:** After Nutrient Spotlight ships, log 2 weeks of real data and check what % of sessions would have triggered a spotlight with the current 120%/3-of-7 defaults. Tune `defaultMinDays` and `defaultDVMultiplier` constants if the feature is firing too frequently (noise) or not at all (invisible).
+**Why:** The 120%/3-of-7 working assumptions were not validated against real log data. If too sensitive, the feature becomes noise and users learn to ignore it. If too conservative, it never fires and the feature is invisible.
+**Pros:** The injectable parameters make tuning a 1-line change at the call site — no schema change, no view changes. Constants are `NutrientSpotlightEngine.defaultMinDays` and `defaultDVMultiplier`.
+**Cons:** Requires 2 weeks of real-world usage before acting on it. Target: fires 1-2x per week for a regular logger.
+**Context:** Introduced by Nutrient Spotlight (Phase 2, Feature 1). See design doc `craigfaist-feature-v1-ship-design-20260321-213749.md`. Open question from design doc: what threshold makes the feature feel like discovery vs. noise?
+**Effort:** XS (human: ~30 min / CC: ~5 min) | **Priority:** P3 | **Depends on:** Nutrient Spotlight shipped, 2+ weeks of real log data
+
+---
+
 ### T-16: RecipeCard — Auto-total time unit tests
 **What:** Unit tests for the `onChange` condition that auto-fills Total time from Prep + Cook in RecipeEditorView and RecipeImportReviewView.
 **Why:** The guard "only auto-update total if total == prev sum OR total is nil" is the only non-trivial logic in the metadata PR. Without tests, a future refactor could silently break the "don't override user's manual total" invariant.
@@ -131,6 +151,8 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 ---
 
 ## Completed
+
+- **Nutrient Spotlight (Phase 2, Feature 1):** `NutrientSpotlightEngine` pure struct (5 spotlight nutrients, 120%/3-of-7 defaults, injectable params); `SpotlightResult` with `Sendable` Nutrient; `Nutrient.spotlightDisplayName` + `Nutrient.value(from:)` extensions; `NutrientSpotlightCard` in HistoryView (ElevatedCard, 2 nutrient rows, VoiceOver combined); spotlight chip in TodayView (Capsule, eye.fill icon, tap→History tab, swipe/xmark dismiss, AppStorage day-persistence, ≥2 meal-types gate); 7 unit tests all passing. **Completed:** feature/v1-ship (2026-03-21)
 
 - **E-1: Startup Backfill Completion Flags** — `has*` flags added to `UserPreferences`; each backfill skips on subsequent launches. **Completed:** v0.1.0.0 (2026-03-20)
 - **E-2: Replace fatalError with AppStoreErrorView** — Graceful error screen + Retry button on store init failure. **Completed:** v0.1.0.0 (2026-03-20)

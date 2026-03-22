@@ -24,6 +24,21 @@ struct HistoryView: View {
     @State private var shareItems: [Any] = []
     @State private var showShareSheet = false
 
+    // MARK: - Nutrient Spotlight (Phase 2, Feature 1)
+
+    /// Rolling 7-calendar-day slice of allLogs, always anchored to today.
+    private var sevenDayLogs: [FoodLog] {
+        let sevenDaysAgo = Calendar.current.date(
+            byAdding: .day, value: -7,
+            to: Calendar.current.startOfDay(for: Date())
+        ) ?? Date()
+        return allLogs.filter { $0.timestamp >= sevenDaysAgo }
+    }
+
+    private var spotlightResults: [SpotlightResult] {
+        NutrientSpotlightEngine.compute(logs: sevenDayLogs)
+    }
+
     // MARK: - Persistence helpers
 
     private var selectedExtraSet: Set<Nutrient> {
@@ -55,6 +70,10 @@ struct HistoryView: View {
                         ScrollView {
                             VStack(spacing: 24) {
                                 statsRow
+
+                                if !spotlightResults.isEmpty {
+                                    NutrientSpotlightCard(results: Array(spotlightResults.prefix(2)))
+                                }
 
                                 if !allLogs.isEmpty {
                                     goalChartsSection

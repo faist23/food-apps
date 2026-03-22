@@ -9,6 +9,8 @@ import BiteLedgerCore
 
 struct TodayView: View {
 
+    @Binding var selectedTab: Int
+
     @Environment(\.modelContext) private var modelContext
     @State private var logs: [FoodLog] = []
     @State private var preferences: UserPreferences?
@@ -25,10 +27,25 @@ struct TodayView: View {
     @State private var streakMilestoneToast: Int?  // T-03
     @State private var showFirstLogCelebration = false  // T-08
 
+    // MARK: - Nutrient Spotlight (Phase 2, Feature 1)
+    @State private var spotlightResults: [SpotlightResult] = []
+    @AppStorage("spotlightChipDismissedDate") private var spotlightChipDismissedDate: String = ""
+
     // MARK: - Computed
 
     private var todayLogs: [FoodLog] {
         logs
+    }
+
+    private var isChipDismissedToday: Bool {
+        let today = ISO8601DateFormatter().string(from: Calendar.current.startOfDay(for: Date()))
+        return spotlightChipDismissedDate == today
+    }
+
+    private var showSpotlightChip: Bool {
+        !spotlightResults.isEmpty &&
+        Set(todayLogs.map { $0.mealType }).count >= 2 &&
+        !isChipDismissedToday
     }
 
     private func caloriesFor(meal: MealType) -> Double {
@@ -66,11 +83,19 @@ struct TodayView: View {
                         )
                         .padding(.horizontal, 20)
 
+                        // Nutrient Spotlight chip (Phase 2, Feature 1)
+                        if showSpotlightChip, let top = spotlightResults.first {
+                            spotlightChip(top: top)
+                                .padding(.horizontal, 20)
+                                .transition(.opacity.combined(with: .scale(0.95, anchor: .top)))
+                        }
+
                         mealSections
 
                         Spacer(minLength: 60)
                     }
                     .padding(.top, 16)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showSpotlightChip)
                 }
             }
             .background(Color("SurfacePrimary"))
@@ -95,6 +120,7 @@ struct TodayView: View {
                 loadLogsForSelectedDate()
                 loadPreferences()  // must run before loadStreak so cache is available
                 loadStreak()
+                loadSevenDayLogs()
             }
             .onChange(of: currentStreak) { _, newStreak in
                 checkStreakMilestone(newStreak)
@@ -160,6 +186,7 @@ struct TodayView: View {
                 modelContext.insert(foodLog)
                 try? modelContext.save()
                 loadLogsForSelectedDate()
+                loadSevenDayLogs()
 
                 // T-08: First-log micro-celebration — fire exactly once when the flag is nil.
                 // Set the flag immediately before showing the overlay to prevent double-trigger.
@@ -237,7 +264,28 @@ struct TodayView: View {
     }
     
     // MARK: - Data Loading
-    
+
+    /// Loads the rolling 7-day window anchored to real today (not selectedDate).
+    /// Called on appear and after every food log creation.
+    private func loadSevenDayLogs() {
+        let calendar = Calendar.current
+        let sevenDaysAgo = calendar.date(
+            byAdding: .day, value: -7,
+            to: calendar.startOfDay(for: Date())
+        ) ?? Date()
+        let descriptor = FetchDescriptor<FoodLog>(
+            predicate: #Predicate { $0.timestamp >= sevenDaysAgo }
+        )
+        let fetched = (try? modelContext.fetch(descriptor)) ?? []
+        spotlightResults = NutrientSpotlightEngine.compute(logs: fetched)
+    }
+
+    private func dismissChip() {
+        spotlightChipDismissedDate = ISO8601DateFormatter().string(
+            from: Calendar.current.startOfDay(for: Date())
+        )
+    }
+
     private func loadLogsForSelectedDate() {
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: selectedDate)
@@ -590,6 +638,62 @@ struct TodayView: View {
                     }
                 )
             }
+        }
+    }
+
+    // MARK: - Nutrient Spotlight Chip
+
+    @ViewBuilder
+    private func spotlightChip(top: SpotlightResult) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "eye.fill")
+                .font(.system(size: 13))
+                .foregroundStyle(Color("BrandPrimary"))
+
+            Text(top.message)
+                .font(.subheadline)
+                .foregroundStyle(Color("TextPrimary"))
+                .lineLimit(1)
+
+            Spacer(minLength: 4)
+
+            Button {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    dismissChip()
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color("TextSecondary"))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(
+            Capsule()
+                .fill(Color("SurfaceCard"))
+        )
+        .overlay(
+            Capsule()
+                .stroke(Color("DividerSubtle"), lineWidth: 1)
+        )
+        .onTapGesture {
+            selectedTab = 1
+        }
+        .gesture(
+            DragGesture(minimumDistance: 20)
+                .onEnded { _ in
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        dismissChip()
+                    }
+                }
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(top.message). Tap to see details in History.")
+        .accessibilityAction(.default) { selectedTab = 1 }
+        .accessibilityAction(named: "Dismiss") {
+            dismissChip()
         }
     }
 
