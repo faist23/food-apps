@@ -24,6 +24,22 @@
 ## CSV
 - Must support LoseIt import format
 - Must support full round-trip export/import with zero data loss
+
+## Backup & Restore (BackupService)
+- `BackupService` lives in `BiteLedgerCore` — shared by both apps
+- `createBackup` produces a single `.zip`: manifest.json + 5 CSVs + recipe images
+- `restoreBackup` supports `.replaceAll` (wipe then import) and `.merge` (UUID-based skip)
+- `resetDatabase` supports 4 scopes: logsOnly / allFoodData / recipesOnly / everything
+- ZIP entry paths are validated against extract directory (no path traversal)
+
+## Nutrient Spotlight (NutrientSpotlightEngine)
+- Pure struct in `BiteLedgerCore` — no SwiftData dependency, fully unit-testable
+- Operates on pre-fetched `[FoodLog]` — caller owns the 7-day window filter
+- 5 spotlight nutrients (high-side only, v1): sodium, saturatedFat, fat, cholesterol, carbs
+- Threshold: `nutrient.defaultGoalValue × dvMultiplier` (default 1.2 = 120% DV)
+- Qualifies if a nutrient exceeds threshold on ≥ `minDaysAbove` days (default 3 of 7)
+- Parameters are injectable — no schema fields, no user preferences
+- `Nutrient.value(from: FoodLog) -> Double?` maps each nutrient to its `*AtLogTime` field
 ```
 
 **Step 2: Start every Claude Code session with this prompt**
