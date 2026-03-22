@@ -216,6 +216,9 @@ public struct BackupService {
         let archive = try Archive(url: zipURL, accessMode: .read)
         for entry in archive where entry.type == .file {
             let destURL = extractDir.appendingPathComponent(entry.path)
+            // Guard against ZIP slip: reject any path that escapes the extract directory.
+            guard destURL.path.hasPrefix(extractDir.path + "/") ||
+                  destURL.path == extractDir.path else { continue }
             try FileManager.default.createDirectory(
                 at: destURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true

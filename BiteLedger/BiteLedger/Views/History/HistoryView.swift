@@ -26,17 +26,18 @@ struct HistoryView: View {
 
     // MARK: - Nutrient Spotlight (Phase 2, Feature 1)
 
-    /// Rolling 7-calendar-day slice of allLogs, always anchored to today.
-    private var sevenDayLogs: [FoodLog] {
-        let sevenDaysAgo = Calendar.current.date(
-            byAdding: .day, value: -7,
-            to: Calendar.current.startOfDay(for: Date())
-        ) ?? Date()
-        return allLogs.filter { $0.timestamp >= sevenDaysAgo }
-    }
+    // MARK: - Nutrient Spotlight state (cached to avoid recompute on every body pass)
+    @State private var spotlightResults: [SpotlightResult] = []
 
-    private var spotlightResults: [SpotlightResult] {
-        NutrientSpotlightEngine.compute(logs: sevenDayLogs)
+    private func computeSpotlightResults() {
+        let calendar = Calendar.current
+        // value: -6 = today + 6 previous days = 7 calendar days inclusive
+        let sixDaysAgo = calendar.date(
+            byAdding: .day, value: -6,
+            to: calendar.startOfDay(for: Date())
+        ) ?? Date()
+        let sevenDayLogs = allLogs.filter { $0.timestamp >= sixDaysAgo }
+        spotlightResults = NutrientSpotlightEngine.compute(logs: sevenDayLogs)
     }
 
     // MARK: - Persistence helpers
@@ -107,6 +108,10 @@ struct HistoryView: View {
             }
             .onAppear {
                 loadRecentLogs()
+                computeSpotlightResults()
+            }
+            .onChange(of: allLogs) { _, _ in
+                computeSpotlightResults()
             }
         }
     }

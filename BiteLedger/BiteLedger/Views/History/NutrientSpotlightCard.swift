@@ -24,8 +24,8 @@ struct NutrientSpotlightCard: View {
                     .foregroundStyle(Color("TextSecondary"))
                     .tracking(1)
 
-                // MARK: Observation
-                Text(results[0].message)
+                // MARK: Observation — results.first guards against empty array at the type level
+                Text(results.first?.message ?? "")
                     .font(.body)
                     .foregroundStyle(Color("TextPrimary"))
 

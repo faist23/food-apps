@@ -38,7 +38,9 @@ struct TodayView: View {
     }
 
     private var isChipDismissedToday: Bool {
-        let today = ISO8601DateFormatter().string(from: Calendar.current.startOfDay(for: Date()))
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let today = fmt.string(from: Date())
         return spotlightChipDismissedDate == today
     }
 
@@ -266,24 +268,25 @@ struct TodayView: View {
     // MARK: - Data Loading
 
     /// Loads the rolling 7-day window anchored to real today (not selectedDate).
+    /// value: -6 = today + 6 previous days = 7 calendar days inclusive.
     /// Called on appear and after every food log creation.
     private func loadSevenDayLogs() {
         let calendar = Calendar.current
-        let sevenDaysAgo = calendar.date(
-            byAdding: .day, value: -7,
+        let sixDaysAgo = calendar.date(
+            byAdding: .day, value: -6,
             to: calendar.startOfDay(for: Date())
         ) ?? Date()
         let descriptor = FetchDescriptor<FoodLog>(
-            predicate: #Predicate { $0.timestamp >= sevenDaysAgo }
+            predicate: #Predicate { $0.timestamp >= sixDaysAgo }
         )
         let fetched = (try? modelContext.fetch(descriptor)) ?? []
         spotlightResults = NutrientSpotlightEngine.compute(logs: fetched)
     }
 
     private func dismissChip() {
-        spotlightChipDismissedDate = ISO8601DateFormatter().string(
-            from: Calendar.current.startOfDay(for: Date())
-        )
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        spotlightChipDismissedDate = fmt.string(from: Date())
     }
 
     private func loadLogsForSelectedDate() {
