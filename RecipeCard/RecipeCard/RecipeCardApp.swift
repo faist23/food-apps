@@ -97,9 +97,10 @@ struct RecipeCardApp: App {
         }
         let storeURL = containerURL.appendingPathComponent("biteledger.store")
         do {
-            let schema = Schema(versionedSchema: RecipeCardSchemaV1.self)
+            let schema = Schema(versionedSchema: RecipeCardSchemaV2.self)
             let config = ModelConfiguration(schema: schema, url: storeURL)
-            modelContainer = try ModelContainer(for: schema, migrationPlan: RecipeCardMigrationPlan.self, configurations: [config])
+            // NOTE: migrationPlan intentionally omitted — see BiteLedgerApp.swift for explanation.
+            modelContainer = try ModelContainer(for: schema, configurations: [config])
         } catch {
             storeError = error
         }

@@ -41,6 +41,7 @@ fail to open on whichever app launches second.
 | `CanonicalFood` | Reference food with authoritative serving → gram conversions (e.g. "Peanut Butter": 1 tbsp = 16g). Seeded once by `CanonicalFoodSeeder`. |
 | `ServingConversion` | Unit → gram mapping for a CanonicalFood (e.g. tbsp = 16g, cup = 258g) |
 | `FallbackSource` | Links a FoodItem to its enrichment source (USDA or FatSecret) for provenance and future re-enrichment |
+| `FoodHistoryEntry` | Personal food history index — one record per (FoodItem, MealType), tracking `lastLoggedDate` and `logCount`. Powers the "Recent" section in FoodSearchView without scanning FoodLogs. Added in SchemaV2. |
 
 ### Relationships
 - `FoodItem` → `ServingSize[]` (cascade delete)
@@ -51,23 +52,43 @@ fail to open on whichever app launches second.
 - `RecipeIngredient` → `ServingSize` (nullify on delete — **no declared inverse**;
   must be manually nullified before deleting ServingSizes or the app will crash
   with "model instance was invalidated")
+- `FoodHistoryEntry.food` → `FoodItem` (nullify on delete — **unidirectional, no back-reference on FoodItem**;
+  FoodItem intentionally has no `historyEntries` property — adding one would cause SwiftData to follow
+  the relationship edge when computing schema checksums, making SchemaV1 and SchemaV2 produce identical
+  fingerprints and crash with "Duplicate version checksums detected". Orphaned entries with `food == nil`
+  are filtered out at display time via `compactMap { $0.food }`)
 
 ### Schema Migration Policy (Critical — Read Before Any Schema Change)
 
+**Schema version roadmap:**
+- **SchemaV1** — shipping baseline (all 8 models before T-14)
+- **SchemaV2** — `FoodHistoryEntry` added (shipped in feature/v1-ship); lightweight
+  migration from V1. RecipeCard registers it but never queries it.
+- **SchemaV3** (planned) — T-09 HealthKit (`healthKitEnabled` flag in UserPreferences)
+  and T-10 Recipe Creation in BiteLedger. Both require a coordinated 2-app release.
+
 **Current state:** both apps use `VersionedSchema` + `SchemaMigrationPlan`
 (`BiteLedgerMigrationPlan` / `RecipeCardMigrationPlan`), wired into
-`ModelContainer` via the `migrationPlan:` parameter. Schema V1 is the shipping
-baseline. Data is never deleted on mismatch — an error screen + Retry is shown
-instead.
+`ModelContainer` via the `migrationPlan:` parameter. SchemaV2 (FoodHistoryEntry) is
+the current baseline. Data is never deleted on mismatch — an error screen + Retry is
+shown instead.
+
+**Migration plan status:** `BiteLedgerMigrationPlan` / `RecipeCardMigrationPlan` are
+defined but **NOT passed to `ModelContainer`**. SwiftData auto-migrates lightweight
+changes (new entity, new nullable fields) without an explicit plan. Passing the plan
+causes "Duplicate version checksums detected" because SwiftData generates identical
+CoreData MOMs for all schema versions that share live `@Model` types (implicit CoreData
+inverse relationships are included even when not declared in Swift, making V1 and V2
+fingerprint identically).
 
 **Required for all future schema changes:**
-- **Lightweight changes** (nullable field additions, removing properties): define a
-  new `BiteLedgerSchemaVN` enum (same live model types, bumped version), add a
-  `MigrationStage.lightweight(fromVersion:toVersion:)` stage, append the new
-  version to `schemas`. Mirror in `RecipeCardSchema.swift`.
+- **Lightweight changes** (nullable field additions, new entity, removing properties):
+  define a new `BiteLedgerSchemaVN` enum with the new model types. The migration plan
+  is NOT wired in — SwiftData handles these automatically. Mirror in `RecipeCardSchema.swift`.
 - **Breaking changes** (rename, type change, required field with non-nil default):
   define FROZEN nested `@Model` types inside the old schema enum so SwiftData sees
-  distinct fingerprints; use `MigrationStage.custom` with a data transform.
+  distinct fingerprints; use `MigrationStage.custom` with a data transform; re-introduce
+  `migrationPlan:` in `ModelContainer` at that time.
 - Migrations must be non-destructive: add nullable fields, migrate data forward,
   never drop columns with live data
 - Both apps must ship the migration in the same release

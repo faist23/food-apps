@@ -17,9 +17,17 @@ private func matchesQuery(_ text: String, query: String) -> Bool {
 struct FoodSearchView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    // Loaded asynchronously in .task so the sheet presents and keyboard appears immediately.
-    // @Query would block the main thread on init with 1000+ records.
+    // allLogs: capped at 1000 — used for Recent Foods, serving-size lookups, and
+    // fallback for searchMyFoods() before the T-14 backfill completes.
+    // @Query avoided — .task loads after first render so keyboard appears immediately.
     @State private var allLogs: [FoodLog] = []
+    // mealSearchLogs: logs matching the current Meals search query. Populated
+    // asynchronously (debounced 400ms) via a FoodItem name predicate so SwiftData
+    // filters in SQL — avoids loading all logs and lazy-faulting foodItem per row.
+    @State private var mealSearchLogs: [FoodLog] = []
+    @State private var mealSearchTask: Task<Void, Never>?
+    // T-14: personal food history index — powers searchMyFoods() with no log cap.
+    @State private var foodHistory: [FoodHistoryEntry] = []
     
     let mealType: MealType
     let onFoodAdded: (AddedFoodItem) -> Void
@@ -60,6 +68,9 @@ struct FoodSearchView: View {
                     TextField("Search", text: $searchText)
                         .textFieldStyle(.plain)
                         .onChange(of: searchText) { _, newValue in
+                            if selectedTab == .meals {
+                                startMealSearch(query: newValue)
+                            }
                             if selectedTab == .search {
                                 // Cancel any existing debounce task
                                 debounceTask?.cancel()
@@ -88,6 +99,21 @@ struct FoodSearchView: View {
                                         performSearch(query: newValue)
                                     }
                                 }
+                            }
+                        }
+                        .onChange(of: selectedTab) { _, newTab in
+                            if newTab == .myFoods {
+                                // Re-fetch in case the app-launch backfill completed after the sheet opened.
+                                foodHistory = (try? modelContext.fetch(
+                                    FetchDescriptor<FoodHistoryEntry>(
+                                        sortBy: [SortDescriptor(\FoodHistoryEntry.lastLoggedDate, order: .reverse)]
+                                    )
+                                )) ?? []
+                            }
+                            if newTab == .meals {
+                                // searchText doesn't change on tab switch, so onChange(of: searchText)
+                                // won't fire. Re-trigger the meal search if a query is already typed.
+                                startMealSearch(query: searchText)
                             }
                         }
 
@@ -183,12 +209,20 @@ struct FoodSearchView: View {
             }
             .background(Color("SurfacePrimary"))
             .task {
-                // Load logs asynchronously so the sheet + keyboard appear without delay.
+                // Load asynchronously so the sheet + keyboard appear without delay.
+                // allLogs: Meals tab + serving-size lookups only (capped at 1000).
                 var d = FetchDescriptor<FoodLog>(
                     sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)]
                 )
                 d.fetchLimit = 1000
                 allLogs = (try? modelContext.fetch(d)) ?? []
+
+                // T-14: FoodHistoryEntry — powers Recent Foods + My Foods (no cutoff).
+                foodHistory = (try? modelContext.fetch(
+                    FetchDescriptor<FoodHistoryEntry>(
+                        sortBy: [SortDescriptor(\FoodHistoryEntry.lastLoggedDate, order: .reverse)]
+                    )
+                )) ?? []
 
                 let rd = FetchDescriptor<Recipe>(sortBy: [SortDescriptor(\Recipe.name)])
                 allRecipes = (try? modelContext.fetch(rd)) ?? []
@@ -721,8 +755,13 @@ struct FoodSearchView: View {
     // MARK: - Meals Tab
 
     private var groupedMeals: [(date: Date, mealType: MealType, logs: [FoodLog])] {
+        // When a debounced meal search is in flight or complete, use mealSearchLogs —
+        // these are pre-filtered by FoodItem name predicate (SQL), so no per-row
+        // relationship faulting needed. When browsing with no query, use allLogs (1000 cap).
+        let usingSearchResults = !searchText.isEmpty && !mealSearchLogs.isEmpty
+        let logsSource = usingSearchResults ? mealSearchLogs : allLogs
         let calendar = Calendar.current
-        let grouped = Dictionary(grouping: allLogs) { log -> String in
+        let grouped = Dictionary(grouping: logsSource) { log -> String in
             let dateComponents = calendar.dateComponents([.year, .month, .day], from: log.timestamp)
             let dateKey = calendar.date(from: dateComponents) ?? log.timestamp
             return "\(dateKey)-\(log.mealType.rawValue)"
@@ -743,11 +782,17 @@ struct FoodSearchView: View {
             return (mealPriority[a.mealType] ?? 99) < (mealPriority[b.mealType] ?? 99)
         }
 
-        let filtered = searchText.isEmpty ? sorted : sorted.filter { meal in
-            meal.logs.contains { log in
-                guard let name = log.foodItem?.name else { return false }
-                return matchesQuery(name, query: searchText)
-            }
+        // Three cases:
+        //   searchText empty           → show all recent meals (allLogs path)
+        //   searchText set + results   → show mealSearchLogs (already SQL-filtered)
+        //   searchText set + no results yet → return [] to avoid N lazy-fault reads
+        //     during the 400ms debounce window. ContentUnavailableView handles display.
+        let filtered: [(date: Date, mealType: MealType, logs: [FoodLog])]
+        if searchText.isEmpty || usingSearchResults {
+            filtered = sorted
+        } else {
+            // Debounce still pending — nothing to show yet.
+            filtered = []
         }
 
         // Cap at 60 meal groups to keep the list fast to render
@@ -858,6 +903,41 @@ struct FoodSearchView: View {
         }
     }
     
+    /// Debounced async meal search. Cancels any in-flight task before starting.
+    /// Finds FoodItems matching the first query word via SQL predicate, collects
+    /// complete meals from allLogs (recent) and individual matched logs (older).
+    private func startMealSearch(query: String) {
+        mealSearchTask?.cancel()
+        guard !query.isEmpty else {
+            mealSearchLogs = []
+            return
+        }
+        mealSearchTask = Task {
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            let firstWord = query.split(separator: " ").first.map(String.init) ?? query
+            let matchingFoods = (try? modelContext.fetch(
+                FetchDescriptor<FoodItem>(
+                    predicate: #Predicate { $0.name.localizedStandardContains(firstWord) }
+                )
+            )) ?? []
+            let calendar = Calendar.current
+            func mealKey(_ log: FoodLog) -> String {
+                let day = calendar.startOfDay(for: log.timestamp)
+                return "\(day.timeIntervalSince1970)-\(log.mealType.rawValue)"
+            }
+            let matchingFoodLogs = matchingFoods.flatMap { $0.foodLogs }
+            let matchedMealKeys = Set(matchingFoodLogs.map { mealKey($0) })
+            // Recent meals: pull ALL logs for the matching meal from allLogs (complete meal).
+            let recentComplete = allLogs.filter { matchedMealKeys.contains(mealKey($0)) }
+            let coveredKeys = Set(recentComplete.map { mealKey($0) })
+            // Older meals: just the matched food's own log.
+            let olderMatched = matchingFoodLogs.filter { !coveredKeys.contains(mealKey($0)) }
+            mealSearchLogs = (recentComplete + olderMatched)
+                .sorted { $0.timestamp > $1.timestamp }
+        }
+    }
+
     private func performSearch(query: String) {
         guard !query.isEmpty, query.count >= 3 else { return }
 
@@ -991,33 +1071,54 @@ struct FoodSearchView: View {
         var d = FetchDescriptor<FoodLog>(sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)])
         d.fetchLimit = 1000
         allLogs = (try? modelContext.fetch(d)) ?? []
+        // Refresh the history index to reflect the food just logged.
+        foodHistory = (try? modelContext.fetch(
+            FetchDescriptor<FoodHistoryEntry>(
+                sortBy: [SortDescriptor(\FoodHistoryEntry.lastLoggedDate, order: .reverse)]
+            )
+        )) ?? []
     }
 
     private func searchMyFoods(query: String) -> [ProductInfo] {
-        // Get unique food items from logs
-        let uniqueFoods = Dictionary(grouping: allLogs.compactMap { $0.foodItem }) { $0.id }
-            .values
-            .compactMap { $0.first }
+        // T-14: Use FoodHistoryEntry for the food list when the backfill index is populated —
+        // no 1000-entry cap, so foods logged 6+ months ago appear in results.
+        // Fall back to allLogs (capped at 1000) when foodHistory is empty, which happens on
+        // first launch until backfillFoodHistory() completes. The fallback ensures the search
+        // tab works correctly during the bootstrap period.
+        var seenIDs = Set<UUID>()
+        let uniqueFoods: [FoodItem]
+        if !foodHistory.isEmpty {
+            uniqueFoods = foodHistory.compactMap { entry in
+                guard let food = entry.food, seenIDs.insert(food.id).inserted else { return nil }
+                return food
+            }
+        } else {
+            // Pre-backfill fallback: derive unique foods from the top-1000 recent logs.
+            uniqueFoods = allLogs.compactMap { log in
+                guard let food = log.foodItem, seenIDs.insert(food.id).inserted else { return nil }
+                return food
+            }
+        }
 
-        // Split search query into words
+        // Split search query into words (word-split matching — see CLAUDE.md).
         let searchWords = query.lowercased().split(separator: " ").map { String($0) }
 
-        // Filter foods that contain ALL search words
+        // Filter foods that contain ALL search words.
         let matchingFoods = uniqueFoods.filter { foodItem in
             let name = foodItem.name.lowercased()
             let brand = foodItem.brand?.lowercased() ?? ""
             let combinedText = "\(name) \(brand)"
-
-            return searchWords.allSatisfy { word in
-                combinedText.contains(word)
-            }
+            return searchWords.allSatisfy { combinedText.contains($0) }
         }
 
-        // Convert to ProductInfo
+        // Convert to ProductInfo.
         return matchingFoods.map { foodItem in
-            // Find the most recent log for this food item
+            // Last-used date comes from FoodHistoryEntry (no allLogs scan needed).
+            let lastUsedDate = foodHistory.first { $0.food?.id == foodItem.id }?.lastLoggedDate
+                           ?? allLogs.first { $0.foodItem?.id == foodItem.id }?.timestamp
+            // Most recent log for serving/calorie display accuracy (top-1000 only; falls back
+            // to foodItem.nutrition for older history — correct for all display paths).
             let mostRecentLog = allLogs.first { $0.foodItem?.id == foodItem.id }
-            let lastUsedDate = mostRecentLog?.timestamp
             
             // Use the actual logged values from most recent log for display accuracy
             let actualCalories = mostRecentLog?.caloriesAtLogTime ?? foodItem.calories
@@ -1523,36 +1624,127 @@ struct ProductQuickRow: View {
 }
 
 struct MyFoodsListView: View {
+    @Environment(\.modelContext) private var modelContext
+
+    // @Query keeps this live — updates automatically as the app-launch backfill
+    // creates records and as new foods are logged. Solves the timing race where
+    // the parent's .task snapshot was stale during the backfill window.
+    // FoodHistoryEntry is small (one record per food+mealType) so @Query is fast here.
+    @Query(sort: \FoodHistoryEntry.lastLoggedDate, order: .reverse)
+    private var foodHistory: [FoodHistoryEntry]
+
+    // SQL search state — populated by startMyFoodsSearch when searchText is non-empty.
+    // Using a direct FetchDescriptor<FoodItem> predicate (same as the Meals tab) avoids
+    // the cap on allLogs and finds foods from any point in history.
+    @State private var sqlSearchResults: [FoodItem] = []
+    @State private var sqlLastUsedDates: [UUID: Date] = [:]
+    @State private var sqlSearchTask: Task<Void, Never>? = nil
+
     let allLogs: [FoodLog]
     let searchText: String
     let mealType: MealType
     let onFoodSelected: (FoodItem) -> Void
-    
+
+    // When a query is active: use SQL results (full history, no cap).
+    // When browsing (empty query): use the history+allLogs hybrid sorted by recency.
     private var sortedFoods: [FoodItem] {
-        let allFoodItems = allLogs.compactMap { $0.foodItem }
-        let groupedByName = Dictionary(grouping: allFoodItems) { $0.name }
-        
-        // For each group, prefer FoodItems with better serving descriptions
-        let uniqueFoods = groupedByName.compactMap { (name, items) -> FoodItem? in
-            // Prefer manual entries (better descriptions) over API entries
-            let preferred = items.first { food in
-                if let defaultServing = food.defaultServing {
-                    let desc = defaultServing.label.lowercased()
-                    return !desc.hasSuffix("serving") && !desc.hasSuffix("g")
-                }
-                return false
-            }
-            return preferred ?? items.first
+        if !searchText.isEmpty {
+            return sqlSearchResults.sorted { $0.name < $1.name }
         }
-        
-        let filteredFoods = uniqueFoods.filter { food in
-            if searchText.isEmpty { return true }
-            let combined = "\(food.name) \(food.brand ?? "")"
-            return matchesQuery(combined, query: searchText)
+
+        var seenIDs = Set<UUID>()
+        var items: [FoodItem] = []
+
+        // T-14: history index has no log cap. Start here so recently-used foods
+        // (sorted by lastLoggedDate) surface first in the deduplication pass.
+        for entry in foodHistory {
+            guard let food = entry.food, seenIDs.insert(food.id).inserted else { continue }
+            items.append(food)
         }
-        return filteredFoods.sorted { $0.name < $1.name }
+
+        // Supplement with allLogs for any foods not yet in the history index.
+        // This covers: backfill still in progress, LoseIt imports logged before
+        // T-14 shipped, and any other gap where a FoodHistoryEntry record is missing.
+        for log in allLogs {
+            guard let food = log.foodItem, seenIDs.insert(food.id).inserted else { continue }
+            items.append(food)
+        }
+
+        return items
     }
-    
+
+    private func startMyFoodsSearch(query: String) {
+        sqlSearchTask?.cancel()
+        guard !query.isEmpty else {
+            sqlSearchResults = []
+            sqlLastUsedDates = [:]
+            return
+        }
+        sqlSearchTask = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+
+            // SQL predicate search — hits the full store, no recency cap.
+            let candidates = (try? modelContext.fetch(
+                FetchDescriptor<FoodItem>(
+                    predicate: #Predicate { $0.name.localizedStandardContains(query) }
+                )
+            )) ?? []
+
+            // Build the set of personally-logged food IDs — used only to guard
+            // API-sourced foods (usda_*, fatsecret_*) against ghost foods that
+            // were fetched by RecipeCard's ingredient matcher but never logged.
+            // Manual entries, LoseIt imports, and recipe foods are always included.
+            var loggedIDs = Set(foodHistory.compactMap { $0.food?.id })
+            for log in allLogs {
+                if let food = log.foodItem { loggedIDs.insert(food.id) }
+            }
+
+            let filtered = candidates.filter { food in
+                // Always exclude seeded catalog items.
+                guard !food.source.hasPrefix("usda_seed"),
+                      !food.source.hasPrefix("built_in") else { return false }
+                // Known user-created sources — always show even if backfill is incomplete.
+                // "Manual", "Quick Add", "LoseIt Import", "CSV Import*", "recipe*", and
+                // legacy empty-source records are all user-owned by definition.
+                if food.source.isEmpty ||
+                   food.source == "Manual" ||
+                   food.source == "Quick Add" ||
+                   food.source.hasPrefix("recipe") ||
+                   food.source.hasPrefix("LoseIt") ||
+                   food.source.hasPrefix("CSV Import") {
+                    return true
+                }
+                // All other sources (usda_*, fatsecret_*, OFacts barcodes, etc.) are
+                // API-fetched and may be ghost foods — require personal log history.
+                return loggedIDs.contains(food.id)
+            }
+
+            // Pre-compute last-used dates for every result so FoodItemRow
+            // never needs to fire lazy foodLogs relationship loads.
+            //   Pass 1: FoodHistoryEntry index (fast, no faults)
+            //   Pass 2: allLogs buffer (covers recently-logged foods)
+            //   Pass 3: food.foodLogs direct access for any remainder
+            //           (acceptable: small result set, runs on main actor)
+            var dates: [UUID: Date] = [:]
+            for entry in foodHistory {
+                guard let food = entry.food, dates[food.id] == nil else { continue }
+                dates[food.id] = entry.lastLoggedDate
+            }
+            for log in allLogs {
+                guard let food = log.foodItem, dates[food.id] == nil else { continue }
+                dates[food.id] = log.timestamp
+            }
+            for food in filtered where dates[food.id] == nil {
+                dates[food.id] = food.foodLogs.max(by: { $0.timestamp < $1.timestamp })?.timestamp
+            }
+
+            guard !Task.isCancelled else { return }
+            sqlSearchResults = filtered
+            sqlLastUsedDates = dates
+        }
+    }
+
     var body: some View {
         Group {
             if sortedFoods.isEmpty {
@@ -1560,6 +1752,14 @@ struct MyFoodsListView: View {
             } else {
                 foodListView
             }
+        }
+        .onAppear {
+            if !searchText.isEmpty {
+                startMyFoodsSearch(query: searchText)
+            }
+        }
+        .onChange(of: searchText) { _, newValue in
+            startMyFoodsSearch(query: newValue)
         }
     }
     
@@ -1571,10 +1771,19 @@ struct MyFoodsListView: View {
         }
     }
     
-    // Pre-compute last-used dates from allLogs (already sorted newest-first)
-    // so FoodItemRow doesn't fire a lazy relationship load per row.
+    // Pre-compute last-used dates so FoodItemRow doesn't fire lazy relationship loads.
+    // When search is active: use sqlLastUsedDates (built by the Task, includes a
+    // food.foodLogs fallback for foods not in the history index).
+    // When browsing: use FoodHistoryEntry + allLogs as before.
     private var lastUsedDates: [UUID: Date] {
+        if !searchText.isEmpty {
+            return sqlLastUsedDates
+        }
         var result: [UUID: Date] = [:]
+        for entry in foodHistory {
+            guard let food = entry.food, result[food.id] == nil else { continue }
+            result[food.id] = entry.lastLoggedDate
+        }
         for log in allLogs {
             guard let food = log.foodItem, result[food.id] == nil else { continue }
             result[food.id] = log.timestamp
@@ -1709,7 +1918,6 @@ struct RecentFoodsForMealView: View {
                 .compactMap { $0.foodItem?.id }
         )
 
-        // Count frequency per food within this meal type
         var freq: [UUID: (food: FoodItem, count: Int)] = [:]
         for log in allLogs where log.mealType == mealType {
             guard let food = log.foodItem else { continue }

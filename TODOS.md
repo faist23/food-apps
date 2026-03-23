@@ -4,6 +4,7 @@ Tracked design and product work. Created by /plan-design-review on 2026-03-19.
 Engineering items added by /plan-eng-review on 2026-03-19.
 Product vision + new items added by /plan-ceo-review on 2026-03-19.
 Post-v1 roadmap + iPad strategy added by /plan-ceo-review on 2026-03-20.
+T-14 reframed + T-20 added by /plan-ceo-review on 2026-03-22.
 
 ---
 
@@ -38,6 +39,8 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 ---
 
 ## P3 — Future
+
+---
 
 ### T-18: Nutrient Spotlight — Below-Threshold Patterns (Fiber, Protein)
 **What:** Add support for nutrients consistently BELOW 80% DV. Engine gets a `thresholdDirection: .above/.below` injectable parameter. Copy: "Fiber has been low this week. Curious what foods are high in it?" Different copy logic required for low-side patterns.
@@ -133,11 +136,6 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ---
 
-### T-14: SchemaV2 Migration
-**What:** Add `MealPlan` model (enables T-12 meal planning). `steps: [String]` is no longer needed — `recipe.directions: [String]` already exists in the model stored as `directionsData: Data?`.
-**Context:** Coordinated release of both apps required per schema policy. Export via CSV before migrating during development. SchemaV2 scope is now smaller than planned.
-**Effort:** S (human: ~1 day / CC: ~15 min) | **Priority:** P2 | **Depends on:** T-11 shipped, both apps stable
-
 ---
 
 ### D-9: RecipeCard Toolbar Consolidation
@@ -151,6 +149,10 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 ---
 
 ## Completed
+
+- **T-14: SchemaV2 — FoodHistoryEntry (Personal Food History Index)** — New `FoodHistoryEntry` @Model (one record per (FoodItem, MealType)), lightweight V1→V2 migration in both apps, `FoodLog.create()` extended with `context:` param to drive upsert at all 6 call sites, chunked @MainActor backfill guarded by `UserPreferences.hasBackfilledFoodHistory`, `RecentFoodsForMealView` migrated to O(1) history-based query, 12 unit tests. **Completed:** feature/v1-ship (2026-03-22)
+
+- **T-20: Document SchemaV3 targets in CLAUDE.md** — Added schema version roadmap (V1/V2/V3 with owners) to workspace CLAUDE.md "Schema Migration Policy" section. **Completed:** feature/v1-ship (2026-03-22)
 
 - **Nutrient Spotlight (Phase 2, Feature 1):** `NutrientSpotlightEngine` pure struct (5 spotlight nutrients, 120%/3-of-7 defaults, injectable params); `SpotlightResult` with `Sendable` Nutrient; `Nutrient.spotlightDisplayName` + `Nutrient.value(from:)` extensions; `NutrientSpotlightCard` in HistoryView (ElevatedCard, 2 nutrient rows, VoiceOver combined); spotlight chip in TodayView (Capsule, eye.fill icon, tap→History tab, swipe/xmark dismiss, AppStorage day-persistence, ≥2 meal-types gate); 7 unit tests all passing. **Completed:** feature/v1-ship (2026-03-21)
 

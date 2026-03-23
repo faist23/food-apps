@@ -273,7 +273,8 @@ public struct CSVImporter {
                 quantity: qty,
                 food: food,
                 serving: serving,
-                timestamp: timestamp
+                timestamp: timestamp,
+                context: context
             )
             context.insert(log)
             result.logsCreated += 1
@@ -517,7 +518,8 @@ public struct CSVImporter {
                 quantity: qty,
                 food: food,
                 serving: serving,
-                timestamp: timestamp
+                timestamp: timestamp,
+                context: context
             )
             context.insert(log)
             result.logsCreated += 1
@@ -857,6 +859,8 @@ public struct CSVImporter {
                 caffeineAtLogTime:            col("caffeineatlogtime", row: row)
             )
             context.insert(log)
+            // Update history index for imported logs (same as live logging).
+            FoodHistoryEntry.upsert(food: food, mealType: mealType, in: context)
             result.logsCreated += 1
         }
     }

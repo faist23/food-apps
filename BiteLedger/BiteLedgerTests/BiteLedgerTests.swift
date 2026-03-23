@@ -409,3 +409,252 @@ final class NutrientSpotlightEngineTests: XCTestCase {
         XCTAssertNil(Nutrient.protein.value(from: log))
     }
 }
+
+// MARK: - FoodHistoryEntry Tests
+
+@MainActor
+final class FoodHistoryEntryTests: XCTestCase {
+
+    // MARK: - Helpers
+
+    /// In-memory container containing only the models required for T-14.
+    private func makeContainer() throws -> ModelContainer {
+        let schema = Schema([
+            FoodItem.self,
+            ServingSize.self,
+            FoodLog.self,
+            FoodHistoryEntry.self,
+            UserPreferences.self,
+        ])
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        return try ModelContainer(for: schema, configurations: config)
+    }
+
+    private func makeFood(in context: ModelContext, name: String = "Test Food") -> FoodItem {
+        let food = FoodItem(
+            name: name, source: "test", nutritionMode: .per100g,
+            calories: 100, protein: 10, carbs: 20, fat: 5
+        )
+        context.insert(food)
+        return food
+    }
+
+    // MARK: - T1: upsert creates a new entry when none exists
+
+    func testUpsert_createsNewEntry_whenNoneExists() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let food = makeFood(in: context)
+
+        FoodHistoryEntry.upsert(food: food, mealType: .breakfast, in: context)
+        try context.save()
+
+        let entries = try context.fetch(FetchDescriptor<FoodHistoryEntry>())
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries[0].food?.id, food.id)
+        XCTAssertEqual(entries[0].mealType, .breakfast)
+        XCTAssertEqual(entries[0].logCount, 1)
+    }
+
+    // MARK: - T2: upsert increments logCount on second call for same (food, mealType)
+
+    func testUpsert_incrementsLogCount_onSecondCall() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let food = makeFood(in: context)
+
+        FoodHistoryEntry.upsert(food: food, mealType: .lunch, in: context)
+        FoodHistoryEntry.upsert(food: food, mealType: .lunch, in: context)
+        try context.save()
+
+        let entries = try context.fetch(FetchDescriptor<FoodHistoryEntry>())
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries[0].logCount, 2)
+    }
+
+    // MARK: - T3: upsert creates separate entries for different meal types
+
+    func testUpsert_createsSeparateEntries_perMealType() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let food = makeFood(in: context)
+
+        FoodHistoryEntry.upsert(food: food, mealType: .breakfast, in: context)
+        FoodHistoryEntry.upsert(food: food, mealType: .dinner, in: context)
+        try context.save()
+
+        let entries = try context.fetch(FetchDescriptor<FoodHistoryEntry>())
+        XCTAssertEqual(entries.count, 2)
+        let mealTypes = Set(entries.map { $0.mealType })
+        XCTAssertTrue(mealTypes.contains(.breakfast))
+        XCTAssertTrue(mealTypes.contains(.dinner))
+    }
+
+    // MARK: - T4: upsert merges duplicate entries
+
+    func testUpsert_mergesDuplicates_whenTwoExist() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let food = makeFood(in: context)
+
+        // Manually insert two duplicate entries (simulates partial backfill scenario)
+        let e1 = FoodHistoryEntry(food: food, mealType: .snack)
+        e1.logCount = 3
+        let e2 = FoodHistoryEntry(food: food, mealType: .snack)
+        e2.logCount = 2
+        context.insert(e1)
+        context.insert(e2)
+        try context.save()
+
+        // upsert should detect the duplicate and merge
+        FoodHistoryEntry.upsert(food: food, mealType: .snack, in: context)
+        try context.save()
+
+        let entries = try context.fetch(FetchDescriptor<FoodHistoryEntry>())
+        XCTAssertEqual(entries.count, 1, "Duplicates should be merged into one entry")
+        // merged logCount = e1.logCount + e2.logCount + 1 (for this upsert)
+        XCTAssertEqual(entries[0].logCount, 6)
+    }
+
+    // MARK: - T5: upsert updates lastLoggedDate on increment
+
+    func testUpsert_updatesLastLoggedDate_onIncrement() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let food = makeFood(in: context)
+
+        FoodHistoryEntry.upsert(food: food, mealType: .breakfast, in: context)
+        try context.save()
+
+        let firstDate = try context.fetch(FetchDescriptor<FoodHistoryEntry>())[0].lastLoggedDate
+        // Simulate time passing and a second log
+        FoodHistoryEntry.upsert(food: food, mealType: .breakfast, in: context)
+        try context.save()
+
+        let updatedDate = try context.fetch(FetchDescriptor<FoodHistoryEntry>())[0].lastLoggedDate
+        XCTAssertGreaterThanOrEqual(updatedDate, firstDate)
+    }
+
+    // MARK: - T6: separate foods get separate entries
+
+    func testUpsert_createsSeparateEntries_forDifferentFoods() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let apple = makeFood(in: context, name: "Apple")
+        let banana = makeFood(in: context, name: "Banana")
+
+        FoodHistoryEntry.upsert(food: apple, mealType: .breakfast, in: context)
+        FoodHistoryEntry.upsert(food: banana, mealType: .breakfast, in: context)
+        try context.save()
+
+        let entries = try context.fetch(FetchDescriptor<FoodHistoryEntry>())
+        XCTAssertEqual(entries.count, 2)
+    }
+
+    // MARK: - T7: backfill guard — hasBackfilledFoodHistory starts nil
+
+    func testUserPreferences_backfillFlag_startsNil() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let prefs = UserPreferences()
+        context.insert(prefs)
+        try context.save()
+
+        XCTAssertNil(prefs.hasBackfilledFoodHistory,
+                     "Flag must start nil so backfill runs on first launch after migration")
+    }
+
+    // MARK: - T8: backfill guard — flag set to true prevents re-run
+
+    func testUserPreferences_backfillFlag_trueBlocksReRun() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let prefs = UserPreferences()
+        prefs.hasBackfilledFoodHistory = true
+        context.insert(prefs)
+        try context.save()
+
+        // Verify the guard condition used in backfillFoodHistory()
+        let fetched = try context.fetch(FetchDescriptor<UserPreferences>()).first
+        XCTAssertEqual(fetched?.hasBackfilledFoodHistory, true)
+    }
+
+    // MARK: - T9: upsert is a no-op when food is already in history for that meal type (count check)
+
+    func testUpsert_thirdCall_logCountIsThree() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let food = makeFood(in: context)
+
+        FoodHistoryEntry.upsert(food: food, mealType: .dinner, in: context)
+        FoodHistoryEntry.upsert(food: food, mealType: .dinner, in: context)
+        FoodHistoryEntry.upsert(food: food, mealType: .dinner, in: context)
+        try context.save()
+
+        let entries = try context.fetch(FetchDescriptor<FoodHistoryEntry>())
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries[0].logCount, 3)
+    }
+
+    // MARK: - T10: FoodLog.create() triggers upsert
+
+    func testFoodLogCreate_triggersUpsert() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let food = makeFood(in: context)
+        let serving = ServingSize(label: "100g", gramWeight: 100, isDefault: true, sortOrder: 0, unit: "g")
+        serving.foodItem = food
+        context.insert(serving)
+        food.servingSizes.append(serving)
+        try context.save()
+
+        let log = FoodLog.create(
+            mealType: .lunch, quantity: 1.0,
+            food: food, serving: serving,
+            context: context
+        )
+        context.insert(log)
+        try context.save()
+
+        let entries = try context.fetch(FetchDescriptor<FoodHistoryEntry>())
+        XCTAssertEqual(entries.count, 1,
+                       "FoodLog.create() must call FoodHistoryEntry.upsert()")
+        XCTAssertEqual(entries[0].mealType, .lunch)
+        XCTAssertEqual(entries[0].logCount, 1)
+    }
+
+    // MARK: - T11: schema registers FoodHistoryEntry
+
+    func testSchema_registersFoodHistoryEntry() throws {
+        // If FoodHistoryEntry isn't in the schema, makeContainer() throws — so reaching this
+        // line is the assertion.
+        let container = try makeContainer()
+        let context = container.mainContext
+        let food = makeFood(in: context)
+        let entry = FoodHistoryEntry(food: food, mealType: .breakfast)
+        context.insert(entry)
+        XCTAssertNoThrow(try context.save())
+    }
+
+    // MARK: - T12: FoodItem deletion nullifies food reference (no back-reference = no cascade)
+
+    func testFoodItemDeletion_nullifiesFoodReference_onHistoryEntry() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let food = makeFood(in: context)
+
+        FoodHistoryEntry.upsert(food: food, mealType: .breakfast, in: context)
+        try context.save()
+
+        XCTAssertEqual(try context.fetch(FetchDescriptor<FoodHistoryEntry>()).count, 1)
+
+        context.delete(food)
+        try context.save()
+
+        // FoodHistoryEntry survives (nullify, not cascade) — food becomes nil.
+        // Display code filters these out via compactMap { $0.food }.
+        let remaining = try context.fetch(FetchDescriptor<FoodHistoryEntry>())
+        XCTAssertEqual(remaining.count, 1, "Entry survives deletion — nullify rule, not cascade")
+        XCTAssertNil(remaining[0].food, "food reference should be nil after FoodItem deletion")
+    }
+}

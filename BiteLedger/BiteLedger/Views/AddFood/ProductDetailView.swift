@@ -351,7 +351,8 @@ struct ProductDetailView: View {
             quantity: logQuantity,
             food: foodItem,
             serving: servingSize,
-            timestamp: Date()
+            timestamp: Date(),
+            context: modelContext
         )
 
         modelContext.insert(foodLog)

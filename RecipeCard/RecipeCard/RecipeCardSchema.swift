@@ -36,14 +36,39 @@ enum RecipeCardSchemaV1: VersionedSchema {
     }
 }
 
-// MARK: - Migration plan (active)
+// MARK: - SchemaV2 (T-14 — FoodHistoryEntry personal food history index)
 //
-// Wired into ModelContainer in RecipeCardApp.loadContainer().
-// Must stay in sync with BiteLedgerMigrationPlan.
+// Must match BiteLedgerSchemaV2 exactly (same models, same order, same version).
+// RecipeCard registers FoodHistoryEntry but never queries it — the shared store
+// requires identical schemas across both apps.
+//
+enum RecipeCardSchemaV2: VersionedSchema {
+    static let versionIdentifier = Schema.Version(2, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        [
+            FoodItem.self,
+            ServingSize.self,
+            FoodLog.self,
+            UserPreferences.self,
+            Recipe.self,
+            RecipeIngredient.self,
+            CanonicalFood.self,
+            ServingConversion.self,
+            FallbackSource.self,
+            FoodHistoryEntry.self,   // T-14: personal food history index
+        ]
+    }
+}
+
+// MARK: - Migration plan (NOT currently wired in — see BiteLedgerSchema.swift for explanation)
 //
 enum RecipeCardMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [RecipeCardSchemaV1.self]
+        [RecipeCardSchemaV1.self, RecipeCardSchemaV2.self]
     }
-    static var stages: [MigrationStage] { [] }
+    static var stages: [MigrationStage] {
+        [
+            .lightweight(fromVersion: RecipeCardSchemaV1.self, toVersion: RecipeCardSchemaV2.self),
+        ]
+    }
 }

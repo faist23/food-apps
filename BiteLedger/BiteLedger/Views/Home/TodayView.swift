@@ -182,7 +182,8 @@ struct TodayView: View {
                     serving: addedItem.servingSize,
                     timestamp: timestamp,
                     loggedAmount: addedItem.loggedAmount,
-                    loggedUnit: addedItem.loggedUnit
+                    loggedUnit: addedItem.loggedUnit,
+                    context: modelContext
                 )
 
                 modelContext.insert(foodLog)
@@ -465,7 +466,8 @@ struct TodayView: View {
                     quantity: oldLog.quantity,
                     food: foodItem,
                     serving: servingSize,
-                    timestamp: timestamp
+                    timestamp: timestamp,
+                    context: modelContext
                 )
                 
                 // Override with cached nutrition from original log to preserve exact values

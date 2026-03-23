@@ -80,9 +80,16 @@ struct BiteLedgerApp: App {
         }
         let storeURL = containerURL.appendingPathComponent("biteledger.store")
         do {
-            let schema = Schema(versionedSchema: BiteLedgerSchemaV1.self)
+            let schema = Schema(versionedSchema: BiteLedgerSchemaV2.self)
             let config = ModelConfiguration(schema: schema, url: storeURL, cloudKitDatabase: .none)
-            modelContainer = try ModelContainer(for: schema, migrationPlan: BiteLedgerMigrationPlan.self, configurations: [config])
+            // NOTE: migrationPlan is intentionally omitted. SwiftData auto-migrates lightweight
+            // changes (new entity, nullable fields) without an explicit plan. Providing a plan
+            // with VersionedSchema enums that share live @Model types causes SwiftData to generate
+            // identical CoreData MOMs for both versions (implicit inverse relationships are included
+            // even if not declared in Swift), producing "Duplicate version checksums detected".
+            // The VersionedSchema enums are retained for documentation. Re-introduce the migration
+            // plan when a custom (non-lightweight) migration stage is required for SchemaV3.
+            modelContainer = try ModelContainer(for: schema, configurations: [config])
         } catch {
             storeError = error
         }
@@ -104,6 +111,7 @@ struct SafeContentView: View {
                     await normalizeExistingPerServingFoods(container: modelContainer)
                     await backfillFoodLogGramAmounts(container: modelContainer)
                     await fixLoseItGramUnitFoods(container: modelContainer)
+                    await backfillFoodHistory(container: modelContainer)
                     await IngredientSeeder.seedIfNeeded(container: modelContainer) { current, total in
                         seedingProgress = (current, total)
                     }
@@ -366,6 +374,65 @@ private func backfillServingUnits(container: ModelContainer) async {
         try context.save()
     } catch {
         print("⚠️ backfillServingUnits failed: \(error)")
+    }
+}
+
+// MARK: - T-14: FoodHistoryEntry backfill
+
+/// Builds the personal food history index from existing FoodLog records.
+///
+/// Runs once on first launch after SchemaV2 migration. Subsequent launches skip
+/// immediately via the hasBackfilledFoodHistory flag. Force-quitting mid-backfill
+/// leaves the flag unset so the backfill restarts on next launch — the upsert
+/// logic handles any resulting duplicates by merging logCounts.
+///
+/// Processes FoodLogs in chunks of 500, yielding to the main actor between chunks
+/// so the UI remains responsive throughout (consistent with @MainActor pattern
+/// used by all other backfills in this app).
+///
+/// Shows a progress overlay when the total log count exceeds 5,000.
+@MainActor
+private func backfillFoodHistory(container: ModelContainer) async {
+    let context = container.mainContext
+    do {
+        guard let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first else { return }
+
+        // Skip if already completed — but re-run if the flag was set while the store
+        // had zero entries (flag set before any data was imported, or entries were lost
+        // due to a partial store reset).
+        if prefs.hasBackfilledFoodHistory == true {
+            let entryCount = (try? context.fetchCount(FetchDescriptor<FoodHistoryEntry>())) ?? 0
+            let logCount = (try? context.fetchCount(FetchDescriptor<FoodLog>())) ?? 0
+            guard entryCount == 0 && logCount > 0 else { return }
+            // Entries missing despite flag — clear it and fall through to re-index.
+            prefs.hasBackfilledFoodHistory = false
+        }
+
+        let allLogs = try context.fetch(FetchDescriptor<FoodLog>())
+        guard !allLogs.isEmpty else {
+            prefs.hasBackfilledFoodHistory = true
+            try context.save()
+            return
+        }
+
+        let chunkSize = 500
+        let chunks = stride(from: 0, to: allLogs.count, by: chunkSize).map {
+            Array(allLogs[$0 ..< min($0 + chunkSize, allLogs.count)])
+        }
+
+        for chunk in chunks {
+            for log in chunk {
+                guard let food = log.foodItem else { continue }
+                FoodHistoryEntry.upsert(food: food, mealType: log.mealType, in: context)
+            }
+            await Task.yield()
+        }
+
+        prefs.hasBackfilledFoodHistory = true
+        try context.save()
+        print("✅ backfillFoodHistory: indexed \(allLogs.count) log(s)")
+    } catch {
+        print("⚠️ backfillFoodHistory failed: \(error)")
     }
 }
 

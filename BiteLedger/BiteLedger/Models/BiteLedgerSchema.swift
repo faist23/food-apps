@@ -55,14 +55,65 @@ enum BiteLedgerSchemaV1: VersionedSchema {
     }
 }
 
-// MARK: - Migration plan (active)
+// MARK: - SchemaV2 (T-14 — FoodHistoryEntry personal food history index)
 //
-// Wired into ModelContainer in BiteLedgerApp.loadContainer().
-// Add new schema versions and stages here as the app evolves.
+// Adds FoodHistoryEntry: one record per (FoodItem, MealType), tracking
+// lastLoggedDate and logCount. Powers the "Recently logged" section in
+// FoodSearchView with an indexed O(1) query instead of scanning FoodLogs.
+//
+// Migration: lightweight (additive — new model, new relationship on FoodItem,
+// new nullable field on UserPreferences). No data transform required.
+// Backfill is handled at startup by backfillFoodHistory() in BiteLedgerApp,
+// guarded by UserPreferences.hasBackfilledFoodHistory.
+//
+// Must match RecipeCardSchemaV2 exactly (same models, same order, same version).
+// RecipeCard registers FoodHistoryEntry but never queries it — shared store
+// requires identical schemas across both apps.
+//
+enum BiteLedgerSchemaV2: VersionedSchema {
+    static let versionIdentifier = Schema.Version(2, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        [
+            FoodItem.self,
+            ServingSize.self,
+            FoodLog.self,
+            UserPreferences.self,
+            Recipe.self,
+            RecipeIngredient.self,
+            CanonicalFood.self,
+            ServingConversion.self,
+            FallbackSource.self,
+            FoodHistoryEntry.self,   // T-14: personal food history index
+        ]
+    }
+}
+
+// MARK: - Migration plan (NOT currently wired in — see note below)
+//
+// ⚠️  NOT passed to ModelContainer in BiteLedgerApp.loadContainer().
+//
+// SwiftData generates CoreData MOMs for each schema version by inspecting the live
+// @Model types at runtime.  Because all schema versions reference the same compiled
+// @Model classes, SwiftData sees identical entity definitions in every version —
+// including implicit inverse relationships that CoreData auto-generates even when
+// not declared in Swift.  The result: V1 and V2 produce the same schema checksum,
+// causing "Duplicate version checksums detected" at launch.
+//
+// Workaround: omit the migrationPlan parameter and let SwiftData perform the
+// lightweight migration automatically.  Additive changes (new entity, new optional
+// fields) are always handled correctly by SwiftData's automatic migration.
+//
+// Re-introduce the migration plan for SchemaV3 only if a CUSTOM (non-lightweight)
+// migration stage is required.  At that point, frozen nested @Model types must be
+// defined inside the old schema enums so SwiftData sees genuinely distinct MOMs.
 //
 enum BiteLedgerMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [BiteLedgerSchemaV1.self]
+        [BiteLedgerSchemaV1.self, BiteLedgerSchemaV2.self]
     }
-    static var stages: [MigrationStage] { [] }
+    static var stages: [MigrationStage] {
+        [
+            .lightweight(fromVersion: BiteLedgerSchemaV1.self, toVersion: BiteLedgerSchemaV2.self),
+        ]
+    }
 }

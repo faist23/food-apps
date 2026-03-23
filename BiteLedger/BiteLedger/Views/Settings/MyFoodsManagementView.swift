@@ -25,6 +25,14 @@ struct MyFoodsManagementView: View {
         case lastUsed = "Last Used"
     }
     
+    private func sourceLabel(_ source: String) -> String {
+        if source.hasPrefix("recipe_") { return "Recipe" }
+        if source.hasPrefix("usda_") { return "USDA" }
+        if source.hasPrefix("fatsecret_") { return "FatSecret" }
+        if source.isEmpty { return "Manual" }
+        return source
+    }
+
     private func loadFoods() {
         let descriptor: FetchDescriptor<FoodItem>
         
@@ -44,22 +52,54 @@ struct MyFoodsManagementView: View {
         do {
             let allFoods = try modelContext.fetch(descriptor)
 
+            // Build the set of food IDs the user has personally logged, using
+            // FoodHistoryEntry as the canonical logged-foods index (no N+1 faults).
+            let historyEntries = (try? modelContext.fetch(FetchDescriptor<FoodHistoryEntry>())) ?? []
+            let loggedIDs = Set(historyEntries.compactMap { $0.food?.id })
+
+            let userFoods = allFoods.filter { food in
+                // Always exclude seeded catalog items.
+                guard !food.source.hasPrefix("usda_seed"),
+                      !food.source.hasPrefix("built_in") else { return false }
+                // Known user-created sources — always show.
+                if food.source.isEmpty ||
+                   food.source == "Manual" ||
+                   food.source == "Quick Add" ||
+                   food.source.hasPrefix("recipe") ||
+                   food.source.hasPrefix("LoseIt") ||
+                   food.source.hasPrefix("CSV Import") {
+                    return true
+                }
+                // API-fetched sources (usda_*, fatsecret_*, OFacts barcodes, etc.)
+                // only appear if personally logged.
+                return loggedIDs.contains(food.id)
+            }
+
             // Apply search filter
             if searchText.isEmpty {
-                displayedFoods = allFoods
+                displayedFoods = userFoods
             } else {
-                displayedFoods = allFoods.filter { food in
+                displayedFoods = userFoods.filter { food in
                     food.name.localizedCaseInsensitiveContains(searchText) ||
                     (food.brand?.localizedCaseInsensitiveContains(searchText) ?? false)
                 }
             }
 
-            // Apply last-used sort in memory (can't do this in FetchDescriptor)
+            // Apply last-used sort.
+            // Pass 1: FoodHistoryEntry index (fast, no faults).
+            // Pass 2: food.foodLogs fallback for any food the backfill missed —
+            //         runs once at load time on the full list, not per-row in the view.
             if sortOrder == .lastUsed {
+                var lastUsedMap: [UUID: Date] = [:]
+                for entry in historyEntries {
+                    guard let food = entry.food, lastUsedMap[food.id] == nil else { continue }
+                    lastUsedMap[food.id] = entry.lastLoggedDate
+                }
+                for food in displayedFoods where lastUsedMap[food.id] == nil {
+                    lastUsedMap[food.id] = food.foodLogs.max(by: { $0.timestamp < $1.timestamp })?.timestamp
+                }
                 displayedFoods.sort { a, b in
-                    let aDate = a.foodLogs.max(by: { $0.timestamp < $1.timestamp })?.timestamp
-                    let bDate = b.foodLogs.max(by: { $0.timestamp < $1.timestamp })?.timestamp
-                    switch (aDate, bDate) {
+                    switch (lastUsedMap[a.id], lastUsedMap[b.id]) {
                     case (.some(let d1), .some(let d2)): return d1 > d2
                     case (.some, .none): return true
                     case (.none, .some): return false
@@ -114,7 +154,7 @@ struct MyFoodsManagementView: View {
                                                     .foregroundStyle(.tertiary)
                                             }
 
-                                            Text(food.source)
+                                            Text(sourceLabel(food.source))
                                                 .font(.caption2)
                                                 .foregroundStyle(.orange)
                                         }

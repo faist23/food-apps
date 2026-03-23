@@ -33,6 +33,9 @@ public class UserPreferences {
     // T-08: First-log micro-celebration — nil = never fired, true = fired (one-time)
     public var hasSeenFirstLogCelebration: Bool?
 
+    // T-14: FoodHistoryEntry backfill — nil = not yet run; true = complete
+    public var hasBackfilledFoodHistory: Bool?
+
     public init(pinnedNutrient: String? = nil, goalsData: Data? = nil, showMacroBalanceTile: Bool? = nil) {
         self.pinnedNutrient = pinnedNutrient
         self.goalsData = goalsData

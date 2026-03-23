@@ -203,6 +203,8 @@ extension FoodLog {
     /// - Parameters:
     ///   - loggedAmount: The numeric amount the user typed (e.g. 3 for "3 tbsp"). Stored for display.
     ///   - loggedUnit:   The unit the user selected (e.g. "tbsp"). Stored for display.
+    ///   - context:      ModelContext to upsert the FoodHistoryEntry index record. Pass the
+    ///                   same context you will insert this FoodLog into.
     public static func create(
         mealType: MealType,
         quantity: Double,
@@ -210,8 +212,12 @@ extension FoodLog {
         serving: ServingSize?,
         timestamp: Date = Date(),
         loggedAmount: Double? = nil,
-        loggedUnit: String? = nil
+        loggedUnit: String? = nil,
+        context: ModelContext
     ) -> FoodLog {
+        // Update the personal food history index.
+        FoodHistoryEntry.upsert(food: food, mealType: mealType, in: context)
+
         // Resolve gram amount via the calculator's canonical resolution logic.
         let gramAmount = NutritionCalculator.resolveGramAmount(food: food, serving: serving, quantity: quantity)
 
