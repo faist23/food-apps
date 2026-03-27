@@ -658,7 +658,7 @@ struct TodayView: View {
             Text(top.message)
                 .font(.subheadline)
                 .foregroundStyle(Color("TextPrimary"))
-                .lineLimit(1)
+                .lineLimit(2)
 
             Spacer(minLength: 4)
 

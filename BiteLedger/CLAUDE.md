@@ -171,10 +171,34 @@ Files: `LoseItEnrichmentService.swift`, `LoseItEnrichmentView.swift`,
 
 ---
 
-## FoodSearchView — Local Search Algorithm (Do Not Regress)
+## FoodSearchView — Search Algorithms (Do Not Regress)
 
-My Foods, Meals, and Recipes tabs filter in memory via `matchesQuery(_:query:)` (free
-function at the top of `FoodSearchView.swift`):
+### My Foods tab — SQL predicate (active search) + hybrid browse (empty query)
+
+**Active search (`searchText` non-empty):** `MyFoodsListView.startMyFoodsSearch()` fires a
+debounced (300ms) `FetchDescriptor<FoodItem>` with `localizedStandardContains` predicate against
+the full store — no recency cap. Results are filtered in-memory with a three-tier rule:
+
+1. **Catalog exclusion** — always drop `usda_seed_*` and `built_in_*`
+2. **User-created allowlist** — always keep `source.isEmpty`, `"Manual"`, `"Quick Add"`,
+   `recipe*`, `LoseIt*`, `CSV Import*` (backfill may be incomplete; trust source type)
+3. **API-fetched guard** — everything else (`usda_*`, `fatsecret_*`, OFacts barcodes)
+   requires `loggedIDs` membership to exclude RecipeCard ghost foods
+
+Last-used dates are pre-computed in the same Task via a three-pass strategy:
+FoodHistoryEntry index → allLogs buffer → `food.foodLogs` fallback for any remainder.
+Stored in `sqlLastUsedDates`; `lastUsedDates` switches to it when search is active.
+
+**Do NOT replace** the SQL predicate path with an in-memory filter over `allLogs` — that
+regresses to a 1000-entry recency cap and hides foods logged more than ~3 months ago.
+
+**Browse mode (`searchText` empty):** hybrid merge of `FoodHistoryEntry` @Query (all
+history, no cap) + `allLogs` (recent 1000, fills backfill gaps), sorted by `lastLoggedDate`.
+
+### Meals and Recipes tabs — in-memory `matchesQuery`
+
+Meals and Recipes filter in memory via `matchesQuery(_:query:)` (free function at the top
+of `FoodSearchView.swift`):
 
 1. **Exact phrase** — `text.contains(query)` fast path
 2. **All words, any order** — `query.split(separator: " ").allSatisfy { text.contains($0) }`
@@ -182,8 +206,24 @@ function at the top of `FoodSearchView.swift`):
 This means "margherita pizza" correctly finds "pizza, margherita". Do not replace with a
 bare `contains` or `localizedCaseInsensitiveContains` — that regresses to phrase-only matching.
 
-The Search tab's My Foods sub-search (inside `searchMyFoods`) already used word-split
-independently and is correct as-is.
+The Search tab's My Foods sub-search (inside `searchMyFoods`) uses word-split independently
+and is correct as-is.
+
+## MyFoodsManagementView — Filter Invariant (Do Not Regress)
+
+`loadFoods()` and `startMyFoodsSearch()` use identical three-tier filter logic:
+
+1. Exclude `usda_seed_*` and `built_in_*` (catalog)
+2. Always include known user-created sources: `isEmpty`, `"Manual"`, `"Quick Add"`,
+   `recipe*`, `LoseIt*`, `CSV Import*`
+3. Require `loggedIDs` for all other sources (API-fetched ghost food guard)
+
+**`loggedIDs` is built with `hasPrefix` matching** (`usda_*`, `fatsecret_*`), NOT exact
+strings like `"USDA"` or `"FatSecret"`. Real source values are `"usda_<fdcId>"` and
+`"fatsecret_<id>"` — exact-string matching silently never fires.
+
+Last-used sort uses FoodHistoryEntry + `food.foodLogs` fallback (two-pass). Do not
+revert to FoodHistoryEntry-only — foods logged before T-14 launched have no entry.
 
 ## FoodSearchView — Recipes Tab
 

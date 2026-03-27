@@ -28,6 +28,7 @@ struct HistoryView: View {
 
     // MARK: - Nutrient Spotlight state (cached to avoid recompute on every body pass)
     @State private var spotlightResults: [SpotlightResult] = []
+    @State private var sevenDayLogs: [FoodLog] = []
 
     private func computeSpotlightResults() {
         let calendar = Calendar.current
@@ -36,8 +37,11 @@ struct HistoryView: View {
             byAdding: .day, value: -6,
             to: calendar.startOfDay(for: Date())
         ) ?? Date()
-        let sevenDayLogs = allLogs.filter { $0.timestamp >= sixDaysAgo }
-        spotlightResults = NutrientSpotlightEngine.compute(logs: sevenDayLogs)
+        sevenDayLogs = allLogs.filter { $0.timestamp >= sixDaysAgo }
+        spotlightResults = NutrientSpotlightEngine.compute(
+            logs: sevenDayLogs,
+            userGoals: preferences.first?.goals ?? [:]
+        )
     }
 
     // MARK: - Persistence helpers
@@ -73,7 +77,10 @@ struct HistoryView: View {
                                 statsRow
 
                                 if !spotlightResults.isEmpty {
-                                    NutrientSpotlightCard(results: Array(spotlightResults.prefix(2)))
+                                    NutrientSpotlightCard(
+                                        results: Array(spotlightResults.prefix(2)),
+                                        logs: sevenDayLogs
+                                    )
                                 }
 
                                 if !allLogs.isEmpty {

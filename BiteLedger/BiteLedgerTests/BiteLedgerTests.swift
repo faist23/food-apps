@@ -408,6 +408,46 @@ final class NutrientSpotlightEngineTests: XCTestCase {
         // Non-spotlight nutrient must return nil
         XCTAssertNil(Nutrient.protein.value(from: log))
     }
+
+    // Test 8: User goal overrides FDA default — carbs flagged at FDA DV but not at user's higher goal
+    func testUserGoalOverridesSuppressesFalsePositive() {
+        // 380g/day carbs × 4 days — above FDA base (250g × 1.2 = 300g) but below user goal (400g × 1.2 = 480g)
+        let logs = (0..<4).map { makeSpotlightLog(daysAgo: $0, carbs: 380) }
+
+        // Without user goal: qualifies (380 > 300)
+        let withoutGoal = NutrientSpotlightEngine.compute(logs: logs, userGoals: [:])
+        XCTAssertTrue(
+            withoutGoal.contains { $0.nutrient == .carbs },
+            "Carbs should flag at FDA default when no goal is set"
+        )
+
+        // With user goal of 400g (maximum): threshold = 480g; 380g < 480g → should NOT qualify
+        let carbGoal = NutrientGoal(targetValue: 400, goalType: .maximum)
+        let withGoal = NutrientSpotlightEngine.compute(
+            logs: logs,
+            userGoals: [Nutrient.carbs.rawValue: carbGoal]
+        )
+        XCTAssertFalse(
+            withGoal.contains { $0.nutrient == .carbs },
+            "Carbs should NOT flag when daily intake is below user's goal threshold"
+        )
+    }
+
+    // Test 9: Minimum goal suppresses high-side flag entirely — eating over a floor is intentional
+    func testMinimumGoalSuppressesSpotlight() {
+        // 380g/day carbs × 4 days — would normally flag at FDA default (300g threshold)
+        let logs = (0..<4).map { makeSpotlightLog(daysAgo: $0, carbs: 380) }
+
+        let carbMinGoal = NutrientGoal(targetValue: 300, goalType: .minimum)
+        let results = NutrientSpotlightEngine.compute(
+            logs: logs,
+            userGoals: [Nutrient.carbs.rawValue: carbMinGoal]
+        )
+        XCTAssertFalse(
+            results.contains { $0.nutrient == .carbs },
+            "Carbs with a minimum goal should never be flagged as high"
+        )
+    }
 }
 
 // MARK: - FoodHistoryEntry Tests
