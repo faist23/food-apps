@@ -80,7 +80,7 @@ struct BiteLedgerApp: App {
         }
         let storeURL = containerURL.appendingPathComponent("biteledger.store")
         do {
-            let schema = Schema(versionedSchema: BiteLedgerSchemaV2.self)
+            let schema = Schema(versionedSchema: BiteLedgerSchemaV4.self)
             let config = ModelConfiguration(schema: schema, url: storeURL, cloudKitDatabase: .none)
             // NOTE: migrationPlan is intentionally omitted. SwiftData auto-migrates lightweight
             // changes (new entity, nullable fields) without an explicit plan. Providing a plan

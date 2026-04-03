@@ -322,6 +322,14 @@ public struct BackupService {
                     for i in ingredients { ctx.delete(i) }
                     try? ctx.save()
                 }
+                // Nullify MealPlanMealItem.recipe before deleting Recipes.
+                // MealPlanMealItem has no declared inverse on Recipe, so SwiftData cannot
+                // auto-nullify — skipping causes "model instance was invalidated" on next
+                // meal planner open.
+                if let items = try? ctx.fetch(FetchDescriptor<MealPlanMealItem>()) {
+                    for item in items { item.recipe = nil }
+                    try? ctx.save()
+                }
                 // Delete recipes and their local images
                 if let recipes = try? ctx.fetch(FetchDescriptor<Recipe>()) {
                     for r in recipes {
@@ -343,16 +351,37 @@ public struct BackupService {
 
             if scope == .logsOnly { return }
 
-            // Nullify RecipeIngredient.servingSize before deleting ServingSizes
-            // (no declared inverse relationship — must be done manually to avoid crash)
+            // Nullify RecipeIngredient.servingSize, MealPlanEntry.servingSize, and
+            // MealPlanMealItem.servingSize before deleting ServingSizes. None of these
+            // relationships have a declared inverse on ServingSize, so SwiftData cannot
+            // auto-nullify — skipping causes "model instance was invalidated".
             if let ingredients = try? ctx.fetch(FetchDescriptor<RecipeIngredient>()) {
                 for ing in ingredients { ing.servingSize = nil }
+                try? ctx.save()
+            }
+            if let entries = try? ctx.fetch(FetchDescriptor<MealPlanEntry>()) {
+                for entry in entries { entry.servingSize = nil }
+                try? ctx.save()
+            }
+            if let items = try? ctx.fetch(FetchDescriptor<MealPlanMealItem>()) {
+                for item in items { item.servingSize = nil }
                 try? ctx.save()
             }
 
             // Delete serving sizes
             if let servings = try? ctx.fetch(FetchDescriptor<ServingSize>()) {
                 for s in servings { ctx.delete(s) }
+                try? ctx.save()
+            }
+
+            // Nullify MealPlanEntry.foodItem and MealPlanMealItem.foodItem before deleting FoodItems.
+            // No declared inverse on FoodItem — same pattern as ServingSize above.
+            if let entries = try? ctx.fetch(FetchDescriptor<MealPlanEntry>()) {
+                for entry in entries { entry.foodItem = nil }
+                try? ctx.save()
+            }
+            if let items = try? ctx.fetch(FetchDescriptor<MealPlanMealItem>()) {
+                for item in items { item.foodItem = nil }
                 try? ctx.save()
             }
 
@@ -370,6 +399,17 @@ public struct BackupService {
                 try? ctx.save()
             }
 
+            // Nullify MealPlanEntry.recipe and MealPlanMealItem.recipe before deleting Recipes.
+            // No declared inverse on Recipe — same pattern as ServingSize above.
+            if let entries = try? ctx.fetch(FetchDescriptor<MealPlanEntry>()) {
+                for entry in entries { entry.recipe = nil }
+                try? ctx.save()
+            }
+            if let items = try? ctx.fetch(FetchDescriptor<MealPlanMealItem>()) {
+                for item in items { item.recipe = nil }
+                try? ctx.save()
+            }
+
             // Delete recipes and their local images
             if let recipes = try? ctx.fetch(FetchDescriptor<Recipe>()) {
                 for r in recipes {
@@ -378,6 +418,22 @@ public struct BackupService {
                     }
                     ctx.delete(r)
                 }
+                try? ctx.save()
+            }
+
+            // Delete V4 meal cluster records. MealPlanMealItem is cascade-deleted by
+            // MealPlanMeal, which is cascade-deleted by MealPlan — but only if MealPlan
+            // itself is explicitly deleted (no other scope triggers this).
+            if let mealItems = try? ctx.fetch(FetchDescriptor<MealPlanMealItem>()) {
+                for item in mealItems { ctx.delete(item) }
+                try? ctx.save()
+            }
+            if let meals = try? ctx.fetch(FetchDescriptor<MealPlanMeal>()) {
+                for meal in meals { ctx.delete(meal) }
+                try? ctx.save()
+            }
+            if let plans = try? ctx.fetch(FetchDescriptor<MealPlan>()) {
+                for plan in plans { ctx.delete(plan) }
                 try? ctx.save()
             }
         }.value

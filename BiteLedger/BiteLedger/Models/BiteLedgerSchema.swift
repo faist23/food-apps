@@ -107,13 +107,80 @@ enum BiteLedgerSchemaV2: VersionedSchema {
 // migration stage is required.  At that point, frozen nested @Model types must be
 // defined inside the old schema enums so SwiftData sees genuinely distinct MOMs.
 //
+// MARK: - SchemaV3 (T-12 — MealPlan + MealPlanEntry week planner)
+//
+// Adds two new entities: MealPlan (one per calendar week) and MealPlanEntry
+// (one per meal slot per day). This is a lightweight migration — new entities
+// with no required fields.
+//
+// Do NOT wire migrationPlan: into ModelContainer — see comment above.
+// Must match RecipeCardSchemaV3 exactly (same models, same order, same version).
+// RecipeCard reads MealPlan/MealPlanEntry. BiteLedger registers them but does
+// not query them in v1.
+//
+enum BiteLedgerSchemaV3: VersionedSchema {
+    static let versionIdentifier = Schema.Version(3, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        [
+            FoodItem.self,
+            ServingSize.self,
+            FoodLog.self,
+            UserPreferences.self,
+            Recipe.self,
+            RecipeIngredient.self,
+            CanonicalFood.self,
+            ServingConversion.self,
+            FallbackSource.self,
+            FoodHistoryEntry.self,
+            MealPlan.self,        // T-12: week meal planner
+            MealPlanEntry.self,   // T-12: individual meal plan slot
+        ]
+    }
+}
+
+// MARK: - SchemaV4 (T-12-v2 — MealPlanMeal + MealPlanMealItem cluster model)
+//
+// Adds two new entities: MealPlanMeal (named cluster per meal slot per day) and
+// MealPlanMealItem (one item in a cluster). Schema grows to 14 models.
+//
+// MealPlan.meals relationship added (cascade delete to MealPlanMeal).
+// MealPlanEntry is retained for backward compat but UI no longer populates it.
+// Existing MealPlanEntry records are cleared on first V4 launch in loadOrCreatePlan().
+//
+// Do NOT wire migrationPlan: into ModelContainer — same policy as V2/V3.
+// Must match RecipeCardSchemaV4 exactly (same models, same order, same version).
+//
+enum BiteLedgerSchemaV4: VersionedSchema {
+    static let versionIdentifier = Schema.Version(4, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        [
+            FoodItem.self,
+            ServingSize.self,
+            FoodLog.self,
+            UserPreferences.self,
+            Recipe.self,
+            RecipeIngredient.self,
+            CanonicalFood.self,
+            ServingConversion.self,
+            FallbackSource.self,
+            FoodHistoryEntry.self,
+            MealPlan.self,
+            MealPlanEntry.self,
+            MealPlanMeal.self,       // T-12-v2: named dinner cluster
+            MealPlanMealItem.self,   // T-12-v2: one item in a cluster
+        ]
+    }
+}
+
 enum BiteLedgerMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [BiteLedgerSchemaV1.self, BiteLedgerSchemaV2.self]
+        [BiteLedgerSchemaV1.self, BiteLedgerSchemaV2.self, BiteLedgerSchemaV3.self, BiteLedgerSchemaV4.self]
     }
     static var stages: [MigrationStage] {
         [
             .lightweight(fromVersion: BiteLedgerSchemaV1.self, toVersion: BiteLedgerSchemaV2.self),
+            .lightweight(fromVersion: BiteLedgerSchemaV2.self, toVersion: BiteLedgerSchemaV3.self),
+            .lightweight(fromVersion: BiteLedgerSchemaV3.self, toVersion: BiteLedgerSchemaV4.self),
         ]
     }
 }

@@ -42,6 +42,10 @@ fail to open on whichever app launches second.
 | `ServingConversion` | Unit → gram mapping for a CanonicalFood (e.g. tbsp = 16g, cup = 258g) |
 | `FallbackSource` | Links a FoodItem to its enrichment source (USDA or FatSecret) for provenance and future re-enrichment |
 | `FoodHistoryEntry` | Personal food history index — one record per (FoodItem, MealType), tracking `lastLoggedDate` and `logCount`. Powers the "Recent" section in FoodSearchView without scanning FoodLogs. Added in SchemaV2. |
+| `MealPlan` | One record per calendar week, anchored to Sunday midnight local time. Added in SchemaV3. |
+| `MealPlanEntry` | Legacy single-item meal slot (SchemaV3). Retained in schema for backward compat; cleared on first V4 launch. Not populated by V4 UI. |
+| `MealPlanMeal` | Named cluster for one meal slot (mealType + date). e.g. "PB Night". Added in SchemaV4. |
+| `MealPlanMealItem` | One item in a MealPlanMeal cluster (recipe XOR foodItem XOR note). Added in SchemaV4. |
 
 ### Relationships
 - `FoodItem` → `ServingSize[]` (cascade delete)
@@ -61,11 +65,11 @@ fail to open on whichever app launches second.
 ### Schema Migration Policy (Critical — Read Before Any Schema Change)
 
 **Schema version roadmap:**
-- **SchemaV1** — shipping baseline (all 8 models before T-14)
-- **SchemaV2** — `FoodHistoryEntry` added (shipped in feature/v1-ship); lightweight
-  migration from V1. RecipeCard registers it but never queries it.
-- **SchemaV3** (planned) — T-09 HealthKit (`healthKitEnabled` flag in UserPreferences)
-  and T-10 Recipe Creation in BiteLedger. Both require a coordinated 2-app release.
+- **SchemaV1** — shipping baseline (9 models)
+- **SchemaV2** — `FoodHistoryEntry` added (shipped feature/v1-ship); lightweight migration from V1. RecipeCard registers it but never queries it.
+- **SchemaV3** — `MealPlan` + `MealPlanEntry` added (shipped feature/v1-ship); lightweight migration from V2.
+- **SchemaV4** — `MealPlanMeal` + `MealPlanMealItem` added (shipped feature/v1-ship 2026-03-30); lightweight migration from V3. 14 models total.
+- **SchemaV5** (planned) — T-09 HealthKit (`healthKitEnabled` flag in UserPreferences) and T-10 Recipe Creation in BiteLedger. Both require a coordinated 2-app release.
 
 **Current state:** both apps use `VersionedSchema` + `SchemaMigrationPlan`
 (`BiteLedgerMigrationPlan` / `RecipeCardMigrationPlan`), wired into

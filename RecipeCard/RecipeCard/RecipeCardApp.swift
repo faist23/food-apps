@@ -81,7 +81,9 @@ struct RecipeCardApp: App {
                             consumePendingRecipeURL()
                         }
                 } else {
-                    Color.clear.onAppear { loadContainer() }
+                    Color("SurfacePrimary")
+                        .ignoresSafeArea()
+                        .task { loadContainer() }
                 }
             }
         }
@@ -97,7 +99,7 @@ struct RecipeCardApp: App {
         }
         let storeURL = containerURL.appendingPathComponent("biteledger.store")
         do {
-            let schema = Schema(versionedSchema: RecipeCardSchemaV2.self)
+            let schema = Schema(versionedSchema: RecipeCardSchemaV4.self)
             let config = ModelConfiguration(schema: schema, url: storeURL)
             // NOTE: migrationPlan intentionally omitted — see BiteLedgerApp.swift for explanation.
             modelContainer = try ModelContainer(for: schema, configurations: [config])
