@@ -391,6 +391,7 @@ final class ShoppingCategoryTests: XCTestCase {
 
 // MARK: - ShoppingCart Tests
 
+@MainActor
 final class ShoppingCartTests: XCTestCase {
 
     func testInitiallyEmpty() {
@@ -431,6 +432,376 @@ final class ShoppingCartTests: XCTestCase {
         cart.moveToCategory(nonExistentItem, to: .produce)
         // No crash, no change since item doesn't exist in cart.
         XCTAssertTrue(cart.isEmpty)
+    }
+}
+
+// MARK: - MealPlanTests
+
+import SwiftData
+
+final class MealPlanTests: XCTestCase {
+
+    // MARK: - Test container
+
+    private var container: ModelContainer!
+    private var context: ModelContext!
+
+    override func setUp() {
+        super.setUp()
+        let schema = Schema([
+            MealPlan.self, MealPlanEntry.self,
+            FoodItem.self, ServingSize.self, FoodLog.self,
+            Recipe.self, RecipeIngredient.self,
+            UserPreferences.self, CanonicalFood.self,
+            ServingConversion.self, FallbackSource.self,
+            FoodHistoryEntry.self,
+        ])
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        container = try! ModelContainer(for: schema, configurations: [config])
+        context = ModelContext(container)
+    }
+
+    override func tearDown() {
+        context = nil
+        container = nil
+        super.tearDown()
+    }
+
+    // MARK: - 1. MealPlanEntry.isValid
+
+    func testIsValid_recipeOnly_returnsTrue() {
+        let plan = MealPlan(weekStartDate: Date())
+        context.insert(plan)
+        let recipe = makeRecipe()
+        let entry = MealPlanEntry(mealPlan: plan, date: Date(), mealType: .dinner)
+        entry.recipe = recipe
+        XCTAssertTrue(entry.isValid)
+    }
+
+    func testIsValid_foodItemOnly_returnsTrue() {
+        let plan = MealPlan(weekStartDate: Date())
+        context.insert(plan)
+        let (food, _) = makeFoodItem()
+        let entry = MealPlanEntry(mealPlan: plan, date: Date(), mealType: .dinner)
+        entry.foodItem = food
+        XCTAssertTrue(entry.isValid)
+    }
+
+    func testIsValid_neitherRecipeNorFoodItem_returnsFalse() {
+        let plan = MealPlan(weekStartDate: Date())
+        context.insert(plan)
+        let entry = MealPlanEntry(mealPlan: plan, date: Date(), mealType: .dinner)
+        XCTAssertFalse(entry.isValid)
+    }
+
+    func testServingCount_defaultsToOne() {
+        let plan = MealPlan(weekStartDate: Date())
+        context.insert(plan)
+        let entry = MealPlanEntry(mealPlan: plan, date: Date(), mealType: .dinner)
+        XCTAssertEqual(entry.servingCount, 1.0)
+    }
+
+    // MARK: - 2. Week anchor (Sunday normalization)
+
+    func testStartOfWeek_fromSunday_returnsSameSundayMidnight() {
+        // Use a known Sunday: 2026-03-29
+        let calendar = Calendar.current
+        var components = DateComponents()
+        components.year = 2026; components.month = 3; components.day = 29
+        let sunday = calendar.date(from: components)!
+        let result = MealPlan.startOfWeek(for: sunday)
+        let resultComponents = calendar.dateComponents([.year, .month, .day, .weekday], from: result)
+        XCTAssertEqual(resultComponents.weekday, 1, "Should be Sunday (weekday 1)")
+        XCTAssertEqual(resultComponents.year, 2026)
+        XCTAssertEqual(resultComponents.month, 3)
+        XCTAssertEqual(resultComponents.day, 29)
+        XCTAssertEqual(result, calendar.startOfDay(for: result), "Should be midnight")
+    }
+
+    func testStartOfWeek_fromSaturday_returnsPreviousSunday() {
+        let calendar = Calendar.current
+        var components = DateComponents()
+        components.year = 2026; components.month = 4; components.day = 4 // Saturday
+        let saturday = calendar.date(from: components)!
+        let result = MealPlan.startOfWeek(for: saturday)
+        let resultComponents = calendar.dateComponents([.weekday, .day], from: result)
+        XCTAssertEqual(resultComponents.weekday, 1, "Should be Sunday (weekday 1)")
+        XCTAssertEqual(resultComponents.day, 29, "Should be Mar 29 — the preceding Sunday")
+    }
+
+    func testStartOfWeek_fromWednesday_returnsPreviousSunday() {
+        let calendar = Calendar.current
+        var components = DateComponents()
+        components.year = 2026; components.month = 4; components.day = 1 // Wednesday
+        let wednesday = calendar.date(from: components)!
+        let result = MealPlan.startOfWeek(for: wednesday)
+        let resultComponents = calendar.dateComponents([.weekday], from: result)
+        XCTAssertEqual(resultComponents.weekday, 1)
+    }
+
+    // MARK: - 5. Variety nudge
+
+    func testVarietyNudge_twoOccurrences_notInSet() {
+        let plan = makePlan()
+        let recipe = makeRecipe()
+        for _ in 0..<2 {
+            let e = MealPlanEntry(mealPlan: plan, date: Date(), mealType: .dinner)
+            e.recipe = recipe
+            context.insert(e)
+        }
+        let ids = computeRepeatedDinnerIDs(entries: plan.entries)
+        XCTAssertFalse(ids.contains(recipe.persistentModelID))
+    }
+
+    func testVarietyNudge_threeOccurrences_inSet() {
+        let plan = makePlan()
+        let recipe = makeRecipe()
+        for _ in 0..<3 {
+            let e = MealPlanEntry(mealPlan: plan, date: Date(), mealType: .dinner)
+            e.recipe = recipe
+            context.insert(e)
+        }
+        try? context.save()
+        let ids = computeRepeatedDinnerIDs(entries: plan.entries)
+        XCTAssertTrue(ids.contains(recipe.persistentModelID))
+    }
+
+    func testVarietyNudge_threeDistinctRecipes_emptySet() {
+        let plan = makePlan()
+        for _ in 0..<3 {
+            let r = makeRecipe()
+            let e = MealPlanEntry(mealPlan: plan, date: Date(), mealType: .dinner)
+            e.recipe = r
+            context.insert(e)
+        }
+        let ids = computeRepeatedDinnerIDs(entries: plan.entries)
+        XCTAssertTrue(ids.isEmpty)
+    }
+
+    func testVarietyNudge_excludesNonDinner() {
+        let plan = makePlan()
+        let recipe = makeRecipe()
+        for type in [MealType.breakfast, .lunch, .snack] {
+            let e = MealPlanEntry(mealPlan: plan, date: Date(), mealType: type)
+            e.recipe = recipe
+            context.insert(e)
+        }
+        let ids = computeRepeatedDinnerIDs(entries: plan.entries)
+        XCTAssertFalse(ids.contains(recipe.persistentModelID))
+    }
+
+    // MARK: - 7. Copy to next week
+
+    func testCopyToNextWeek_correctDateOffset() {
+        let calendar = Calendar.current
+        let weekStart = MealPlan.startOfWeek()
+        let plan = MealPlan(weekStartDate: weekStart)
+        context.insert(plan)
+
+        let testDate = calendar.date(byAdding: .day, value: 2, to: weekStart)! // Tuesday
+        let entry = MealPlanEntry(mealPlan: plan, date: testDate, mealType: .dinner)
+        let recipe = makeRecipe()
+        entry.recipe = recipe
+        entry.servingCount = 2.0
+        context.insert(entry)
+        try? context.save()
+
+        // Simulate copy to next week
+        let nextWeekStart = calendar.date(byAdding: .day, value: 7, to: weekStart)!
+        let nextPlan = MealPlan(weekStartDate: nextWeekStart)
+        context.insert(nextPlan)
+        for e in plan.entries {
+            let newDate = calendar.date(byAdding: .day, value: 7, to: e.date)!
+            let newEntry = MealPlanEntry(mealPlan: nextPlan, date: newDate, mealType: e.mealType)
+            newEntry.recipe = e.recipe
+            newEntry.servingCount = e.servingCount
+            context.insert(newEntry)
+        }
+        try? context.save()
+
+        XCTAssertEqual(nextPlan.entries.count, 1)
+        let copied = nextPlan.entries.first!
+        let expectedDate = calendar.date(byAdding: .day, value: 7, to: testDate)!
+        XCTAssertEqual(calendar.startOfDay(for: copied.date), calendar.startOfDay(for: expectedDate))
+        XCTAssertEqual(copied.recipe?.persistentModelID, recipe.persistentModelID)
+        XCTAssertEqual(copied.servingCount, 2.0)
+        XCTAssertEqual(copied.mealType, .dinner)
+    }
+
+    // MARK: - 3. logDay() logic
+    //
+    // `logDay()` is a private async method on MealPlanDayRow (a SwiftUI view), so it
+    // can't be called directly from tests. `simulateLogDay` mirrors the production
+    // logic exactly — keep it in sync manually when logDay() changes.
+
+    func testLogDay_recipePath_createsFoodLogs() {
+        let plan = makePlan()
+        let (food1, serving1) = makeFoodItem()
+        let (food2, serving2) = makeFoodItem()
+
+        let recipe = makeRecipe()
+        let ing1 = makeIngredient(food: food1, serving: serving1, quantity: 1.0)
+        let ing2 = makeIngredient(food: food2, serving: serving2, quantity: 2.0)
+        recipe.ingredients = [ing1, ing2]
+
+        let entry = MealPlanEntry(mealPlan: plan, date: Date(), mealType: .dinner)
+        entry.recipe = recipe
+        entry.servingCount = 1.0
+        context.insert(entry)
+        try? context.save()
+
+        let (logged, skipped) = simulateLogDay(entries: [entry])
+
+        XCTAssertEqual(logged, 2)
+        XCTAssertEqual(skipped, 0)
+        let logs = (try? context.fetch(FetchDescriptor<FoodLog>())) ?? []
+        XCTAssertEqual(logs.count, 2)
+    }
+
+    func testLogDay_nilIngredientFood_countsSkipped() {
+        // Simulates a recipe ingredient whose food was deleted after planning.
+        let plan = makePlan()
+        let recipe = makeRecipe()
+        let (food, serving) = makeFoodItem()
+        let goodIng = makeIngredient(food: food, serving: serving, quantity: 1.0)
+        let orphanIng = RecipeIngredient(quantity: 1.0)
+        orphanIng.foodItem = nil   // deleted food — nullified relationship
+        context.insert(orphanIng)
+        recipe.ingredients = [goodIng, orphanIng]
+
+        let entry = MealPlanEntry(mealPlan: plan, date: Date(), mealType: .dinner)
+        entry.recipe = recipe
+        entry.servingCount = 1.0
+        context.insert(entry)
+        try? context.save()
+
+        let (logged, skipped) = simulateLogDay(entries: [entry])
+
+        XCTAssertEqual(logged, 1, "Only the ingredient with a valid food should be logged")
+        XCTAssertEqual(skipped, 1, "Ingredient with nil foodItem must count toward skipped")
+    }
+
+    func testLogDay_foodItemNilServing_skips() {
+        // Food with no default serving and no explicit entry serving → entry must be skipped.
+        let plan = makePlan()
+        let food = FoodItem(
+            name: "No-Serving Food", source: "test", nutritionMode: .perServing,
+            calories: 100, protein: 0, carbs: 0, fat: 0
+        )
+        food.servingSizes = []   // defaultServing returns nil
+        context.insert(food)
+
+        let entry = MealPlanEntry(mealPlan: plan, date: Date(), mealType: .lunch)
+        entry.foodItem = food
+        entry.servingSize = nil
+        entry.servingCount = 1.0
+        context.insert(entry)
+        try? context.save()
+
+        let (logged, skipped) = simulateLogDay(entries: [entry])
+
+        XCTAssertEqual(logged, 0)
+        XCTAssertEqual(skipped, 1)
+        let logs = (try? context.fetch(FetchDescriptor<FoodLog>())) ?? []
+        XCTAssertTrue(logs.isEmpty, "No FoodLog should be created when serving is nil")
+    }
+
+    // MARK: - Helpers
+
+    private func makePlan() -> MealPlan {
+        let plan = MealPlan(weekStartDate: MealPlan.startOfWeek())
+        context.insert(plan)
+        return plan
+    }
+
+    private func makeRecipe() -> Recipe {
+        let recipe = Recipe(name: "Test Recipe \(UUID().uuidString.prefix(4))", servingsYield: 4.0)
+        context.insert(recipe)
+        return recipe
+    }
+
+    private func makeFoodItem() -> (FoodItem, ServingSize) {
+        let serving = ServingSize(label: "1 serving", isDefault: true)
+        let food = FoodItem(
+            name: "Test Food",
+            source: "test",
+            nutritionMode: .perServing,
+            calories: 100,
+            protein: 0,
+            carbs: 0,
+            fat: 0
+        )
+        food.servingSizes = [serving]
+        context.insert(food)
+        context.insert(serving)
+        return (food, serving)
+    }
+
+    private func makeIngredient(food: FoodItem, serving: ServingSize, quantity: Double) -> RecipeIngredient {
+        let ing = RecipeIngredient(quantity: quantity)
+        ing.foodItem = food
+        ing.servingSize = serving
+        context.insert(ing)
+        return ing
+    }
+
+    /// Mirrors MealPlanDayRow.logDay() — update this when that function changes.
+    private func simulateLogDay(entries: [MealPlanEntry]) -> (logged: Int, skipped: Int) {
+        var logged = 0
+        var skipped = 0
+        for entry in entries where entry.isValid {
+            if let recipe = entry.recipe {
+                for ingredient in recipe.ingredients {
+                    guard let food = ingredient.foodItem else { skipped += 1; continue }
+                    _ = FoodLog.create(
+                        mealType: entry.mealType,
+                        quantity: ingredient.quantity * entry.servingCount,
+                        food: food,
+                        serving: ingredient.servingSize,
+                        timestamp: entry.date,
+                        context: context
+                    )
+                    logged += 1
+                }
+            } else if let food = entry.foodItem {
+                let serving = entry.servingSize ?? food.defaultServing
+                guard serving != nil else { skipped += 1; continue }
+                _ = FoodLog.create(
+                    mealType: entry.mealType,
+                    quantity: entry.servingCount,
+                    food: food,
+                    serving: serving,
+                    timestamp: entry.date,
+                    context: context
+                )
+                logged += 1
+            }
+        }
+        try? context.save()
+        return (logged, skipped)
+    }
+
+    private func makeFoodItemWithGramWeight(grams: Double) -> (FoodItem, ServingSize) {
+        let serving = ServingSize(label: "1 cup", gramWeight: grams, isDefault: true)
+        let food = FoodItem(
+            name: "Test Food \(UUID().uuidString.prefix(4))",
+            source: "test",
+            nutritionMode: .per100g,
+            calories: 200,
+            protein: 0,
+            carbs: 0,
+            fat: 0
+        )
+        food.servingSizes = [serving]
+        context.insert(food)
+        context.insert(serving)
+        return (food, serving)
+    }
+
+    private func computeRepeatedDinnerIDs(entries: [MealPlanEntry]) -> Set<PersistentIdentifier> {
+        let dinners = entries.filter { $0.mealType == .dinner }
+        let groups = Dictionary(grouping: dinners.compactMap(\.recipe), by: \.persistentModelID)
+        return Set(groups.filter { $0.value.count >= 3 }.keys)
     }
 }
 
