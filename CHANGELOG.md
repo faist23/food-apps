@@ -3,6 +3,18 @@
 All notable changes to BiteLedger and RecipeCard are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## [0.2.0.0] - 2026-03-31
+
+### Added
+- **T-12-v2 — Meal Planner v2 (Cluster Model, SchemaV4):** `MealPlanMeal` + `MealPlanMealItem` SwiftData models; 14-model schema (SchemaV4 lightweight migration from V3); `MealPlannerView` in RecipeCard with 7-day collapsible week planner; `MealPlanDayRow` with per-day Cal/P/C/F nutrition pills, dinner cluster, recently-made chips sourced from 90-day FoodLog history, variety nudge (same recipe ≥3 times in Dinner slot), "Copy to Next Week" (deep-copies `MealPlanMeal` + `MealPlanMealItem`), "Generate Shopping List" with dedup confirmation; `MealEntrySheet` multi-add UX — stays open after each add, shows "Added" chips per item, Done button; `MealPickerSearchView` with three tabs (Recipes / Foods / Note) and live `UnifiedFoodSearchService` API search; `ShoppingCart.populateFromMealPlan()` with per-food gram accumulation for items with gram weights + separate line items for dimensionless servings; legacy `MealPlanEntry` records cleared on first V4 launch
+- **35-path test suite:** `MealPlanV2Tests` (MealPlanMeal / MealPlanMealItem creation, servingCount scaling, note-only filtering, `ShoppingCart.populateFromMealPlan` dedup and gram accumulation) + `SchemaV4MigrationTests` (V3→V4 lightweight migration, legacy entry cleared, new cluster operations)
+
+### Changed
+- `NutrientSpotlightCard` and `SpotlightDetailSheet` — minor visual polish and layout updates
+
+### Fixed
+- `BiteLedgerTests.makeContainer()` — `XCTSkip` fallback for iOS 26 simulator `loadIssueModelContainer` constraint; all 9 `FoodHistoryEntryTests` skip gracefully instead of failing with infrastructure errors
+
 ## [0.1.2.0] - 2026-03-22
 
 ### Added

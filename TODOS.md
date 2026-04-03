@@ -42,6 +42,52 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ---
 
+### T-MP1: Meal Planner — Copy to Next Week: Add Merge Option
+**What:** Today "Copy to next week" replaces all existing entries. Add a "Merge" path that copies only the empty slots in the target week, preserving any meals already planned there.
+**Why:** If a user has already planned Tuesday's breakfast for next week and uses "Copy to next week," they lose that entry. The current Replace-only alert is clear, but Merge is a much safer default for partially-planned weeks.
+**Pros:** Significantly reduces accidental data loss. Merge is the expected default behavior for most calendar-style "copy" operations.
+**Cons:** Merge logic requires slot-by-slot conflict resolution (what happens if both weeks have a dinner on Wednesday?). Alert needs 3 buttons (Replace / Merge / Cancel), which is at the iOS max.
+**Context:** Deferred from /plan-design-review on 2026-03-30. The Replace alert text is explicit enough for v1. Ship Merge in a subsequent release once "Copy to next week" usage patterns are understood.
+**Effort:** S (human: ~2 hrs / CC: ~15 min) | **Priority:** P3 | **Depends on:** Meal Planner shipped
+
+### T-MP4: Meal Planner — Week Header Shows No Year
+**What:** `weekHeaderTitle` formats as `"Mar 30"` (month + day only). When navigating past a Dec→Jan boundary, two different years' weeks display the same header string.
+**Why:** Ambiguous when a user navigates to the week of Dec 28, 2026 vs Dec 28, 2027 — the header is identical.
+**Fix:** Include year when the displayed week is not in the current calendar year: `weekStart.formatted(.dateTime.month(.abbreviated).day())` → conditionally append `.year()` when `Calendar.current.component(.year, from: weekStart) != Calendar.current.component(.year, from: .now)`.
+**Context:** Found by Codex outside voice during /plan-eng-review on 2026-03-30.
+**Effort:** XS (human: ~15 min / CC: ~5 min) | **Priority:** P3 | **Depends on:** Meal Planner shipped
+
+---
+
+### T-MP5: Meal Planner — Week Anchor Ignores Device Locale
+**What:** `MealPlan.startOfWeek(for:)` always anchors to Sunday (Gregorian weekday 1). Devices in European locales where Monday is the first day of the week will show a Sunday-anchored week that doesn't match the user's calendar.
+**Why:** `.weekday` component returns 1 for Sunday in Gregorian — correct for US, but users in Monday-first locales expect Mon–Sun weeks.
+**Fix:** Use `Calendar.current.firstWeekday` to compute the correct anchor day. `daysBack = (weekday - calendar.firstWeekday + 7) % 7`.
+**Context:** Found by Codex outside voice during /plan-eng-review on 2026-03-30.
+**Effort:** XS (human: ~30 min / CC: ~5 min) | **Priority:** P3 | **Depends on:** Meal Planner shipped, international user demand
+
+---
+
+### T-MP3: Meal Planner — Add Date Predicate to Recent Entries Fetch
+**What:** `loadRecentDinnerEntries()` in `MealPlanDayRow` (and `loadRecentEntries()` in `MealEntrySheet`) fetch ALL `MealPlanEntry` records with no lower-bound date predicate — just sort by date descending and filter in Swift. Add a 90-day lookback predicate: `$0.date > cutoffDate && $0.date < today`.
+**Why:** A user with 6+ months of data accumulates ~10,000 entries. The full-table fetch + in-memory filter is unnecessary work when only the most recent 15 deduplicated items are ever displayed.
+**Pros:** One-line predicate addition eliminates the full-table scan for long-term users.
+**Cons:** None. The 90-day window covers any realistic "recently used" scenario.
+**Context:** Found during /plan-eng-review on 2026-03-30. No real-world pain at launch (most users won't have 6+ months of data), so deferred.
+**Effort:** XS (human: ~30 min / CC: ~5 min) | **Priority:** P3 | **Depends on:** Meal Planner shipped
+
+---
+
+### T-MP2: Meal Planner — iPad Adaptive Layout
+**What:** Use `horizontalSizeClass` to switch between the current list view (`.compact`) and a week grid view with drag-and-drop (`.regular`). Per the iPad strategy in TODOS.md: same SwiftData models, same download, different layout.
+**Why:** The 7-day collapsible list works on iPhone. On iPad it looks sparse and wastes the available width. A week-at-a-glance grid is the natural iPad pattern for a meal planner.
+**Pros:** RecipeCard gains an iPad-first feature with zero model changes. Drag-and-drop between days is a natural next step after the grid ships.
+**Cons:** Full grid with drag-and-drop is a non-trivial implementation. The list view on iPad is acceptable for v1.
+**Context:** Deferred from /plan-design-review on 2026-03-30. The iPad strategy was set in /plan-ceo-review (2026-03-20): .compact = list, .regular = grid. This is the execution of that strategy for the Meal Planner specifically.
+**Effort:** L (human: ~1 week / CC: ~1 hour) | **Priority:** P3 | **Depends on:** Meal Planner shipped
+
+---
+
 ### T-18: Nutrient Spotlight — Below-Threshold Patterns (Fiber, Protein)
 **What:** Add support for nutrients consistently BELOW 80% DV. Engine gets a `thresholdDirection: .above/.below` injectable parameter. Copy: "Fiber has been low this week. Curious what foods are high in it?" Different copy logic required for low-side patterns.
 **Why:** Fiber and protein are the most common nutritional gaps for the target user (reluctant logger). The high-side spotlight covers sodium/fat/cholesterol — the low-side covers the "you're missing this" awareness without judgment.
@@ -122,10 +168,81 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ---
 
-### T-12: Meal Planning
-**What:** Adaptive layout: iPhone shows 7-day list planner (Mon: Chicken Soup); iPad shows full week calendar grid with drag-and-drop. Shopping list generates from the full week's plan.
-**Context:** SchemaV2 required — needs `MealPlan` model. iPhone uses `.compact` sizeClass (list), iPad uses `.regular` (grid). Depends on T-11 shopping list shipping first.
-**Effort:** L (human: ~1 week / CC: ~1 hour) | **Priority:** P3 | **Depends on:** T-11, T-14 (SchemaV2)
+### T-12: Meal Planning (iPhone-first v1) ✓ SHIPPED 2026-03-29
+**What:** 7-day collapsible list planner in RecipeCard. History fast-path chips (from past MealPlanEntry records, first-use fallback: all Recipes) + full API search via MealPickerSearchView. Per-day nutrition preview (4 pills: Cal/P/C/F). "Generate Shopping List" with confirmation + dedup. "Log Day" button per day. "Copy to next week" (week header). Variety nudge (SF Symbol when same Recipe in Dinner slot 3+ times in week).
+**Context:** SchemaV3 required — adds `MealPlan` + `MealPlanEntry` (12 models total). Lightweight migration — do NOT wire `migrationPlan:` into ModelContainer. Coordinated release with BiteLedger (both apps must register all 12 models). iPad calendar grid with drag-and-drop is deferred (see T-12-iPad below). CEO plan + design doc: `~/.gstack/projects/faist23-food-apps/ceo-plans/2026-03-29-meal-planning.md`
+**Note:** Superseded by T-12-v2 (cluster model). The skeleton was real work; v2 replaces the single-item model.
+**Effort:** L (human: ~1.5 weeks / CC: ~1.5 hours) | **Priority:** P1 | **Depends on:** T-11 ✓, T-14/SchemaV2 ✓
+
+---
+
+### ~~T-12-v2: Meal Planning v2 — Cluster Model~~ — COMPLETED feature/v1-ship (2026-03-30)
+**Shipped:** SchemaV4 (MealPlanMeal + MealPlanMealItem, 14-model schema). Multi-item dinner clusters with user-editable name. FoodLog-based "Recently Made" history (90-day window). Live API search via UnifiedFoodSearchService in MealPickerSearchView (3 tabs: Recipes, Foods, Note). Multi-add sheet UX (stays open, Added chips, Done button). copyToNextWeek() deep-copies MealPlanMeal + MealPlanMealItem. Legacy MealPlanEntry records cleared on first V4 launch. 35-path test suite (MealPlanV2Tests + SchemaV4MigrationTests).
+
+---
+
+### T-12-RestoreUpdate: SchemaV4 Backup Restore
+**What:** Update `BackupService.restore()` to import `MealPlanMeal` and `MealPlanMealItem` records from backup. Also adds `BackupService.createBackup` columns for new models (`meal_plans.csv`, `meal_items.csv`).
+**Why:** Export-only (without restore) is a half-loop. Until this ships, a restore from a V4 backup silently drops all meal plan data. Completing the loop means a full CSV round-trip: export → delete app → reinstall → import → plans restored.
+**Pros:** Completes the backup/restore guarantee for the app. Zero data loss on reinstall.
+**Cons:** Two files to change (BackupService + CSVExporter). Requires knowing the CSV column schema for new models before implementing.
+**Context:** Deliberately excluded from T-12-v2 per /plan-eng-review 2026-03-30. Export-without-restore introduces a half-loop that could mislead users into thinking their meal plans are backed up. Ship both together.
+**Depends on:** T-12-v2 | **Effort:** S (human: ~1 day / CC: ~15 min) | **Priority:** P2
+
+---
+
+### T-12-BackupTest: SchemaV4 Backup Round-Trip Test
+**What:** XCTest integration test verifying that a V4 backup export → import produces identical MealPlanMeal + MealPlanMealItem records. Also tests SchemaV4 lightweight migration (V3 store → V4 schema opens without crash, existing data intact).
+**Why:** Migration and backup are the two highest-risk paths that can't be caught by pure unit tests. The SchemaV4 migration test is already in the T-12-v2 test plan; this ticket tracks the full round-trip backup test.
+**Depends on:** T-12-RestoreUpdate | **Effort:** XS (human: ~2 hrs / CC: ~10 min) | **Priority:** P3
+
+---
+
+### T-12-MealTemplates: Reusable Named Meal Clusters
+**What:** Allow user to save a named `MealPlanMeal` as a reusable template (e.g., "PB Night" = PB + bread + honey). Templates appear in a "Templates" section in MealEntrySheet, separate from "Recently Made."
+**Why:** Once the cluster model ships, templates are the natural next step. The "PB Night" naming UX was specifically called out as a user goal in the CEO plan.
+**Pros:** High-value once user has established dinner patterns. The data model already supports it — `MealPlanMeal.name` + `items` are exactly the template structure.
+**Cons:** Requires a persistent "template" flag or a new `MealTemplate` model (separate from per-week planning). New schema version (V5).
+**Context:** Deferred from T-12-v2 per CEO review 2026-03-29. The cluster model foundation is required first.
+**Depends on:** T-12-v2 | **Effort:** M (human: ~3 days / CC: ~20 min) | **Priority:** P3
+
+---
+
+### T-12-AllMealTypes: Breakfast/Lunch/Snack Cluster UI
+**What:** Expose Breakfast, Lunch, and Snack slots in the expanded day row, each with their own MealPlanMeal cluster and "Recently Made" history (sourced from FoodLog records for the respective mealType).
+**Why:** The model supports all MealType values today. The dinner-only UI is a v1 scope decision, not a model limitation.
+**Pros:** Completes the planning surface. Users who eat the same breakfast daily would benefit most.
+**Cons:** 4 clusters per day × 7 days = 28 potential clusters. The "Recently Made" chip source becomes mealType-scoped (breakfast chips for breakfast slots, etc.). `loadRecentDinnerOccasions()` becomes `loadRecentOccasions(for: mealType)`.
+**Context:** Deferred from T-12-v2 per CEO review 2026-03-29. Dinner is the highest-variance slot and the primary planning use case.
+**Depends on:** T-12-v2 | **Effort:** M (human: ~2 days / CC: ~15 min) | **Priority:** P3
+
+---
+
+### T-12-iPad: Meal Planning — iPad Calendar Grid
+**What:** Full-week calendar grid layout for iPad (`.regular` sizeClass). Drag-and-drop meal assignment between day cells. Replaces the collapsible list layout on iPad.
+**Context:** Same SwiftData models as T-12 iPhone. Requires T-12 to ship first. Deferred from T-12 v1 per CEO review 2026-03-29.
+**Effort:** M (human: ~1 week / CC: ~30 min) | **Priority:** P3 | **Depends on:** T-12
+
+---
+
+### T-12-WeekSummary: Meal Planning — Week Nutrition Summary
+**What:** Weekly nutrition summary card at the top of MealPlannerView showing totals vs. UserPreferences goals (Cal/P/C/F). Includes % of goal hit for the week.
+**Context:** Per-day pills (4 pills: Cal/P/C/F) are sufficient for v1. Week summary adds a goals layer. Deferred from T-12 v1 per CEO review 2026-03-29. Requires UserPreferences nutrition goals to be set.
+**Effort:** S (human: ~1 day / CC: ~15 min) | **Priority:** P3 | **Depends on:** T-12
+
+---
+
+### T-12-TodayView: Plan-Aware TodayView in BiteLedger
+**What:** BiteLedger's TodayView shows today's planned meals (from MealPlanEntry) alongside logged FoodLog entries. "Planned" section shows what's scheduled; "Logged" shows what's been recorded.
+**Context:** Cross-app data read — BiteLedger reads MealPlan/MealPlanEntry from the shared store. Deferred from T-12 v1 per CEO review 2026-03-29 (cross-app integration is v2).
+**Effort:** M (human: ~3 days / CC: ~20 min) | **Priority:** P3 | **Depends on:** T-12
+
+---
+
+### T-12-ShoppingCart: ShoppingCart SwiftData Persistence
+**What:** Migrate ShoppingCart from UserDefaults to SwiftData so the cart persists across app restarts and could eventually sync across devices.
+**Context:** ShoppingCart is currently UserDefaults-backed (`RecipeCard/RecipeCard/ShoppingCart.swift`). Works for v1. Deferred from T-12 per CEO review 2026-03-29.
+**Effort:** S (human: ~1 day / CC: ~15 min) | **Priority:** P3 | **Depends on:** T-12
 
 ---
 
@@ -138,13 +255,8 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ---
 
-### D-9: RecipeCard Toolbar Consolidation
-**What:** Consolidate RecipeCard's `RecipesListView` toolbar actions into a `.menu` button to stay compliant with DESIGN.md's max-2-leading-items rule. Adding the Settings gear icon during the Backup & Restore feature will push the toolbar beyond 4 items.
-**Why:** DESIGN.md explicitly flags 4+ leading toolbar items as an anti-pattern. A menu button groups Import/Scan/Import-OCR behind a single `+` or `ellipsis` icon.
-**Pros:** Cleaner toolbar, consistent with iOS conventions, room for future toolbar additions.
-**Cons:** Minor interaction change for existing users (import taps go through one extra tap).
-**Context:** RecipesListView currently has: Edit, Import (URL), Scan (OCR), + (new recipe). Adding a gear icon will make 5. DESIGN.md toolbar rule: max 1-2 leading items. This was deferred when adding Settings gear in the Backup & Restore feature (feature/v1-ship).
-**Effort:** XS (human: ~1 hour / CC: ~10 min) | **Priority:** P2 | **Depends on:** Backup & Restore shipped
+### ~~D-9: RecipeCard Toolbar Consolidation~~ — COMPLETED feature/v1-ship (2026-03-31)
+**Shipped:** `RecipesListView` toolbar consolidated to gear (Settings, leading) + `+` Menu (Import from URL / Scan Recipe Card / Create Manually, trailing). Compliant with DESIGN.md max-2-leading-items rule. Grid cells use `.frame(maxHeight: .infinity, alignment: .top)` for consistent card heights.
 
 ---
 
