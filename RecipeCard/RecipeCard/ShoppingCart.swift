@@ -128,6 +128,79 @@ final class ShoppingCart {
         items.removeAll()
     }
 
+    /// Replaces all cart items with ingredients derived from the given meal plan meals (SchemaV4).
+    ///
+    /// Algorithm:
+    /// - Recipe items: iterate ingredients, scale by item.servingCount.
+    ///   If the ingredient has a gram weight, accumulate into a per-food-item gram total
+    ///   (same food from multiple items is summed). If no gram weight, list separately.
+    /// - FoodItem items: add directly with qty = servingCount.
+    ///   If servingSize has a gram weight, accumulate into the gram total.
+    /// - Note-only items (isNoteOnly == true) are skipped (no food to buy).
+    /// - Invalid items (isValid == false) are skipped silently.
+    /// - Orphaned items (meal == nil) are skipped.
+    ///
+    /// ObjectIdentifier is used as the dedup key — stable within a synchronous call on
+    /// a single ModelContext (SwiftData guarantees one in-memory instance per persistent record).
+    ///
+    /// All generated items are tagged recipeTag = "meal_plan".
+    func populateFromMealPlan(meals: [MealPlanMeal]) {
+        items.removeAll()
+
+        var gramAccumulator: [ObjectIdentifier: (FoodItem, Double)] = [:]
+        var noGramItems: [ShoppingCartItem] = []
+
+        for meal in meals {
+            for item in meal.items where item.isValid {
+                guard item.meal != nil else { continue }  // orphan guard
+                if item.isNoteOnly { continue }           // notes have nothing to buy
+
+                if let recipe = item.recipe {
+                    for ingredient in recipe.sortedIngredients {
+                        guard let food = ingredient.foodItem else { continue }
+                        let scaledQty = ingredient.quantity * item.servingCount
+                        let servingGrams = ingredient.servingSize?.gramWeight ?? food.defaultServing?.gramWeight
+                        if let gw = servingGrams, gw > 0 {
+                            let key = ObjectIdentifier(food)
+                            gramAccumulator[key] = (food, (gramAccumulator[key]?.1 ?? 0) + gw * scaledQty)
+                        } else {
+                            let text = scaledDisplayText(for: ingredient, scaleFactor: item.servingCount)
+                            noGramItems.append(ShoppingCartItem(
+                                recipeTag: "meal_plan",
+                                displayText: text,
+                                category: ShoppingCategory.detect(for: food.name)
+                            ))
+                        }
+                    }
+                } else if let food = item.foodItem {
+                    if let serving = item.servingSize, let gw = serving.gramWeight, gw > 0 {
+                        let key = ObjectIdentifier(food)
+                        gramAccumulator[key] = (food, (gramAccumulator[key]?.1 ?? 0) + gw * item.servingCount)
+                    } else {
+                        let qty = item.servingCount.truncatingRemainder(dividingBy: 1) == 0
+                            ? String(Int(item.servingCount))
+                            : String(format: "%.1g", item.servingCount)
+                        let label = item.servingSize?.label ?? "serving"
+                        noGramItems.append(ShoppingCartItem(
+                            recipeTag: "meal_plan",
+                            displayText: "\(qty) \(label) \(food.name)",
+                            category: ShoppingCategory.detect(for: food.name)
+                        ))
+                    }
+                }
+            }
+        }
+
+        let mergedItems = gramAccumulator.values.map { food, grams -> ShoppingCartItem in
+            ShoppingCartItem(
+                recipeTag: "meal_plan",
+                displayText: "\(Int(grams.rounded()))g \(food.name)",
+                category: ShoppingCategory.detect(for: food.name)
+            )
+        }
+        items = mergedItems + noGramItems
+    }
+
     // MARK: Persistence
 
     private func save() {
