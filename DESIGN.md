@@ -186,8 +186,9 @@ Empty states are features — not fallbacks. Every empty state must have:
 - Food addition: sheet presentation of `FoodSearchView` with 4-tab segmented picker
 
 ### RecipeCard
-- `NavigationStack` root in `RecipesListView`
-- Toolbar pattern: **max 2 leading items** — currently 4 (Edit + Import + Scan + Plus) — overcrowded
+- `TabView` root: Recipes / Meal Planner / Shopping Cart (added v0.2.0.0)
+- `NavigationStack` inside each tab
+- Toolbar pattern: **gear (Settings) leading, `+` Menu trailing** — D-9 shipped v0.2.0.0
 
 ### Toolbar Rule
 - Leading: max 1–2 items (prefer icon-only for non-destructive actions)

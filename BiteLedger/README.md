@@ -5,13 +5,15 @@ A privacy-first food tracking app for iOS.
 ## Features
 
 - 📱 Barcode scanning (always free)
-- 🔒 All data stays on your device
-- 📈 7-day rolling average history chart
+- 🔒 All data stays on your device — no account required
+- 📈 7-day rolling average history chart with FDA daily value reference line
 - 📤 Weekly recap share card
 - ⚡ Quick-Add recent/frequent foods per meal type
 - 🔥 Streak milestone celebrations (3, 7, 14, 30, 60, 100 days)
-- 🎯 No account required
-- 💪 Comprehensive nutrition tracking
+- 🔍 Nutrient Spotlight — surfaces nutrients consistently above 120% DV over 7 days
+- 💾 Backup & Restore — ZIP export with full round-trip import across devices
+- 🧪 USDA search covers Foundation, SR Legacy, and Branded Foods with FDA label serving sizes
+- 💪 Full nutrition panel tracking (macros + 15 micronutrients)
 
 ## Tech Stack
 
