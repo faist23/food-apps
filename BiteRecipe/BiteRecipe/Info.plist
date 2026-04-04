@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>BiteRecipe uses the camera to scan printed recipes from cookbooks and recipe cards.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>BiteRecipe accesses your photo library so you can import a photo of a recipe.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.ridepro.biterecipe</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>biterecipe</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
