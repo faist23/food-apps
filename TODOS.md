@@ -181,20 +181,17 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ---
 
-### T-12-RestoreUpdate: SchemaV4 Backup Restore
-**What:** Update `BackupService.restore()` to import `MealPlanMeal` and `MealPlanMealItem` records from backup. Also adds `BackupService.createBackup` columns for new models (`meal_plans.csv`, `meal_items.csv`).
-**Why:** Export-only (without restore) is a half-loop. Until this ships, a restore from a V4 backup silently drops all meal plan data. Completing the loop means a full CSV round-trip: export → delete app → reinstall → import → plans restored.
+### T-12-RestoreUpdate: SchemaV5 + Meal Plan Backup Round-Trip
+**What:** Add meal plan data to the backup ZIP (3 new CSV files: `meal_plans.csv`, `meal_meals.csv`, `meal_items.csv`) and restore them in `BackupService.restoreBackup()`. Adds `var id: UUID = UUID()` to `MealPlan`, `MealPlanMeal`, `MealPlanMealItem` as SchemaV5 (lightweight migration — no explicit plan wired). Folds T-12-BackupTest (full round-trip XCTest suite, ~20 tests).
+**Why:** Export-only is a half-loop. Until this ships, a restore from a V4+ backup silently drops all meal plan data.
 **Pros:** Completes the backup/restore guarantee for the app. Zero data loss on reinstall.
-**Cons:** Two files to change (BackupService + CSVExporter). Requires knowing the CSV column schema for new models before implementing.
-**Context:** Deliberately excluded from T-12-v2 per /plan-eng-review 2026-03-30. Export-without-restore introduces a half-loop that could mislead users into thinking their meal plans are backed up. Ship both together.
-**Depends on:** T-12-v2 | **Effort:** S (human: ~1 day / CC: ~15 min) | **Priority:** P2
-
----
-
-### T-12-BackupTest: SchemaV4 Backup Round-Trip Test
-**What:** XCTest integration test verifying that a V4 backup export → import produces identical MealPlanMeal + MealPlanMealItem records. Also tests SchemaV4 lightweight migration (V3 store → V4 schema opens without crash, existing data intact).
-**Why:** Migration and backup are the two highest-risk paths that can't be caught by pure unit tests. The SchemaV4 migration test is already in the T-12-v2 test plan; this ticket tracks the full round-trip backup test.
-**Depends on:** T-12-RestoreUpdate | **Effort:** XS (human: ~2 hrs / CC: ~10 min) | **Priority:** P3
+**Context:** Deliberately excluded from T-12-v2 per /plan-eng-review 2026-03-30. Plan reviewed 2026-04-03.
+**CSV schema:** `meal_plans.csv` (id, weekStartDate) · `meal_meals.csv` (id, planId, date, mealType, name) · `meal_items.csv` (id, mealId, recipeId, foodItemId, servingSizeId, note, servingCount).
+**Import order:** foods → servings → logs → recipes → ingredients → meal_plans → meal_meals → meal_items.
+**Merge-mode dedup:** UUID-based skip + weekStartDate secondary dedup for MealPlan (prevents duplicate weeks when destination already has a plan for that week under a different UUID).
+**XOR validation:** import skips MealPlanMealItem rows where all of recipeId/foodItemId/note are empty.
+**Ship checklist:** Must validate SchemaV5 migration on a physical device with existing V4 data before submitting.
+**Depends on:** T-12-v2 | **Effort:** S (human: ~1 day / CC: ~20 min) | **Priority:** P2
 
 ---
 
