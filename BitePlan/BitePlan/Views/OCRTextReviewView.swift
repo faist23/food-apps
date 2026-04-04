@@ -10,6 +10,7 @@
 import SwiftUI
 import UIKit
 import BiteLedgerCore
+import SwiftData
 
 struct OCRTextReviewView: View {
     let rawLines: [String]

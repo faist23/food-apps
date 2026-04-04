@@ -11,6 +11,7 @@ import SwiftUI
 import Vision
 import PhotosUI
 import BiteLedgerCore
+import SwiftData
 
 // MARK: - Camera picker (UIKit bridge)
 
