@@ -112,17 +112,44 @@ enum BiteRecipeSchemaV4: VersionedSchema {
     }
 }
 
+// MARK: - SchemaV5 (T-12-RestoreUpdate — id: UUID on MealPlan/MealPlanMeal/MealPlanMealItem)
+//
+// Must match BiteLedgerSchemaV5 exactly (same models, same order, same version).
+//
+enum BiteRecipeSchemaV5: VersionedSchema {
+    static let versionIdentifier = Schema.Version(5, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        [
+            FoodItem.self,
+            ServingSize.self,
+            FoodLog.self,
+            UserPreferences.self,
+            Recipe.self,
+            RecipeIngredient.self,
+            CanonicalFood.self,
+            ServingConversion.self,
+            FallbackSource.self,
+            FoodHistoryEntry.self,
+            MealPlan.self,
+            MealPlanEntry.self,
+            MealPlanMeal.self,
+            MealPlanMealItem.self,
+        ]
+    }
+}
+
 // MARK: - Migration plan (NOT currently wired in — see BiteLedgerSchema.swift for explanation)
 //
 enum BiteRecipeMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [BiteRecipeSchemaV1.self, BiteRecipeSchemaV2.self, BiteRecipeSchemaV3.self, BiteRecipeSchemaV4.self]
+        [BiteRecipeSchemaV1.self, BiteRecipeSchemaV2.self, BiteRecipeSchemaV3.self, BiteRecipeSchemaV4.self, BiteRecipeSchemaV5.self]
     }
     static var stages: [MigrationStage] {
         [
             .lightweight(fromVersion: BiteRecipeSchemaV1.self, toVersion: BiteRecipeSchemaV2.self),
             .lightweight(fromVersion: BiteRecipeSchemaV2.self, toVersion: BiteRecipeSchemaV3.self),
             .lightweight(fromVersion: BiteRecipeSchemaV3.self, toVersion: BiteRecipeSchemaV4.self),
+            .lightweight(fromVersion: BiteRecipeSchemaV4.self, toVersion: BiteRecipeSchemaV5.self),
         ]
     }
 }

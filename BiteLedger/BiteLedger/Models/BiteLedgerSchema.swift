@@ -172,15 +172,47 @@ enum BiteLedgerSchemaV4: VersionedSchema {
     }
 }
 
+// MARK: - SchemaV5 (T-12-RestoreUpdate — id: UUID on MealPlan/MealPlanMeal/MealPlanMealItem)
+//
+// Adds a plain `var id: UUID = UUID()` property to MealPlan, MealPlanMeal, and
+// MealPlanMealItem. No @Attribute(.unique) — lightweight migration safe.
+// These IDs are used by CSVExporter/CSVImporter for the meal plan backup round-trip.
+//
+// Do NOT wire migrationPlan: into ModelContainer — same policy as V2/V3/V4.
+// Must match BiteRecipeSchemaV5 exactly (same models, same order, same version).
+//
+enum BiteLedgerSchemaV5: VersionedSchema {
+    static let versionIdentifier = Schema.Version(5, 0, 0)
+    static var models: [any PersistentModel.Type] {
+        [
+            FoodItem.self,
+            ServingSize.self,
+            FoodLog.self,
+            UserPreferences.self,
+            Recipe.self,
+            RecipeIngredient.self,
+            CanonicalFood.self,
+            ServingConversion.self,
+            FallbackSource.self,
+            FoodHistoryEntry.self,
+            MealPlan.self,
+            MealPlanEntry.self,
+            MealPlanMeal.self,
+            MealPlanMealItem.self,
+        ]
+    }
+}
+
 enum BiteLedgerMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [BiteLedgerSchemaV1.self, BiteLedgerSchemaV2.self, BiteLedgerSchemaV3.self, BiteLedgerSchemaV4.self]
+        [BiteLedgerSchemaV1.self, BiteLedgerSchemaV2.self, BiteLedgerSchemaV3.self, BiteLedgerSchemaV4.self, BiteLedgerSchemaV5.self]
     }
     static var stages: [MigrationStage] {
         [
             .lightweight(fromVersion: BiteLedgerSchemaV1.self, toVersion: BiteLedgerSchemaV2.self),
             .lightweight(fromVersion: BiteLedgerSchemaV2.self, toVersion: BiteLedgerSchemaV3.self),
             .lightweight(fromVersion: BiteLedgerSchemaV3.self, toVersion: BiteLedgerSchemaV4.self),
+            .lightweight(fromVersion: BiteLedgerSchemaV4.self, toVersion: BiteLedgerSchemaV5.self),
         ]
     }
 }

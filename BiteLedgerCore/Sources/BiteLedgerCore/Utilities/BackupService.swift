@@ -24,6 +24,15 @@ public struct BackupManifest: Codable, Sendable {
         public let foods: Int
         public let logs: Int
         public let recipes: Int
+        /// nil when decoding an old backup that predates SchemaV5 (backward-compat).
+        public let mealPlans: Int?
+
+        public init(foods: Int, logs: Int, recipes: Int, mealPlans: Int? = nil) {
+            self.foods = foods
+            self.logs = logs
+            self.recipes = recipes
+            self.mealPlans = mealPlans
+        }
     }
 
     public init(version: Int, exportDate: Date, exportedBy: String, stats: Stats) {
@@ -33,6 +42,7 @@ public struct BackupManifest: Codable, Sendable {
         self.stats = stats
     }
 }
+
 
 public enum BackupConflictMode: Sendable {
     /// Delete all existing data first, then import. Produces an exact replica.
@@ -58,6 +68,9 @@ public struct BackupRestoreResult: Sendable {
     public let logsImported: Int
     public let recipesImported: Int
     public let ingredientsImported: Int
+    public let mealPlansImported: Int
+    public let mealMealsImported: Int
+    public let mealItemsImported: Int
     public let errors: [String]
     public let manifest: BackupManifest?
 
@@ -67,6 +80,9 @@ public struct BackupRestoreResult: Sendable {
         logsImported: Int,
         recipesImported: Int,
         ingredientsImported: Int,
+        mealPlansImported: Int = 0,
+        mealMealsImported: Int = 0,
+        mealItemsImported: Int = 0,
         errors: [String],
         manifest: BackupManifest?
     ) {
@@ -75,6 +91,9 @@ public struct BackupRestoreResult: Sendable {
         self.logsImported = logsImported
         self.recipesImported = recipesImported
         self.ingredientsImported = ingredientsImported
+        self.mealPlansImported = mealPlansImported
+        self.mealMealsImported = mealMealsImported
+        self.mealItemsImported = mealItemsImported
         self.errors = errors
         self.manifest = manifest
     }
@@ -129,13 +148,14 @@ public struct BackupService {
             max(0, csv.components(separatedBy: "\n").filter { !$0.isEmpty }.count - 1)
         }
         let manifest = BackupManifest(
-            version: 1,
+            version: 2,
             exportDate: Date(),
             exportedBy: exportedBy,
             stats: BackupManifest.Stats(
                 foods: csvLineCount(package.foodsCSV),
                 logs: csvLineCount(package.logsCSV),
-                recipes: csvLineCount(package.recipesCSV)
+                recipes: csvLineCount(package.recipesCSV),
+                mealPlans: csvLineCount(package.mealPlansCSV)
             )
         )
         let encoder = JSONEncoder()
@@ -158,6 +178,9 @@ public struct BackupService {
         try package.logsCSV.write(to: stagingDir.appendingPathComponent("logs.csv"), atomically: true, encoding: .utf8)
         try package.recipesCSV.write(to: stagingDir.appendingPathComponent("recipes.csv"), atomically: true, encoding: .utf8)
         try package.ingredientsCSV.write(to: stagingDir.appendingPathComponent("ingredients.csv"), atomically: true, encoding: .utf8)
+        try package.mealPlansCSV.write(to: stagingDir.appendingPathComponent("meal_plans.csv"), atomically: true, encoding: .utf8)
+        try package.mealMealsCSV.write(to: stagingDir.appendingPathComponent("meal_meals.csv"), atomically: true, encoding: .utf8)
+        try package.mealItemsCSV.write(to: stagingDir.appendingPathComponent("meal_items.csv"), atomically: true, encoding: .utf8)
 
         // 6. Copy recipe images to staging/images/
         if !imageFileURLs.isEmpty {
@@ -274,6 +297,19 @@ public struct BackupService {
         let ingredientsCSV: String? = FileManager.default.fileExists(atPath: ingredientsURL.path)
             ? (try? String(contentsOf: ingredientsURL, encoding: .utf8)) : nil
 
+        // Meal plan CSVs — optional (absent in pre-SchemaV5 backups)
+        let mealPlansURL = extractDir.appendingPathComponent("meal_plans.csv")
+        let mealPlansCSV: String? = FileManager.default.fileExists(atPath: mealPlansURL.path)
+            ? (try? String(contentsOf: mealPlansURL, encoding: .utf8)) : nil
+
+        let mealMealsURL = extractDir.appendingPathComponent("meal_meals.csv")
+        let mealMealsCSV: String? = FileManager.default.fileExists(atPath: mealMealsURL.path)
+            ? (try? String(contentsOf: mealMealsURL, encoding: .utf8)) : nil
+
+        let mealItemsURL = extractDir.appendingPathComponent("meal_items.csv")
+        let mealItemsCSV: String? = FileManager.default.fileExists(atPath: mealItemsURL.path)
+            ? (try? String(contentsOf: mealItemsURL, encoding: .utf8)) : nil
+
         // 7. For replaceAll: wipe database before importing
         if conflictMode == .replaceAll {
             await resetDatabase(scope: .everything, context: context)
@@ -286,6 +322,9 @@ public struct BackupService {
             logsCSV: logsCSV,
             recipesCSV: recipesCSV,
             ingredientsCSV: ingredientsCSV,
+            mealPlansCSV: mealPlansCSV,
+            mealMealsCSV: mealMealsCSV,
+            mealItemsCSV: mealItemsCSV,
             imageMap: imageMap,
             skipExistingUUIDs: conflictMode == .merge,
             context: context
@@ -297,6 +336,9 @@ public struct BackupService {
             logsImported: importResult.logsCreated,
             recipesImported: importResult.recipesCreated,
             ingredientsImported: importResult.ingredientsCreated,
+            mealPlansImported: importResult.mealPlansCreated,
+            mealMealsImported: importResult.mealMealsCreated,
+            mealItemsImported: importResult.mealItemsCreated,
             errors: importResult.errors,
             manifest: manifest
         )

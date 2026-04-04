@@ -48,6 +48,9 @@ public struct CSVImporter {
         public var logsCreated: Int = 0
         public var recipesCreated: Int = 0
         public var ingredientsCreated: Int = 0
+        public var mealPlansCreated: Int = 0
+        public var mealMealsCreated: Int = 0
+        public var mealItemsCreated: Int = 0
         public var errors: [String] = []
 
         public init() {}
@@ -56,6 +59,7 @@ public struct CSVImporter {
             var parts = ["Imported \(foodsCreated) foods, \(logsCreated) log entries"]
             if recipesCreated > 0 { parts.append("\(recipesCreated) recipes") }
             if ingredientsCreated > 0 { parts.append("\(ingredientsCreated) ingredients") }
+            if mealPlansCreated > 0 { parts.append("\(mealPlansCreated) meal plans") }
             return parts.joined(separator: ", ") + "."
                 + (errors.isEmpty ? "" : " \(errors.count) warnings.")
         }
@@ -545,6 +549,9 @@ public struct CSVImporter {
         logsCSV: String,
         recipesCSV: String? = nil,
         ingredientsCSV: String? = nil,
+        mealPlansCSV: String? = nil,
+        mealMealsCSV: String? = nil,
+        mealItemsCSV: String? = nil,
         /// Keyed by recipe UUID string → JPEG data. Populated from {uuid}.jpg files
         /// in the export package. nil = no images included in this import.
         imageMap: [String: Data] = [:],
@@ -560,6 +567,8 @@ public struct CSVImporter {
         var existingFoodMap: [UUID: FoodItem] = [:]
         var existingServingMap: [UUID: ServingSize] = [:]
         var existingRecipeMap: [UUID: Recipe] = [:]
+        var existingPlanMap: [UUID: MealPlan] = [:]
+        var existingMealMap: [UUID: MealPlanMeal] = [:]
 
         if skipExistingUUIDs {
             let foods = (try? context.fetch(FetchDescriptor<FoodItem>())) ?? []
@@ -568,6 +577,10 @@ public struct CSVImporter {
             existingServingMap = Dictionary(uniqueKeysWithValues: servings.map { ($0.id, $0) })
             let recipes = (try? context.fetch(FetchDescriptor<Recipe>())) ?? []
             existingRecipeMap = Dictionary(uniqueKeysWithValues: recipes.map { ($0.id, $0) })
+            let plans = (try? context.fetch(FetchDescriptor<MealPlan>())) ?? []
+            existingPlanMap = Dictionary(uniqueKeysWithValues: plans.map { ($0.id, $0) })
+            let meals = (try? context.fetch(FetchDescriptor<MealPlanMeal>())) ?? []
+            existingMealMap = Dictionary(uniqueKeysWithValues: meals.map { ($0.id, $0) })
         }
 
         // 1. Import foods first (seed map ensures existing foods are linkable)
@@ -591,8 +604,9 @@ public struct CSVImporter {
         try importBiteLedgerLogs(csv: logsCSV, foodMap: foodMap, servingMap: servingMap, context: context, result: &result)
 
         // 4. Import recipes (optional — absent in legacy 3-file exports)
+        var recipeMap: [UUID: Recipe] = existingRecipeMap
         if let recipesCSV {
-            let recipeMap = try importBiteLedgerRecipes(
+            recipeMap = try importBiteLedgerRecipes(
                 csv: recipesCSV,
                 foodMap: foodMap,
                 imageMap: imageMap,
@@ -612,6 +626,40 @@ public struct CSVImporter {
                     context: context,
                     result: &result
                 )
+            }
+        }
+
+        // 6. Import meal plans (optional — absent in pre-SchemaV5 backups)
+        if let mealPlansCSV {
+            let planMap = try importBiteLedgerMealPlans(
+                csv: mealPlansCSV,
+                existingPlanMap: existingPlanMap,
+                skipExistingUUIDs: skipExistingUUIDs,
+                context: context,
+                result: &result
+            )
+
+            if let mealMealsCSV {
+                let mealMap = try importBiteLedgerMealMeals(
+                    csv: mealMealsCSV,
+                    planMap: planMap,
+                    existingMealMap: existingMealMap,
+                    skipExistingUUIDs: skipExistingUUIDs,
+                    context: context,
+                    result: &result
+                )
+
+                if let mealItemsCSV {
+                    try importBiteLedgerMealItems(
+                        csv: mealItemsCSV,
+                        mealMap: mealMap,
+                        recipeMap: recipeMap,
+                        foodMap: foodMap,
+                        servingMap: servingMap,
+                        context: context,
+                        result: &result
+                    )
+                }
             }
         }
 
@@ -1041,6 +1089,183 @@ public struct CSVImporter {
 
             context.insert(ingredient)
             result.ingredientsCreated += 1
+        }
+    }
+
+    // MARK: - Meal Plans Import (SchemaV5 — T-12-RestoreUpdate)
+
+    /// Imports meal_plans.csv. Returns a map of CSV id string → MealPlan for meal linking.
+    /// Secondary dedup: if the destination already has a MealPlan for the same weekStartDate,
+    /// the existing plan is reused and the imported UUID is mapped to it so its meals link correctly.
+    @MainActor
+    private static func importBiteLedgerMealPlans(
+        csv: String,
+        existingPlanMap: [UUID: MealPlan],
+        skipExistingUUIDs: Bool,
+        context: ModelContext,
+        result: inout ImportResult
+    ) throws -> [String: MealPlan] {
+        let rows = parseCSV(csv)
+        guard rows.count > 1 else { return [:] }
+        let headers = rows[0].map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
+        guard let idIdx = headers.firstIndex(of: "id"),
+              let wsdIdx = headers.firstIndex(of: "weekstartdate") else { return [:] }
+
+        let iso = ISO8601DateFormatter()
+        // Build a weekStartDate → existing plan map for secondary dedup
+        var existingByWeek: [Date: MealPlan] = [:]
+        for plan in existingPlanMap.values {
+            existingByWeek[plan.weekStartDate] = plan
+        }
+
+        var planMap: [String: MealPlan] = [:]
+
+        for row in rows.dropFirst() {
+            guard row.count > max(idIdx, wsdIdx),
+                  let id = UUID(uuidString: row[idIdx]),
+                  let weekStartDate = iso.date(from: row[wsdIdx]) else { continue }
+
+            // UUID-based skip
+            if skipExistingUUIDs, let existing = existingPlanMap[id] {
+                planMap[id.uuidString] = existing
+                continue
+            }
+
+            // Secondary dedup: same weekStartDate already exists under a different UUID
+            if skipExistingUUIDs, let existing = existingByWeek[weekStartDate] {
+                planMap[id.uuidString] = existing
+                continue
+            }
+
+            let plan = MealPlan(weekStartDate: weekStartDate)
+            plan.id = id
+            context.insert(plan)
+            planMap[id.uuidString] = plan
+            existingByWeek[weekStartDate] = plan
+            result.mealPlansCreated += 1
+        }
+
+        return planMap
+    }
+
+    /// Imports meal_meals.csv. Returns a map of CSV id string → MealPlanMeal for item linking.
+    @MainActor
+    private static func importBiteLedgerMealMeals(
+        csv: String,
+        planMap: [String: MealPlan],
+        existingMealMap: [UUID: MealPlanMeal],
+        skipExistingUUIDs: Bool,
+        context: ModelContext,
+        result: inout ImportResult
+    ) throws -> [String: MealPlanMeal] {
+        let rows = parseCSV(csv)
+        guard rows.count > 1 else { return [:] }
+        let headers = rows[0].map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
+        guard let idIdx   = headers.firstIndex(of: "id"),
+              let planIdx = headers.firstIndex(of: "planid"),
+              let dateIdx = headers.firstIndex(of: "date"),
+              let typeIdx = headers.firstIndex(of: "mealtype") else { return [:] }
+        let nameIdx = headers.firstIndex(of: "name")
+
+        let iso = ISO8601DateFormatter()
+        var mealMap: [String: MealPlanMeal] = [:]
+
+        for row in rows.dropFirst() {
+            guard row.count > max(idIdx, planIdx, dateIdx, typeIdx),
+                  let id = UUID(uuidString: row[idIdx]) else { continue }
+
+            // UUID-based skip
+            if skipExistingUUIDs, let existing = existingMealMap[id] {
+                mealMap[id.uuidString] = existing
+                continue
+            }
+
+            guard let plan = planMap[row[planIdx]] else {
+                result.errors.append("meal_meals: unknown planId \(row[planIdx]) — row skipped")
+                continue
+            }
+            guard let date = iso.date(from: row[dateIdx]) else {
+                result.errors.append("meal_meals: invalid date \(row[dateIdx]) — row skipped")
+                continue
+            }
+            guard let mealType = MealType(rawValue: row[typeIdx]) else {
+                result.errors.append("meal_meals: invalid mealType \(row[typeIdx]) — row skipped")
+                continue
+            }
+
+            let meal = MealPlanMeal(mealPlan: plan, date: date, mealType: mealType)
+            meal.id = id
+            if let ni = nameIdx, row[safe: ni].map({ !$0.isEmpty }) == true {
+                meal.name = row[ni]
+            }
+            context.insert(meal)
+            mealMap[id.uuidString] = meal
+            result.mealMealsCreated += 1
+        }
+
+        return mealMap
+    }
+
+    /// Imports meal_items.csv.
+    /// XOR rule: rows where recipeId, foodItemId, and note are all empty are skipped.
+    @MainActor
+    private static func importBiteLedgerMealItems(
+        csv: String,
+        mealMap: [String: MealPlanMeal],
+        recipeMap: [UUID: Recipe],
+        foodMap: [UUID: FoodItem],
+        servingMap: [UUID: ServingSize],
+        context: ModelContext,
+        result: inout ImportResult
+    ) throws {
+        let rows = parseCSV(csv)
+        guard rows.count > 1 else { return }
+        let headers = rows[0].map { $0.lowercased().trimmingCharacters(in: .whitespaces) }
+        guard let idIdx     = headers.firstIndex(of: "id"),
+              let mealIdx   = headers.firstIndex(of: "mealid") else { return }
+        let recipeIdx   = headers.firstIndex(of: "recipeid")
+        let foodIdx     = headers.firstIndex(of: "fooditemid")
+        let servIdx     = headers.firstIndex(of: "servingsizeid")
+        let noteIdx     = headers.firstIndex(of: "note")
+        let countIdx    = headers.firstIndex(of: "servingcount")
+
+        for row in rows.dropFirst() {
+            guard row.count > max(idIdx, mealIdx),
+                  UUID(uuidString: row[idIdx]) != nil else { continue }
+
+            guard let meal = mealMap[row[mealIdx]] else {
+                result.errors.append("meal_items: unknown mealId \(row[mealIdx]) — row skipped")
+                continue
+            }
+
+            let recipeIdStr   = recipeIdx.flatMap { row[safe: $0] } ?? ""
+            let foodItemIdStr = foodIdx.flatMap { row[safe: $0] } ?? ""
+            let noteStr       = noteIdx.flatMap { row[safe: $0] } ?? ""
+
+            // XOR validation: skip rows with nothing useful
+            if recipeIdStr.isEmpty && foodItemIdStr.isEmpty && noteStr.isEmpty {
+                result.errors.append("meal_items: row with no recipe/food/note — skipped")
+                continue
+            }
+
+            let item = MealPlanMealItem(meal: meal)
+            item.id = UUID(uuidString: row[idIdx])!
+            item.servingCount = countIdx.flatMap { Double(row[safe: $0] ?? "") } ?? 1.0
+
+            if !recipeIdStr.isEmpty, let rid = UUID(uuidString: recipeIdStr) {
+                item.recipe = recipeMap[rid]
+            } else if !foodItemIdStr.isEmpty, let fid = UUID(uuidString: foodItemIdStr) {
+                item.foodItem = foodMap[fid]
+                if let si = servIdx, let sidStr = row[safe: si], !sidStr.isEmpty,
+                   let sid = UUID(uuidString: sidStr) {
+                    item.servingSize = servingMap[sid]
+                }
+            } else {
+                item.note = noteStr.isEmpty ? nil : noteStr
+            }
+
+            context.insert(item)
+            result.mealItemsCreated += 1
         }
     }
 

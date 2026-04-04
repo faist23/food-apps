@@ -22,6 +22,9 @@ import Foundation
 
 @Model
 public final class MealPlanMeal {
+    // Stable identifier for CSV export/import round-trips (SchemaV5).
+    public var id: UUID = UUID()
+
     // Relationship back to the parent week (nullify on MealPlan delete).
     public var mealPlan: MealPlan?
 

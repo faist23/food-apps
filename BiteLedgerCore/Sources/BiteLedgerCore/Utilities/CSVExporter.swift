@@ -11,8 +11,9 @@ import SwiftData
 
 // MARK: - CSVExporter
 //
-// Exports BiteLedger data as five CSV files for full round-trip restore.
+// Exports BiteLedger data as CSV files for full round-trip restore.
 // foods.csv → servings.csv → logs.csv → recipes.csv → ingredients.csv
+// → meal_plans.csv → meal_meals.csv → meal_items.csv  (SchemaV5, T-12-RestoreUpdate)
 //
 // Design guarantee: export → delete app → import produces identical data.
 //
@@ -29,6 +30,10 @@ public struct CSVExporter {
         public let logsCSV: String
         public let recipesCSV: String
         public let ingredientsCSV: String
+        // Meal plan CSVs (SchemaV5 — T-12-RestoreUpdate)
+        public let mealPlansCSV: String
+        public let mealMealsCSV: String
+        public let mealItemsCSV: String
         /// Local recipe images: (filename e.g. "{uuid}.jpg", jpeg data).
         /// Only populated for recipes whose imageURL starts with "file://".
         /// Remote https:// images are not included — AsyncImage re-fetches them.
@@ -53,6 +58,9 @@ public struct CSVExporter {
         let logs        = try context.fetch(FetchDescriptor<FoodLog>())
         let recipes     = try context.fetch(FetchDescriptor<Recipe>())
         let ingredients = try context.fetch(FetchDescriptor<RecipeIngredient>())
+        let mealPlans   = try context.fetch(FetchDescriptor<MealPlan>())
+        let mealMeals   = try context.fetch(FetchDescriptor<MealPlanMeal>())
+        let mealItems   = try context.fetch(FetchDescriptor<MealPlanMealItem>())
 
         // Collect local recipe images as (filename, jpegData) pairs.
         // Filename is "{recipeId}.jpg" so the importer can match by UUID.
@@ -72,6 +80,9 @@ public struct CSVExporter {
             logsCSV:        exportLogs(logs),
             recipesCSV:     exportRecipes(recipes),
             ingredientsCSV: exportIngredients(ingredients),
+            mealPlansCSV:   exportMealPlans(mealPlans),
+            mealMealsCSV:   exportMealMeals(mealMeals),
+            mealItemsCSV:   exportMealItems(mealItems),
             recipeImages:   recipeImages,
             exportDate:     Date()
         )
@@ -296,6 +307,57 @@ public struct CSVExporter {
             rows.append(row)
         }
 
+        return csvString(rows)
+    }
+
+    // MARK: - Meal Plans CSV (SchemaV5 — T-12-RestoreUpdate)
+
+    public static func exportMealPlans(_ plans: [MealPlan]) -> String {
+        let headers = ["id", "weekStartDate"]
+        var rows: [[String]] = [headers]
+        let iso = ISO8601DateFormatter()
+        for plan in plans {
+            rows.append([plan.id.uuidString, iso.string(from: plan.weekStartDate)])
+        }
+        return csvString(rows)
+    }
+
+    // MARK: - Meal Meals CSV
+
+    public static func exportMealMeals(_ meals: [MealPlanMeal]) -> String {
+        let headers = ["id", "planId", "date", "mealType", "name"]
+        var rows: [[String]] = [headers]
+        let iso = ISO8601DateFormatter()
+        for meal in meals {
+            guard let planId = meal.mealPlan?.id else { continue }
+            rows.append([
+                meal.id.uuidString,
+                planId.uuidString,
+                iso.string(from: meal.date),
+                meal.mealType.rawValue,
+                meal.name ?? ""
+            ])
+        }
+        return csvString(rows)
+    }
+
+    // MARK: - Meal Items CSV
+
+    public static func exportMealItems(_ items: [MealPlanMealItem]) -> String {
+        let headers = ["id", "mealId", "recipeId", "foodItemId", "servingSizeId", "note", "servingCount"]
+        var rows: [[String]] = [headers]
+        for item in items {
+            guard let mealId = item.meal?.id else { continue }
+            rows.append([
+                item.id.uuidString,
+                mealId.uuidString,
+                item.recipe?.id.uuidString ?? "",
+                item.foodItem?.id.uuidString ?? "",
+                item.servingSize?.id.uuidString ?? "",
+                item.note ?? "",
+                String(format: "%.4g", item.servingCount)
+            ])
+        }
         return csvString(rows)
     }
 

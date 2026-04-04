@@ -15,6 +15,10 @@ import Foundation
 
 @Model
 public final class MealPlan {
+    // Stable identifier for CSV export/import round-trips (SchemaV5).
+    // Plain UUID with no @Attribute(.unique) — lightweight migration safe.
+    public var id: UUID = UUID()
+
     // Sunday of the week, midnight in the user's local timezone.
     // Always normalized via Calendar.current.startOfDay — never UTC midnight.
     public var weekStartDate: Date

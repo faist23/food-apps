@@ -699,3 +699,609 @@ final class FoodHistoryEntryTests: XCTestCase {
         XCTAssertNil(remaining[0].food, "food reference should be nil after FoodItem deletion")
     }
 }
+
+// MARK: - T-12-RestoreUpdate: CSVExporter Meal Plan Tests
+
+@MainActor
+final class T12CSVExporterMealTests: XCTestCase {
+
+    private func makeContainer() throws -> ModelContainer {
+        let schema = Schema(BiteLedgerSchemaV5.models)
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        do {
+            return try ModelContainer(for: schema, configurations: [config])
+        } catch {
+            throw XCTSkip("SwiftData unavailable: \(error)")
+        }
+    }
+
+    /// Deterministic Sunday midnight for assertions.
+    private var sunday: Date {
+        var c = DateComponents()
+        c.year = 2026; c.month = 4; c.day = 5; c.hour = 0; c.minute = 0; c.second = 0
+        return Calendar.current.date(from: c)!
+    }
+
+    func testExportMealPlans_headersAndColumns() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let plan = MealPlan(weekStartDate: sunday)
+        context.insert(plan)
+        try context.save()
+
+        let csv = CSVExporter.exportMealPlans([plan])
+        let rows = CSVImporter.parseCSV(csv)
+
+        XCTAssertEqual(rows.first, ["id", "weekStartDate"])
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(rows[1][0], plan.id.uuidString)
+        XCTAssertFalse(rows[1][1].isEmpty, "weekStartDate column must be a non-empty ISO8601 string")
+    }
+
+    func testExportMealPlans_empty() {
+        let csv = CSVExporter.exportMealPlans([])
+        let rows = CSVImporter.parseCSV(csv)
+        XCTAssertEqual(rows.count, 1, "Empty input must produce only the header row")
+    }
+
+    func testExportMealMeals_namePresent() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let plan = MealPlan(weekStartDate: sunday)
+        context.insert(plan)
+        let meal = MealPlanMeal(mealPlan: plan, date: sunday, mealType: .dinner)
+        meal.name = "PB Night"
+        context.insert(meal)
+        try context.save()
+
+        let csv = CSVExporter.exportMealMeals([meal])
+        let rows = CSVImporter.parseCSV(csv)
+
+        XCTAssertEqual(rows.count, 2)
+        let nameIdx = rows[0].firstIndex(of: "name")!
+        XCTAssertEqual(rows[1][nameIdx], "PB Night")
+    }
+
+    func testExportMealMeals_nilNameExportsEmpty() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let plan = MealPlan(weekStartDate: sunday)
+        context.insert(plan)
+        let meal = MealPlanMeal(mealPlan: plan, date: sunday, mealType: .lunch)
+        // name is nil by default
+        context.insert(meal)
+        try context.save()
+
+        let csv = CSVExporter.exportMealMeals([meal])
+        let rows = CSVImporter.parseCSV(csv)
+
+        XCTAssertEqual(rows.count, 2)
+        let nameIdx = rows[0].firstIndex(of: "name")!
+        XCTAssertEqual(rows[1][nameIdx], "", "nil name must export as empty string, not 'nil' or 'Optional(...)'")
+    }
+
+    func testExportMealItems_recipeItem() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let plan = MealPlan(weekStartDate: sunday)
+        context.insert(plan)
+        let meal = MealPlanMeal(mealPlan: plan, date: sunday, mealType: .dinner)
+        context.insert(meal)
+        let recipe = Recipe(name: "Pasta Carbonara")
+        context.insert(recipe)
+        let item = MealPlanMealItem(meal: meal)
+        item.recipe = recipe
+        context.insert(item)
+        try context.save()
+
+        let csv = CSVExporter.exportMealItems([item])
+        let rows = CSVImporter.parseCSV(csv)
+
+        XCTAssertEqual(rows.count, 2)
+        let recipeIdx = rows[0].firstIndex(of: "recipeId")!
+        let foodIdx   = rows[0].firstIndex(of: "foodItemId")!
+        let noteIdx   = rows[0].firstIndex(of: "note")!
+        XCTAssertEqual(rows[1][recipeIdx], recipe.id.uuidString)
+        XCTAssertEqual(rows[1][foodIdx],   "")
+        XCTAssertEqual(rows[1][noteIdx],   "")
+    }
+
+    func testExportMealItems_foodItem() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let plan = MealPlan(weekStartDate: sunday)
+        context.insert(plan)
+        let meal = MealPlanMeal(mealPlan: plan, date: sunday, mealType: .lunch)
+        context.insert(meal)
+        let food = FoodItem(name: "Chicken Breast", source: "test", nutritionMode: .per100g,
+                            calories: 165, protein: 31, carbs: 0, fat: 3.6)
+        context.insert(food)
+        let item = MealPlanMealItem(meal: meal)
+        item.foodItem = food
+        context.insert(item)
+        try context.save()
+
+        let csv = CSVExporter.exportMealItems([item])
+        let rows = CSVImporter.parseCSV(csv)
+
+        XCTAssertEqual(rows.count, 2)
+        let recipeIdx = rows[0].firstIndex(of: "recipeId")!
+        let foodIdx   = rows[0].firstIndex(of: "foodItemId")!
+        XCTAssertEqual(rows[1][recipeIdx], "")
+        XCTAssertEqual(rows[1][foodIdx],   food.id.uuidString)
+    }
+
+    func testExportMealItems_noteOnly() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let plan = MealPlan(weekStartDate: sunday)
+        context.insert(plan)
+        let meal = MealPlanMeal(mealPlan: plan, date: sunday, mealType: .dinner)
+        context.insert(meal)
+        let item = MealPlanMealItem(meal: meal)
+        item.note = "Taco night at Mario's"
+        context.insert(item)
+        try context.save()
+
+        let csv = CSVExporter.exportMealItems([item])
+        let rows = CSVImporter.parseCSV(csv)
+
+        XCTAssertEqual(rows.count, 2)
+        let recipeIdx = rows[0].firstIndex(of: "recipeId")!
+        let foodIdx   = rows[0].firstIndex(of: "foodItemId")!
+        let noteIdx   = rows[0].firstIndex(of: "note")!
+        XCTAssertEqual(rows[1][recipeIdx], "")
+        XCTAssertEqual(rows[1][foodIdx],   "")
+        XCTAssertEqual(rows[1][noteIdx],   "Taco night at Mario's")
+    }
+
+    func testExportMealItems_noteWithCommaIsRFC4180Quoted() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let plan = MealPlan(weekStartDate: sunday)
+        context.insert(plan)
+        let meal = MealPlanMeal(mealPlan: plan, date: sunday, mealType: .dinner)
+        context.insert(meal)
+        let item = MealPlanMealItem(meal: meal)
+        item.note = "Pasta, garlic bread"
+        context.insert(item)
+        try context.save()
+
+        let csv = CSVExporter.exportMealItems([item])
+        let lines = csv.components(separatedBy: "\n").filter { !$0.isEmpty }
+        XCTAssertEqual(lines.count, 2)
+        XCTAssertTrue(lines[1].contains("\"Pasta, garlic bread\""),
+                      "Note containing a comma must be RFC 4180 quoted in the data row")
+    }
+}
+
+// MARK: - T-12-RestoreUpdate: CSVImporter Meal Plan Tests
+
+@MainActor
+final class T12CSVImporterMealTests: XCTestCase {
+
+    private func makeContainer() throws -> ModelContainer {
+        let schema = Schema(BiteLedgerSchemaV5.models)
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        do {
+            return try ModelContainer(for: schema, configurations: [config])
+        } catch {
+            throw XCTSkip("SwiftData unavailable: \(error)")
+        }
+    }
+
+    // Minimal header-only CSVs required by importBiteLedger.
+    private let minFoods    = "id,name,nutritionMode,calories,protein,carbs,fat"
+    private let minServings = "id,foodId,label,gramWeight,isDefault,sortOrder,dateAdded,unit"
+    private let minLogs     = "id,foodId,servingId,timestamp,mealType,quantity,caloriesAtLogTime,proteinAtLogTime,carbsAtLogTime,fatAtLogTime"
+
+    private var sunday: Date {
+        var c = DateComponents()
+        c.year = 2026; c.month = 4; c.day = 5; c.hour = 0; c.minute = 0; c.second = 0
+        return Calendar.current.date(from: c)!
+    }
+
+    private func iso(_ date: Date) -> String { ISO8601DateFormatter().string(from: date) }
+
+    // MARK: - Meal Plan import
+
+    func testImportMealPlans_createsRecord() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let id = UUID()
+        let planCSV = "id,weekStartDate\n\(id.uuidString),\(iso(sunday))"
+
+        let result = try CSVImporter.importBiteLedger(
+            foodsCSV: minFoods, servingsCSV: minServings, logsCSV: minLogs,
+            mealPlansCSV: planCSV, context: context
+        )
+
+        let plans = try context.fetch(FetchDescriptor<MealPlan>())
+        XCTAssertEqual(plans.count, 1)
+        XCTAssertEqual(plans[0].id, id)
+        XCTAssertEqual(result.mealPlansCreated, 1)
+    }
+
+    func testImportMealPlans_mergeSkipsDuplicate() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let id = UUID()
+        let existing = MealPlan(weekStartDate: sunday)
+        existing.id = id
+        context.insert(existing)
+        try context.save()
+
+        let planCSV = "id,weekStartDate\n\(id.uuidString),\(iso(sunday))"
+        let result = try CSVImporter.importBiteLedger(
+            foodsCSV: minFoods, servingsCSV: minServings, logsCSV: minLogs,
+            mealPlansCSV: planCSV, skipExistingUUIDs: true, context: context
+        )
+
+        let plans = try context.fetch(FetchDescriptor<MealPlan>())
+        XCTAssertEqual(plans.count, 1, "Merge mode must not duplicate existing UUID")
+        XCTAssertEqual(result.mealPlansCreated, 0)
+    }
+
+    func testImportMealPlans_weekStartDateDedup() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let existingId = UUID()
+        let existing = MealPlan(weekStartDate: sunday)
+        existing.id = existingId
+        context.insert(existing)
+        try context.save()
+
+        // Import a row with a different UUID but same weekStartDate.
+        let newId = UUID()
+        let planCSV = "id,weekStartDate\n\(newId.uuidString),\(iso(sunday))"
+        let result = try CSVImporter.importBiteLedger(
+            foodsCSV: minFoods, servingsCSV: minServings, logsCSV: minLogs,
+            mealPlansCSV: planCSV, skipExistingUUIDs: true, context: context
+        )
+
+        let plans = try context.fetch(FetchDescriptor<MealPlan>())
+        XCTAssertEqual(plans.count, 1, "Secondary weekStartDate dedup must prevent duplicate week")
+        XCTAssertEqual(result.mealPlansCreated, 0, "No new plan created when week already exists")
+    }
+
+    // MARK: - MealPlanMeal import
+
+    func testImportMealMeals_linksToPlan() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let planId = UUID()
+        let mealId = UUID()
+        let planCSV = "id,weekStartDate\n\(planId.uuidString),\(iso(sunday))"
+        let mealCSV = "id,planId,date,mealType,name\n\(mealId.uuidString),\(planId.uuidString),\(iso(sunday)),Dinner,"
+
+        _ = try CSVImporter.importBiteLedger(
+            foodsCSV: minFoods, servingsCSV: minServings, logsCSV: minLogs,
+            mealPlansCSV: planCSV, mealMealsCSV: mealCSV, context: context
+        )
+
+        let meals = try context.fetch(FetchDescriptor<MealPlanMeal>())
+        XCTAssertEqual(meals.count, 1)
+        XCTAssertNotNil(meals[0].mealPlan)
+        XCTAssertEqual(meals[0].mealPlan?.id, planId)
+    }
+
+    func testImportMealMeals_invalidMealTypeSkipsRow() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let planId = UUID()
+        let mealId = UUID()
+        let planCSV = "id,weekStartDate\n\(planId.uuidString),\(iso(sunday))"
+        let mealCSV = "id,planId,date,mealType,name\n\(mealId.uuidString),\(planId.uuidString),\(iso(sunday)),InvalidType,"
+
+        let result = try CSVImporter.importBiteLedger(
+            foodsCSV: minFoods, servingsCSV: minServings, logsCSV: minLogs,
+            mealPlansCSV: planCSV, mealMealsCSV: mealCSV, context: context
+        )
+
+        let meals = try context.fetch(FetchDescriptor<MealPlanMeal>())
+        XCTAssertEqual(meals.count, 0)
+        XCTAssertFalse(result.errors.isEmpty, "Invalid mealType must produce an error entry")
+    }
+
+    func testImportMealMeals_missingPlanIdSkipsRow() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let unknownPlanId = UUID()
+        let mealId = UUID()
+        let planCSV = "id,weekStartDate"   // header only — no plans inserted
+        let mealCSV = "id,planId,date,mealType,name\n\(mealId.uuidString),\(unknownPlanId.uuidString),\(iso(sunday)),Dinner,"
+
+        let result = try CSVImporter.importBiteLedger(
+            foodsCSV: minFoods, servingsCSV: minServings, logsCSV: minLogs,
+            mealPlansCSV: planCSV, mealMealsCSV: mealCSV, context: context
+        )
+
+        let meals = try context.fetch(FetchDescriptor<MealPlanMeal>())
+        XCTAssertEqual(meals.count, 0)
+        XCTAssertFalse(result.errors.isEmpty, "Unknown planId must produce an error entry")
+    }
+
+    // MARK: - MealPlanMealItem import
+
+    func testImportMealItems_recipeLinked() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let recipe = Recipe(name: "Pasta Carbonara")
+        context.insert(recipe)
+        try context.save()
+
+        let planId = UUID(); let mealId = UUID(); let itemId = UUID()
+        let planCSV = "id,weekStartDate\n\(planId.uuidString),\(iso(sunday))"
+        let mealCSV = "id,planId,date,mealType,name\n\(mealId.uuidString),\(planId.uuidString),\(iso(sunday)),Dinner,"
+        let itemCSV = "id,mealId,recipeId,foodItemId,servingSizeId,note,servingCount\n" +
+                      "\(itemId.uuidString),\(mealId.uuidString),\(recipe.id.uuidString),,,,1"
+
+        // skipExistingUUIDs: true so existingRecipeMap is populated with the pre-inserted recipe.
+        _ = try CSVImporter.importBiteLedger(
+            foodsCSV: minFoods, servingsCSV: minServings, logsCSV: minLogs,
+            mealPlansCSV: planCSV, mealMealsCSV: mealCSV, mealItemsCSV: itemCSV,
+            skipExistingUUIDs: true, context: context
+        )
+
+        let items = try context.fetch(FetchDescriptor<MealPlanMealItem>())
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items[0].recipe?.id, recipe.id)
+        XCTAssertNil(items[0].foodItem)
+    }
+
+    func testImportMealItems_foodItemLinked() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let food = FoodItem(name: "Chicken Breast", source: "test", nutritionMode: .per100g,
+                            calories: 165, protein: 31, carbs: 0, fat: 3.6)
+        context.insert(food)
+        try context.save()
+
+        let planId = UUID(); let mealId = UUID(); let itemId = UUID()
+        let planCSV = "id,weekStartDate\n\(planId.uuidString),\(iso(sunday))"
+        let mealCSV = "id,planId,date,mealType,name\n\(mealId.uuidString),\(planId.uuidString),\(iso(sunday)),Lunch,"
+        let itemCSV = "id,mealId,recipeId,foodItemId,servingSizeId,note,servingCount\n" +
+                      "\(itemId.uuidString),\(mealId.uuidString),,\(food.id.uuidString),,,1"
+
+        // skipExistingUUIDs: true so existingFoodMap is populated with the pre-inserted food.
+        _ = try CSVImporter.importBiteLedger(
+            foodsCSV: minFoods, servingsCSV: minServings, logsCSV: minLogs,
+            mealPlansCSV: planCSV, mealMealsCSV: mealCSV, mealItemsCSV: itemCSV,
+            skipExistingUUIDs: true, context: context
+        )
+
+        let items = try context.fetch(FetchDescriptor<MealPlanMealItem>())
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items[0].foodItem?.id, food.id)
+        XCTAssertNil(items[0].recipe)
+    }
+
+    func testImportMealItems_noteOnlyItem() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let planId = UUID(); let mealId = UUID(); let itemId = UUID()
+        let planCSV = "id,weekStartDate\n\(planId.uuidString),\(iso(sunday))"
+        let mealCSV = "id,planId,date,mealType,name\n\(mealId.uuidString),\(planId.uuidString),\(iso(sunday)),Dinner,"
+        let itemCSV = "id,mealId,recipeId,foodItemId,servingSizeId,note,servingCount\n" +
+                      "\(itemId.uuidString),\(mealId.uuidString),,,,Sushi,1"
+
+        _ = try CSVImporter.importBiteLedger(
+            foodsCSV: minFoods, servingsCSV: minServings, logsCSV: minLogs,
+            mealPlansCSV: planCSV, mealMealsCSV: mealCSV, mealItemsCSV: itemCSV,
+            context: context
+        )
+
+        let items = try context.fetch(FetchDescriptor<MealPlanMealItem>())
+        XCTAssertEqual(items.count, 1)
+        XCTAssertTrue(items[0].isNoteOnly)
+        XCTAssertEqual(items[0].note, "Sushi")
+    }
+
+    func testImportMealItems_xorAllEmptySkipsRow() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let planId = UUID(); let mealId = UUID(); let itemId = UUID()
+        let planCSV = "id,weekStartDate\n\(planId.uuidString),\(iso(sunday))"
+        let mealCSV = "id,planId,date,mealType,name\n\(mealId.uuidString),\(planId.uuidString),\(iso(sunday)),Dinner,"
+        // recipeId, foodItemId, and note are all empty
+        let itemCSV = "id,mealId,recipeId,foodItemId,servingSizeId,note,servingCount\n" +
+                      "\(itemId.uuidString),\(mealId.uuidString),,,,, 1"
+
+        let result = try CSVImporter.importBiteLedger(
+            foodsCSV: minFoods, servingsCSV: minServings, logsCSV: minLogs,
+            mealPlansCSV: planCSV, mealMealsCSV: mealCSV, mealItemsCSV: itemCSV,
+            context: context
+        )
+
+        let items = try context.fetch(FetchDescriptor<MealPlanMealItem>())
+        XCTAssertEqual(items.count, 0, "Row with no recipe/food/note must be skipped")
+        XCTAssertFalse(result.errors.isEmpty, "XOR-empty row must produce an error entry")
+    }
+
+    func testImportMealItems_unknownMealIdSkipsRow() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let planId = UUID(); let unknownMealId = UUID(); let itemId = UUID()
+        let planCSV = "id,weekStartDate\n\(planId.uuidString),\(iso(sunday))"
+        let mealCSV = "id,planId,date,mealType,name"   // header only — no meals
+        let itemCSV = "id,mealId,recipeId,foodItemId,servingSizeId,note,servingCount\n" +
+                      "\(itemId.uuidString),\(unknownMealId.uuidString),,,,Sushi,1"
+
+        let result = try CSVImporter.importBiteLedger(
+            foodsCSV: minFoods, servingsCSV: minServings, logsCSV: minLogs,
+            mealPlansCSV: planCSV, mealMealsCSV: mealCSV, mealItemsCSV: itemCSV,
+            context: context
+        )
+
+        let items = try context.fetch(FetchDescriptor<MealPlanMealItem>())
+        XCTAssertEqual(items.count, 0, "Row with unknown mealId must be skipped")
+        XCTAssertFalse(result.errors.isEmpty, "Unknown mealId must produce an error entry")
+    }
+
+    // MARK: - Backward compat: missing meal CSVs imports cleanly
+
+    func testImportBiteLedger_withoutMealPlanCSVs_importsCleanly() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let result = try CSVImporter.importBiteLedger(
+            foodsCSV: minFoods, servingsCSV: minServings, logsCSV: minLogs,
+            context: context
+        )
+
+        XCTAssertEqual(result.mealPlansCreated, 0)
+        XCTAssertEqual(result.mealMealsCreated, 0)
+        XCTAssertEqual(result.mealItemsCreated, 0)
+        XCTAssertTrue(result.errors.isEmpty, "No errors expected when meal CSVs are absent")
+    }
+}
+
+// MARK: - T-12-RestoreUpdate: BackupManifest Tests
+
+final class T12BackupManifestTests: XCTestCase {
+
+    func testStats_decodesOldBackupWithoutMealPlansKey() throws {
+        let json = #"{"foods":5,"logs":10,"recipes":2}"#
+        let data = Data(json.utf8)
+        let decoder = JSONDecoder()
+        let stats = try decoder.decode(BackupManifest.Stats.self, from: data)
+        XCTAssertEqual(stats.foods, 5)
+        XCTAssertEqual(stats.logs, 10)
+        XCTAssertEqual(stats.recipes, 2)
+        XCTAssertNil(stats.mealPlans,
+                     "mealPlans must decode as nil when key is absent (backward compat with pre-SchemaV5 backups)")
+    }
+}
+
+// MARK: - T-12-RestoreUpdate: BackupService Integration Tests
+
+@MainActor
+final class T12BackupServiceIntegrationTests: XCTestCase {
+
+    private func makeContainer() throws -> ModelContainer {
+        let schema = Schema(BiteLedgerSchemaV5.models)
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        do {
+            return try ModelContainer(for: schema, configurations: [config])
+        } catch {
+            throw XCTSkip("SwiftData unavailable: \(error)")
+        }
+    }
+
+    private var sunday: Date {
+        var c = DateComponents()
+        c.year = 2026; c.month = 4; c.day = 5; c.hour = 0; c.minute = 0; c.second = 0
+        return Calendar.current.date(from: c)!
+    }
+
+    /// Seeds the minimum data needed: 1 food (satisfies exporter), plus 1 MealPlan /
+    /// 1 MealPlanMeal / 1 MealPlanMealItem so the meal plan round-trip tests have
+    /// something to verify.
+    @discardableResult
+    private func seedMealPlanData(in context: ModelContext) throws -> (plan: MealPlan, meal: MealPlanMeal, item: MealPlanMealItem) {
+        let food = FoodItem(name: "Seed Food", source: "test", nutritionMode: .per100g,
+                            calories: 100, protein: 10, carbs: 20, fat: 5)
+        context.insert(food)
+
+        let plan = MealPlan(weekStartDate: sunday)
+        context.insert(plan)
+
+        let meal = MealPlanMeal(mealPlan: plan, date: sunday, mealType: .dinner)
+        meal.name = "Test Dinner"
+        context.insert(meal)
+
+        let item = MealPlanMealItem(meal: meal)
+        item.note = "Sushi night"
+        context.insert(item)
+
+        try context.save()
+        return (plan, meal, item)
+    }
+
+    // Verify meal plan CSV files are included in the backup by doing a full round-trip.
+    // If meal_plans.csv were absent from the ZIP, mealPlansImported would be 0.
+    func testCreateBackup_containsMealPlanCSVFiles_verifiedViaRoundTrip() async throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        try seedMealPlanData(in: context)
+
+        let zipURL = try await BackupService.createBackup(context: context)
+        defer { try? FileManager.default.removeItem(at: zipURL) }
+
+        await BackupService.resetDatabase(scope: .everything, context: context)
+        let result = try await BackupService.restoreBackup(
+            from: zipURL, conflictMode: .replaceAll, context: context
+        )
+
+        XCTAssertEqual(result.mealPlansImported, 1, "meal_plans.csv must be present and contain 1 plan")
+        XCTAssertEqual(result.mealMealsImported, 1)
+        XCTAssertEqual(result.mealItemsImported, 1)
+        let plans = try context.fetch(FetchDescriptor<MealPlan>())
+        XCTAssertEqual(plans.count, 1)
+    }
+
+    func testRestoreBackup_merge_skipsExistingUUIDs() async throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let (plan, _, _) = try seedMealPlanData(in: context)
+        let originalPlanId = plan.id
+
+        let zipURL = try await BackupService.createBackup(context: context)
+        defer { try? FileManager.default.removeItem(at: zipURL) }
+
+        // Add a second plan to the live store (should survive after merge).
+        let nextSunday = Calendar.current.date(byAdding: .day, value: 7, to: sunday)!
+        let extraPlan = MealPlan(weekStartDate: nextSunday)
+        context.insert(extraPlan)
+        try context.save()
+        let extraPlanId = extraPlan.id
+
+        // Merge — original UUID already exists, must not be duplicated.
+        let result = try await BackupService.restoreBackup(
+            from: zipURL, conflictMode: .merge, context: context
+        )
+
+        XCTAssertEqual(result.mealPlansImported, 0, "Existing UUID must be skipped in merge mode")
+        let plans = try context.fetch(FetchDescriptor<MealPlan>())
+        XCTAssertEqual(plans.count, 2, "Extra plan must survive merge")
+        XCTAssertTrue(plans.contains { $0.id == originalPlanId })
+        XCTAssertTrue(plans.contains { $0.id == extraPlanId })
+    }
+
+    func testRoundTrip_exportRestoreProducesIdenticalData() async throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let (plan, meal, item) = try seedMealPlanData(in: context)
+
+        let originalPlanId  = plan.id
+        let originalMealId  = meal.id
+        let originalMealName = meal.name
+        let originalItemId  = item.id
+        let originalNote    = item.note
+
+        let zipURL = try await BackupService.createBackup(context: context)
+        defer { try? FileManager.default.removeItem(at: zipURL) }
+
+        await BackupService.resetDatabase(scope: .everything, context: context)
+        _ = try await BackupService.restoreBackup(
+            from: zipURL, conflictMode: .replaceAll, context: context
+        )
+
+        let plans = try context.fetch(FetchDescriptor<MealPlan>())
+        XCTAssertEqual(plans.count, 1)
+        XCTAssertEqual(plans[0].id, originalPlanId, "Plan UUID must survive round-trip")
+
+        let meals = try context.fetch(FetchDescriptor<MealPlanMeal>())
+        XCTAssertEqual(meals.count, 1)
+        XCTAssertEqual(meals[0].id,   originalMealId)
+        XCTAssertEqual(meals[0].name, originalMealName)
+
+        let items = try context.fetch(FetchDescriptor<MealPlanMealItem>())
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items[0].id,   originalItemId)
+        XCTAssertEqual(items[0].note, originalNote)
+    }
+}
