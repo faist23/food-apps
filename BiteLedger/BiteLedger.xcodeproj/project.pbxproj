@@ -646,10 +646,12 @@
 /* Begin XCSwiftPackageProductDependency section */
 		7E305D402F6641BA00319CAC /* BiteLedgerCore */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = 7E305DF02F6654E700319CAC /* XCLocalSwiftPackageReference "../BiteLedgerCore" */;
 			productName = BiteLedgerCore;
 		};
 		7E305DF12F6654E700319CAC /* BiteLedgerCore */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = 7E305DF02F6654E700319CAC /* XCLocalSwiftPackageReference "../BiteLedgerCore" */;
 			productName = BiteLedgerCore;
 		};
 /* End XCSwiftPackageProductDependency section */

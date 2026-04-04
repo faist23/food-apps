@@ -71,17 +71,6 @@ struct SettingsView: View {
                 
                 Section {
                     NavigationLink {
-                        MyRecipesView()
-                    } label: {
-                        HStack {
-                            Image(systemName: "fork.knife.circle")
-                                .foregroundStyle(.purple)
-                            Text("My Recipes")
-                                .foregroundStyle(.primary)
-                        }
-                    }
-
-                    NavigationLink {
                         MyFoodsManagementView()
                     } label: {
                         HStack {

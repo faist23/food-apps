@@ -1,13 +1,5 @@
-//
-//  RecipeIngredientPickerView.swift
-//  BiteLedger
-//
-//  Created by Craig Faist on 2/16/26.
-//
-
 import SwiftUI
 import SwiftData
-import BiteLedgerCore
 
 // MARK: - RecipeIngredientPickerView
 
@@ -22,7 +14,7 @@ import BiteLedgerCore
 ///
 /// Calls `onAdd(food, serving, quantity)` when the user confirms.
 @MainActor
-struct RecipeIngredientPickerView: View {
+public struct RecipeIngredientPickerView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
 
@@ -30,12 +22,11 @@ struct RecipeIngredientPickerView: View {
     let initialQuantity: Double
     let onAdd: (FoodItem, ServingSize, Double) -> Void
 
-    init(initialSearch: String = "", initialQuantity: Double = 1.0,
-         onAdd: @escaping (FoodItem, ServingSize, Double) -> Void) {
+    public init(initialSearch: String = "", initialQuantity: Double = 1.0,
+                onAdd: @escaping (FoodItem, ServingSize, Double) -> Void) {
         self.initialSearch   = initialSearch
         self.initialQuantity = initialQuantity
         self.onAdd           = onAdd
-        // Pre-populate so the search bar shows the text immediately on appearance
         _searchText = State(initialValue: initialSearch)
     }
 
@@ -54,7 +45,7 @@ struct RecipeIngredientPickerView: View {
 
     // MARK: - Body
 
-    var body: some View {
+    public var body: some View {
         NavigationStack {
             foodSearchPage
                 .navigationTitle("Add Ingredient")
@@ -139,7 +130,6 @@ struct RecipeIngredientPickerView: View {
             }
         }
         .listStyle(.plain)
-        // Empty state — no search text, no saved foods
         .overlay {
             if searchText.isEmpty && allFoods.isEmpty {
                 ContentUnavailableView {
@@ -250,7 +240,6 @@ struct RecipeIngredientPickerView: View {
         isSavingOnline = true
         defer { isSavingOnline = false }
 
-        // Reuse existing FoodItem if already saved
         let code = product.code
         if let existing = (try? modelContext.fetch(
             FetchDescriptor<FoodItem>(predicate: #Predicate { $0.barcode == code })
@@ -260,7 +249,6 @@ struct RecipeIngredientPickerView: View {
             return
         }
 
-        // Fetch full details then create
         let detailed: ProductInfo
         do { detailed = try await UnifiedFoodSearchService.shared.getProductDetails(code: code) }
         catch { detailed = product }
@@ -269,14 +257,13 @@ struct RecipeIngredientPickerView: View {
         showOnlineServingPage = true
     }
 
-    // MARK: - FoodItem Factory (mirrors MatchFoodPickerSheet.makeFoodItem)
+    // MARK: - FoodItem Factory
 
     private func makeFoodItem(from product: ProductInfo) -> FoodItem {
         let n           = product.nutriments
         let isFatSecret = product.code.hasPrefix("fatsecret_")
         let isUSDA      = product.code.hasPrefix("usda_")
 
-        // Serving
         let servingLabel: String
         let servingGrams: Double?
 
@@ -301,7 +288,6 @@ struct RecipeIngredientPickerView: View {
             servingGrams = nil
         }
 
-        // Macros
         let calories: Double; let protein: Double; let carbs: Double; let fat: Double
         if isFatSecret {
             calories = n?.energyKcalServing?.value ?? 0
@@ -322,7 +308,6 @@ struct RecipeIngredientPickerView: View {
             fat      = n?.fatServing?.value           ?? 0
         }
 
-        // Micronutrient helpers
         func gramMicro(_ per100g: FlexibleDouble?, perServing: FlexibleDouble?) -> Double? {
             if isFatSecret { return perServing?.value }
             if let g = servingGrams, let v = per100g?.value { return v * g / 100.0 }
@@ -345,7 +330,6 @@ struct RecipeIngredientPickerView: View {
             saturatedFat: gramMicro(n?.saturatedFat100g, perServing: n?.saturatedFatServing),
             sodium:       sodiumMg()
         )
-        // Normalize to per-100g. servingGrams nil → 100g nominal (factor = 1.0).
         let effectiveGrams = servingGrams ?? 100.0
         food.normalizeToPerHundredGrams(gramWeightPerServing: servingGrams)
         modelContext.insert(food)
@@ -458,7 +442,7 @@ private struct IngredientServingPage: View {
                     Button { adjustQuantity(by: -0.5) } label: {
                         Image(systemName: "minus.circle.fill")
                             .font(.title2)
-                            .foregroundStyle(quantity > 0.5 ? Color("BrandAccent") : .gray)
+                            .foregroundStyle(quantity > 0.5 ? Color.brandAccent : .gray)
                     }
                     .buttonStyle(.plain).disabled(quantity <= 0.5)
 
@@ -477,7 +461,7 @@ private struct IngredientServingPage: View {
 
                     Button { adjustQuantity(by: 0.5) } label: {
                         Image(systemName: "plus.circle.fill")
-                            .font(.title2).foregroundStyle(Color("BrandAccent"))
+                            .font(.title2).foregroundStyle(Color.brandAccent)
                     }
                     .buttonStyle(.plain)
                 }
@@ -517,23 +501,20 @@ private struct IngredientServingPage: View {
     private var nutritionLabel: some View {
         ElevatedCard(padding: 0, cornerRadius: 20) {
             VStack(alignment: .leading, spacing: 0) {
-                // Header
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Nutrition Facts")
                         .font(.system(size: 28, weight: .black))
-                        .foregroundStyle(Color("TextPrimary"))
-                    Rectangle().fill(Color("TextPrimary")).frame(height: 8)
+                        .foregroundStyle(Color.textPrimary)
+                    Rectangle().fill(Color.textPrimary).frame(height: 8)
                 }
                 .padding(.horizontal, 16).padding(.top, 16)
 
                 VStack(spacing: 0) {
-                    // Amount per serving
                     Text("Amount per serving")
                         .font(.system(size: 11, weight: .semibold))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 8)
 
-                    // Calories — extra large
                     HStack(alignment: .firstTextBaseline) {
                         Text("Calories").font(.system(size: 28, weight: .black))
                         Spacer()
@@ -541,9 +522,8 @@ private struct IngredientServingPage: View {
                     }
                     .padding(.vertical, 4)
 
-                    Rectangle().fill(Color("TextPrimary")).frame(height: 6).padding(.vertical, 4)
+                    Rectangle().fill(Color.textPrimary).frame(height: 6).padding(.vertical, 4)
 
-                    // % DV header
                     HStack {
                         Spacer()
                         Text("% Daily Value*").font(.system(size: 12, weight: .bold))
@@ -573,33 +553,31 @@ private struct IngredientServingPage: View {
                     thinLine()
                     labelRow("Protein",           preview.protein,            "g",  bold: true,  dv: 50)
 
-                    // Vitamins / minerals (only if present)
                     let hasVitMins = [preview.vitaminD, preview.calcium, preview.iron, preview.potassium]
                         .contains { $0 != nil && $0! > 0 }
                     if hasVitMins {
-                        Rectangle().fill(Color("TextPrimary")).frame(height: 8).padding(.vertical, 4)
+                        Rectangle().fill(Color.textPrimary).frame(height: 8).padding(.vertical, 4)
                         if let v = preview.vitaminD,  v > 0 { labelRow("Vitamin D",  v, "mcg", bold: false, dv: 20);    thinLine() }
                         if let v = preview.calcium,   v > 0 { labelRow("Calcium",    v, "mg",  bold: false, dv: 1300);  thinLine() }
                         if let v = preview.iron,      v > 0 { labelRow("Iron",       v, "mg",  bold: false, dv: 18);    thinLine() }
                         if let v = preview.potassium, v > 0 { labelRow("Potassium",  v, "mg",  bold: false, dv: 4700) }
                     }
 
-                    // Footnote
-                    Rectangle().fill(Color("TextPrimary")).frame(height: 4).padding(.top, 4)
+                    Rectangle().fill(Color.textPrimary).frame(height: 4).padding(.top, 4)
                     Text("* The % Daily Value tells you how much a nutrient in a serving of food contributes to a daily diet. 2,000 calories a day is used for general nutrition advice.")
                         .font(.system(size: 9))
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                         .padding(.top, 6)
                 }
                 .padding(.horizontal, 16).padding(.bottom, 16)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, -16) // bleed to section edges
+        .padding(.horizontal, -16)
     }
 
     private func thinLine() -> some View {
-        Rectangle().fill(Color("TextPrimary")).frame(height: 1)
+        Rectangle().fill(Color.textPrimary).frame(height: 1)
     }
 
     private func labelRow(_ label: String, _ value: Double, _ unit: String,
@@ -616,7 +594,7 @@ private struct IngredientServingPage: View {
             if let dv, dv > 0 {
                 Text("\(max(0, Int((value / dv * 100).rounded())))%")
                     .font(.system(size: 13, weight: .light))
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
                     .frame(width: 46, alignment: .trailing)
             } else {
                 Text("").frame(width: 46)

@@ -1,20 +1,12 @@
-//
-//  ElevatedCard.swift
-//  BiteLedger
-//
-//  Created by Craig Faist on 2/19/26.
-//
-
 import SwiftUI
-import BiteLedgerCore
 
-struct ElevatedCard<Content: View>: View {
+public struct ElevatedCard<Content: View>: View {
 
     var padding: CGFloat = 20
     var cornerRadius: CGFloat = 24
     var content: () -> Content
 
-    init(
+    public init(
         padding: CGFloat = 20,
         cornerRadius: CGFloat = 24,
         @ViewBuilder content: @escaping () -> Content
@@ -24,16 +16,16 @@ struct ElevatedCard<Content: View>: View {
         self.content = content
     }
 
-    var body: some View {
+    public var body: some View {
         content()
             .padding(padding)
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Color("SurfaceCard"))
+                    .fill(Color.surfaceCard)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(Color("DividerSubtle"), lineWidth: 1)
+                    .stroke(Color.dividerSubtle, lineWidth: 1)
             )
             .shadow(
                 color: .black.opacity(0.35),

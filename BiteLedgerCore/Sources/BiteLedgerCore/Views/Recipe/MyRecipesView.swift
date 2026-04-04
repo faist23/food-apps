@@ -1,15 +1,7 @@
-//
-//  MyRecipesView.swift
-//  BiteLedger
-//
-//  Created by Craig Faist on 2/16/26.
-//
-
 import SwiftUI
 import SwiftData
-import BiteLedgerCore
 
-struct MyRecipesView: View {
+public struct MyRecipesView: View {
     @Environment(\.modelContext) private var modelContext
 
     @State private var searchText = ""
@@ -27,6 +19,8 @@ struct MyRecipesView: View {
         case dateAdded = "Date Added"
         case lastUsed  = "Last Used"
     }
+
+    public init() {}
 
     // MARK: - Load
 
@@ -68,14 +62,14 @@ struct MyRecipesView: View {
 
             displayedRecipes = all
         } catch {
-            print("Error loading recipes: \(error)")
+            print("MyRecipesView: Error loading recipes: \(error)")
             displayedRecipes = []
         }
     }
 
     // MARK: - Body
 
-    var body: some View {
+    public var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 if displayedRecipes.isEmpty {
@@ -279,7 +273,6 @@ struct MyRecipesView: View {
             modelContext.insert(ingredientCopy)
         }
 
-        // Copy the associated FoodItem so the duplicate can be logged immediately
         if let original = recipe.foodItem {
             let foodCopy = FoodItem(
                 name: copy.name,
@@ -313,8 +306,6 @@ struct MyRecipesView: View {
                 choline: original.choline,
                 caffeine: original.caffeine
             )
-            // The original recipe FoodItem is already per-100g (normalized at creation).
-            // The copy preserves the same nutrition values and mode.
             let serving = ServingSize(
                 label: "1 serving",
                 gramWeight: original.defaultServing?.gramWeight ?? 100.0,

@@ -1305,3 +1305,95 @@ final class T12BackupServiceIntegrationTests: XCTestCase {
         XCTAssertEqual(items[0].note, originalNote)
     }
 }
+
+// MARK: - PendingIngredient Save Round-Trip (T-10)
+
+final class PendingIngredientTests: XCTestCase {
+
+    /// Verifies that RecipeEditorView.PendingIngredient captures food + serving +
+    /// quantity faithfully and that the data survives a SwiftData round-trip when
+    /// written to RecipeIngredient.
+    func testPendingIngredient_roundTrip_preservesAllFields() throws {
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(
+            for: FoodItem.self, ServingSize.self, Recipe.self, RecipeIngredient.self,
+            configurations: config
+        )
+        let context = ModelContext(container)
+
+        // Build a minimal per-serving food with one serving size.
+        let food = FoodItem(
+            name: "Peanut Butter",
+            source: "test",
+            nutritionMode: .perServing,
+            calories: 190, protein: 7, carbs: 6, fat: 16
+        )
+        let serving = ServingSize(
+            label: "2 tbsp",
+            gramWeight: 32,
+            isDefault: true,
+            sortOrder: 0,
+            unit: "tbsp"
+        )
+        serving.foodItem = food
+        context.insert(food)
+        context.insert(serving)
+
+        // Build a PendingIngredient (the working-copy type in RecipeEditorView).
+        var pending = RecipeEditorView.PendingIngredient(
+            food: food, serving: serving, quantity: 2.5
+        )
+        pending.rawText        = "2.5 tbsp peanut butter"
+        pending.recipeQuantity = 2.5
+        pending.recipeUnit     = "tbsp"
+
+        // Verify the PendingIngredient fields are captured correctly.
+        XCTAssertEqual(pending.food.name,    "Peanut Butter")
+        XCTAssertEqual(pending.serving.label, "2 tbsp")
+        XCTAssertEqual(pending.quantity,      2.5, accuracy: 0.001)
+        XCTAssertEqual(pending.rawText,       "2.5 tbsp peanut butter")
+        XCTAssertEqual(pending.recipeQuantity, 2.5, accuracy: 0.001)
+        XCTAssertEqual(pending.recipeUnit,    "tbsp")
+
+        // Write through to RecipeIngredient (mirrors RecipeEditorView.saveChanges()).
+        let recipe = Recipe(name: "Test Recipe", servingsYield: 4, sourceURL: nil, directions: [])
+        context.insert(recipe)
+
+        let ingredient = RecipeIngredient(quantity: pending.quantity, sortOrder: 0)
+        ingredient.foodItem       = pending.food
+        ingredient.servingSize    = pending.serving
+        ingredient.rawText        = pending.rawText
+        ingredient.recipeQuantity = pending.recipeQuantity
+        ingredient.recipeUnit     = pending.recipeUnit
+        ingredient.recipe         = recipe
+        context.insert(ingredient)
+        try context.save()
+
+        // Fetch back and verify all fields survived the round-trip.
+        let fetched = try context.fetch(FetchDescriptor<RecipeIngredient>())
+        XCTAssertEqual(fetched.count, 1)
+        let ri = fetched[0]
+        XCTAssertEqual(ri.quantity,      2.5, accuracy: 0.001)
+        XCTAssertEqual(ri.foodItem?.name, "Peanut Butter")
+        XCTAssertEqual(ri.servingSize?.label, "2 tbsp")
+        XCTAssertEqual(ri.rawText,        "2.5 tbsp peanut butter")
+        XCTAssertEqual(ri.recipeQuantity, 2.5, accuracy: 0.001)
+        XCTAssertEqual(ri.recipeUnit,     "tbsp")
+    }
+
+    /// Verifies that PendingIngredient.id is unique for each instance (Identifiable conformance).
+    func testPendingIngredient_ids_areUnique() throws {
+        let food = FoodItem(
+            name: "Apple", source: "test", nutritionMode: .per100g,
+            calories: 52, protein: 0.3, carbs: 14, fat: 0.2
+        )
+        let serving = ServingSize(
+            label: "1 medium", gramWeight: 182, isDefault: true, sortOrder: 0, unit: nil
+        )
+        serving.foodItem = food
+
+        let p1 = RecipeEditorView.PendingIngredient(food: food, serving: serving, quantity: 1.0)
+        let p2 = RecipeEditorView.PendingIngredient(food: food, serving: serving, quantity: 1.0)
+        XCTAssertNotEqual(p1.id, p2.id, "Each PendingIngredient must have a distinct UUID")
+    }
+}

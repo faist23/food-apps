@@ -92,7 +92,7 @@ public enum RecipeImportError: Error, LocalizedError {
 
 // MARK: - Service
 
-public struct RecipeImportService {
+public struct RecipeImportService: Sendable {
 
     private let apiKey: String?
     private let model    = "claude-haiku-4-5-20251001"
