@@ -3,7 +3,7 @@
 Two standalone iOS apps sharing a common data layer:
 
 - **BiteLedger** (`BiteLedger/`) — privacy-first food & nutrition tracker
-- **RecipeCard** (`RecipeCard/`) — recipe manager and importer
+- **BitePlan** (`BitePlan/`) — recipe manager and importer
 - **BiteLedgerCore** (`BiteLedgerCore/`) — shared Swift package (models, services, calculators)
 
 Platform: iOS 26.0+, Swift 6.0, SwiftUI + SwiftData, Xcode 16.3.
@@ -21,7 +21,7 @@ that applies to both.
 - **App Group ID:** `group.com.ridepro.biteledger`
 - **Store file:** `biteledger.store`
 
-Both `BiteLedgerApp.swift` and `RecipeCardApp.swift` open the same physical store.
+Both `BiteLedgerApp.swift` and `BitePlanApp.swift` open the same physical store.
 The `Schema([...])` list in both files **must always be identical and in the same
 order**. If one app registers a model the other does not, the shared store will
 fail to open on whichever app launches second.
@@ -66,18 +66,18 @@ fail to open on whichever app launches second.
 
 **Schema version roadmap:**
 - **SchemaV1** — shipping baseline (9 models)
-- **SchemaV2** — `FoodHistoryEntry` added (shipped feature/v1-ship); lightweight migration from V1. RecipeCard registers it but never queries it.
+- **SchemaV2** — `FoodHistoryEntry` added (shipped feature/v1-ship); lightweight migration from V1. BitePlan registers it but never queries it.
 - **SchemaV3** — `MealPlan` + `MealPlanEntry` added (shipped feature/v1-ship); lightweight migration from V2.
 - **SchemaV4** — `MealPlanMeal` + `MealPlanMealItem` added (shipped feature/v1-ship 2026-03-30); lightweight migration from V3. 14 models total.
 - **SchemaV5** (planned) — T-09 HealthKit (`healthKitEnabled` flag in UserPreferences) and T-10 Recipe Creation in BiteLedger. Both require a coordinated 2-app release.
 
 **Current state:** both apps use `VersionedSchema` + `SchemaMigrationPlan`
-(`BiteLedgerMigrationPlan` / `RecipeCardMigrationPlan`), wired into
+(`BiteLedgerMigrationPlan` / `BitePlanMigrationPlan`), wired into
 `ModelContainer` via the `migrationPlan:` parameter. SchemaV2 (FoodHistoryEntry) is
 the current baseline. Data is never deleted on mismatch — an error screen + Retry is
 shown instead.
 
-**Migration plan status:** `BiteLedgerMigrationPlan` / `RecipeCardMigrationPlan` are
+**Migration plan status:** `BiteLedgerMigrationPlan` / `BitePlanMigrationPlan` are
 defined but **NOT passed to `ModelContainer`**. SwiftData auto-migrates lightweight
 changes (new entity, new nullable fields) without an explicit plan. Passing the plan
 causes "Duplicate version checksums detected" because SwiftData generates identical
@@ -88,7 +88,7 @@ fingerprint identically).
 **Required for all future schema changes:**
 - **Lightweight changes** (nullable field additions, new entity, removing properties):
   define a new `BiteLedgerSchemaVN` enum with the new model types. The migration plan
-  is NOT wired in — SwiftData handles these automatically. Mirror in `RecipeCardSchema.swift`.
+  is NOT wired in — SwiftData handles these automatically. Mirror in `BitePlanSchema.swift`.
 - **Breaking changes** (rename, type change, required field with non-nil default):
   define FROZEN nested `@Model` types inside the old schema enum so SwiftData sees
   distinct fingerprints; use `MigrationStage.custom` with a data transform; re-introduce

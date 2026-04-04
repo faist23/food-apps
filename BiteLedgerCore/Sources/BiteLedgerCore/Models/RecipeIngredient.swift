@@ -29,7 +29,7 @@ public final class RecipeIngredient {
 
     /// The ingredient quantity in original recipe units (e.g., 1.5 for "1.5 lbs chicken").
     /// nil for ingredients added manually via the serving picker.
-    /// Pair with `recipeUnit` for display and scaling in RecipeCard.
+    /// Pair with `recipeUnit` for display and scaling in BitePlan.
     public var recipeQuantity: Double? = nil
 
     /// The original recipe unit string, normalised (e.g., "lb", "cup", "tbsp").

@@ -6,8 +6,8 @@
 //  One MealPlan per calendar week, anchored to Sunday midnight (user's local timezone).
 //
 //  SchemaV3 — coordinates with MealPlanEntry.
-//  Both BiteLedger and RecipeCard must register this model in their schema arrays
-//  even though only RecipeCard queries it.
+//  Both BiteLedger and BitePlan must register this model in their schema arrays
+//  even though only BitePlan queries it.
 //
 
 import SwiftData

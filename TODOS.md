@@ -21,11 +21,11 @@ This app is for **reluctant loggers, not nutrition optimizers.**
 
 ### Three User Segments (Architectural Constraint)
 1. **BiteLedger-only** — track food, no recipe management
-2. **RecipeCard-only** — manage/cook recipes, no food diary
-3. **Both apps** — power user who logs recipes from RecipeCard into BiteLedger
+2. **BitePlan-only** — manage/cook recipes, no food diary
+3. **Both apps** — power user who logs recipes from BitePlan into BiteLedger
 
 Future implication: BiteLedger needs manual + URL recipe creation for segment 1.
-RecipeCard's differentiators: URL import, OCR, cooking mode, shopping list.
+BitePlan's differentiators: URL import, OCR, cooking mode, shopping list.
 
 ### iPad Strategy (from /plan-ceo-review 2026-03-20)
 **Adaptive layout, not exclusive.** Meal planning and pantry use `horizontalSizeClass` to adapt:
@@ -81,7 +81,7 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 ### T-MP2: Meal Planner — iPad Adaptive Layout
 **What:** Use `horizontalSizeClass` to switch between the current list view (`.compact`) and a week grid view with drag-and-drop (`.regular`). Per the iPad strategy in TODOS.md: same SwiftData models, same download, different layout.
 **Why:** The 7-day collapsible list works on iPhone. On iPad it looks sparse and wastes the available width. A week-at-a-glance grid is the natural iPad pattern for a meal planner.
-**Pros:** RecipeCard gains an iPad-first feature with zero model changes. Drag-and-drop between days is a natural next step after the grid ships.
+**Pros:** BitePlan gains an iPad-first feature with zero model changes. Drag-and-drop between days is a natural next step after the grid ships.
 **Cons:** Full grid with drag-and-drop is a non-trivial implementation. The list view on iPad is acceptable for v1.
 **Context:** Deferred from /plan-design-review on 2026-03-30. The iPad strategy was set in /plan-ceo-review (2026-03-20): .compact = list, .regular = grid. This is the execution of that strategy for the Meal Planner specifically.
 **Effort:** L (human: ~1 week / CC: ~1 hour) | **Priority:** P3 | **Depends on:** Meal Planner shipped
@@ -108,7 +108,7 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ---
 
-### T-16: RecipeCard — Auto-total time unit tests
+### T-16: BitePlan — Auto-total time unit tests
 **What:** Unit tests for the `onChange` condition that auto-fills Total time from Prep + Cook in RecipeEditorView and RecipeImportReviewView.
 **Why:** The guard "only auto-update total if total == prev sum OR total is nil" is the only non-trivial logic in the metadata PR. Without tests, a future refactor could silently break the "don't override user's manual total" invariant.
 **Pros:** Protects a subtle invariant that is easy to break silently.
@@ -152,16 +152,16 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 ---
 
 ### T-10: Recipe Creation in BiteLedger (Manual + URL)
-**What:** Allow BiteLedger-only users to create recipes — both manual and URL import. No OCR, no photos (RecipeCard differentiators).
-**Effort:** L | **Priority:** P3 | **Depends on:** Stable RecipeCard recipe model + SchemaV3
+**What:** Allow BiteLedger-only users to create recipes — both manual and URL import. No OCR, no photos (BitePlan differentiators).
+**Effort:** L | **Priority:** P3 | **Depends on:** Stable BitePlan recipe model + SchemaV3
 
 ---
 
 ### T-11: Log to BiteLedger (v1.2 — Feature 4 only)
-**What:** Allow RecipeCard users to log a recipe directly into BiteLedger's food diary from RecipeDetailView.
+**What:** Allow BitePlan users to log a recipe directly into BiteLedger's food diary from RecipeDetailView.
 - Build RecipeServingSheet (meal type + quantity picker)
 - BiteLedger declares `biteledger://` URL scheme in Info.plist
-- RecipeCard adds `biteledger` to LSApplicationQueriesSchemes
+- BitePlan adds `biteledger` to LSApplicationQueriesSchemes
 - RecipeDetailView shows "Log to BiteLedger" button when `UIApplication.canOpenURL(biteledger://)` returns true
 - `FoodLog.create(food: recipe.foodItem, serving: nil, quantity: selectedQty)` writes to shared store
 **Effort:** M | **Priority:** P1 (v1.2) | **Depends on:** v1.1 shipped (done)
@@ -169,7 +169,7 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 ---
 
 ### T-12: Meal Planning (iPhone-first v1) ✓ SHIPPED 2026-03-29
-**What:** 7-day collapsible list planner in RecipeCard. History fast-path chips (from past MealPlanEntry records, first-use fallback: all Recipes) + full API search via MealPickerSearchView. Per-day nutrition preview (4 pills: Cal/P/C/F). "Generate Shopping List" with confirmation + dedup. "Log Day" button per day. "Copy to next week" (week header). Variety nudge (SF Symbol when same Recipe in Dinner slot 3+ times in week).
+**What:** 7-day collapsible list planner in BitePlan. History fast-path chips (from past MealPlanEntry records, first-use fallback: all Recipes) + full API search via MealPickerSearchView. Per-day nutrition preview (4 pills: Cal/P/C/F). "Generate Shopping List" with confirmation + dedup. "Log Day" button per day. "Copy to next week" (week header). Variety nudge (SF Symbol when same Recipe in Dinner slot 3+ times in week).
 **Context:** SchemaV3 required — adds `MealPlan` + `MealPlanEntry` (12 models total). Lightweight migration — do NOT wire `migrationPlan:` into ModelContainer. Coordinated release with BiteLedger (both apps must register all 12 models). iPad calendar grid with drag-and-drop is deferred (see T-12-iPad below). CEO plan + design doc: `~/.gstack/projects/faist23-food-apps/ceo-plans/2026-03-29-meal-planning.md`
 **Note:** Superseded by T-12-v2 (cluster model). The skeleton was real work; v2 replaces the single-item model.
 **Effort:** L (human: ~1.5 weeks / CC: ~1.5 hours) | **Priority:** P1 | **Depends on:** T-11 ✓, T-14/SchemaV2 ✓
@@ -241,7 +241,7 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ### T-12-ShoppingCart: ShoppingCart SwiftData Persistence
 **What:** Migrate ShoppingCart from UserDefaults to SwiftData so the cart persists across app restarts and could eventually sync across devices.
-**Context:** ShoppingCart is currently UserDefaults-backed (`RecipeCard/RecipeCard/ShoppingCart.swift`). Works for v1. Deferred from T-12 per CEO review 2026-03-29.
+**Context:** ShoppingCart is currently UserDefaults-backed (`BitePlan/BitePlan/ShoppingCart.swift`). Works for v1. Deferred from T-12 per CEO review 2026-03-29.
 **Effort:** S (human: ~1 day / CC: ~15 min) | **Priority:** P3 | **Depends on:** T-12
 
 ---
@@ -255,7 +255,7 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ---
 
-### ~~D-9: RecipeCard Toolbar Consolidation~~ — COMPLETED feature/v1-ship (2026-03-31)
+### ~~D-9: BitePlan Toolbar Consolidation~~ — COMPLETED feature/v1-ship (2026-03-31)
 **Shipped:** `RecipesListView` toolbar consolidated to gear (Settings, leading) + `+` Menu (Import from URL / Scan Recipe Card / Create Manually, trailing). Compliant with DESIGN.md max-2-leading-items rule. Grid cells use `.frame(maxHeight: .infinity, alignment: .top)` for consistent card heights.
 
 ---
@@ -275,10 +275,10 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 - **E-5: Fix O(n²) cleanUpDuplicates** — Single fetch + `[UUID: [FoodLog]]` dictionary. **Completed:** pre-v0.1.0.0
 - **T-02: Quick-Add Recent/Frequent Foods** — Top 8 most-frequently logged foods per meal type, 3+ day gate, excludes already-logged-today. **Completed:** 2026-03-20
 - **T-03: Streak Milestone Celebrations** — `lastCelebratedMilestone` in UserPreferences; milestones [3,7,14,30,60,100] trigger haptic + toast overlay. **Completed:** 2026-03-20
-- **T-04: Schema Migration (VersionedSchema)** — `BiteLedgerMigrationPlan` + `RecipeCardMigrationPlan` wired into both apps. **Completed:** 2026-03-20
+- **T-04: Schema Migration (VersionedSchema)** — `BiteLedgerMigrationPlan` + `BitePlanMigrationPlan` wired into both apps. **Completed:** 2026-03-20
 - **T-05: NutritionTile VoiceOver Accessibility** — Both tiles have `.accessibilityElement(children: .ignore)` + synthesized labels with goal context. **Completed:** pre-v0.1.0.0
 - **NEW-1: Weekly Logging Recap Share Card** — `ImageRenderer` share card from HistoryView toolbar. **Completed:** v0.1.0.0 (2026-03-20)
 - **Local Search Word-Order Fix** — `matchesQuery()` in FoodSearchView: exact phrase first, then all words any order. Fixes "margherita pizza" → "pizza, margherita". **Completed:** 2026-03-20
-- **T-11: RecipeCard Kitchen Intelligence (v1.1 — Features 1–3)** — Recipe Scaling (already in RecipeDetailView), Cooking Mode (`CookingModeView` full-screen step navigation, screen always-on), Shopping List (`ShoppingCart` @Observable + UserDefaults persistence, `ShoppingListView` with categorized sections, swipe actions, share sheet). Feature 4 (Log to BiteLedger) deferred to v1.2. **Completed:** v0.1.1.0 (2026-03-20)
+- **T-11: BitePlan Kitchen Intelligence (v1.1 — Features 1–3)** — Recipe Scaling (already in RecipeDetailView), Cooking Mode (`CookingModeView` full-screen step navigation, screen always-on), Shopping List (`ShoppingCart` @Observable + UserDefaults persistence, `ShoppingListView` with categorized sections, swipe actions, share sheet). Feature 4 (Log to BiteLedger) deferred to v1.2. **Completed:** v0.1.1.0 (2026-03-20)
 - **v1.2 Phase 1 — Search quality + micro-celebration:** (1) USDA data types changed from SR Legacy + Survey (FNDDS) to Foundation + SR Legacy + Branded; `USDAFoodDetail.toProductInfo()` now branches on Branded to populate *Serving fields from FDA label serving size; `ProductInfo` gains `dataType: String?`; (2) 3-day gate removed from `RecentFoodsForMealView` — recent foods show immediately on first log; (3) T-08 micro-celebration shipped (`hasSeenFirstLogCelebration: Bool?` in UserPreferences, haptic + 2s overlay in TodayView fires exactly once); (4) `AddFoodView.swift` dead code deleted; (5) 5 tests added: USDA Branded/Foundation/SR Legacy branching + micro-celebration flag. **Completed:** feature/v1-ship (2026-03-21)
-- **Backup & Restore (both apps):** ZIP-based backup/restore via `BackupService` in BiteLedgerCore. `createBackup` stages manifest.json + 5 CSVs + recipe images into a temp dir, zips with ZIPFoundation, returns shareable URL. `restoreBackup` extracts, validates, and imports with `.replaceAll` or `.merge` (UUID-based skip). `resetDatabase` supports 4 scopes (logsOnly/allFoodData/recipesOnly/everything). Both BiteLedger and RecipeCard have `BackupRestoreView` + `SettingsView` accessed from their respective settings/toolbar gear. `CSVImporter.importBiteLedger` gained `skipExistingUUIDs: Bool` with O(n) seed map pre-fetch. **Completed:** feature/v1-ship (2026-03-21)
+- **Backup & Restore (both apps):** ZIP-based backup/restore via `BackupService` in BiteLedgerCore. `createBackup` stages manifest.json + 5 CSVs + recipe images into a temp dir, zips with ZIPFoundation, returns shareable URL. `restoreBackup` extracts, validates, and imports with `.replaceAll` or `.merge` (UUID-based skip). `resetDatabase` supports 4 scopes (logsOnly/allFoodData/recipesOnly/everything). Both BiteLedger and BitePlan have `BackupRestoreView` + `SettingsView` accessed from their respective settings/toolbar gear. `CSVImporter.importBiteLedger` gained `skipExistingUUIDs: Bool` with O(n) seed map pre-fetch. **Completed:** feature/v1-ship (2026-03-21)

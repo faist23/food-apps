@@ -6,8 +6,8 @@
 //  e.g. "PB Night" = PB + bread + honey (items).
 //
 //  SchemaV4 — coordinates with MealPlanMealItem and MealPlan.
-//  Both BiteLedger and RecipeCard must register this model in their schema arrays
-//  even though only RecipeCard queries it.
+//  Both BiteLedger and BitePlan must register this model in their schema arrays
+//  even though only BitePlan queries it.
 //
 //  Relationship hierarchy:
 //    MealPlan ─(cascade)→ MealPlanMeal ─(cascade)→ MealPlanMealItem

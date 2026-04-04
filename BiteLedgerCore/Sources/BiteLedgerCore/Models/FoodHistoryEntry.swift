@@ -16,7 +16,7 @@
 //    Orphaned entries (food == nil) are filtered at display time via compactMap { $0.food }.
 //    No back-reference on FoodItem — avoids "Duplicate version checksums" in migration plan.
 //
-//  Schema: Added in BiteLedgerSchemaV2 / RecipeCardSchemaV2 (lightweight migration).
+//  Schema: Added in BiteLedgerSchemaV2 / BitePlanSchemaV2 (lightweight migration).
 //
 
 import SwiftData

@@ -1693,7 +1693,7 @@ struct MyFoodsListView: View {
 
             // Build the set of personally-logged food IDs — used only to guard
             // API-sourced foods (usda_*, fatsecret_*) against ghost foods that
-            // were fetched by RecipeCard's ingredient matcher but never logged.
+            // were fetched by BitePlan's ingredient matcher but never logged.
             // Manual entries, LoseIt imports, and recipe foods are always included.
             var loggedIDs = Set(foodHistory.compactMap { $0.food?.id })
             for log in allLogs {

@@ -183,7 +183,7 @@ the full store — no recency cap. Results are filtered in-memory with a three-t
 2. **User-created allowlist** — always keep `source.isEmpty`, `"Manual"`, `"Quick Add"`,
    `recipe*`, `LoseIt*`, `CSV Import*` (backfill may be incomplete; trust source type)
 3. **API-fetched guard** — everything else (`usda_*`, `fatsecret_*`, OFacts barcodes)
-   requires `loggedIDs` membership to exclude RecipeCard ghost foods
+   requires `loggedIDs` membership to exclude BitePlan ghost foods
 
 Last-used dates are pre-computed in the same Task via a three-pass strategy:
 FoodHistoryEntry index → allLogs buffer → `food.foodLogs` fallback for any remainder.

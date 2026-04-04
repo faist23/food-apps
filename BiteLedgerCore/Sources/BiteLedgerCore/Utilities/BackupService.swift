@@ -4,7 +4,7 @@
 //
 //  ZIP-based backup and restore for the shared SwiftData store.
 //  Creates a single .zip containing manifest.json, 5 CSV files, and
-//  optional recipe images. Works for BiteLedger-only, RecipeCard-only,
+//  optional recipe images. Works for BiteLedger-only, BitePlan-only,
 //  and both-apps users (shared App Group store).
 //
 
@@ -17,7 +17,7 @@ import ZIPFoundation
 public struct BackupManifest: Codable, Sendable {
     public let version: Int          // format version — bump if ZIP structure changes
     public let exportDate: Date
-    public let exportedBy: String    // "BiteLedger" | "RecipeCard"
+    public let exportedBy: String    // "BiteLedger" | "BitePlan"
     public let stats: Stats
 
     public struct Stats: Codable, Sendable {

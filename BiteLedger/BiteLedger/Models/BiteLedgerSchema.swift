@@ -12,7 +12,7 @@
 //    2. Add a MigrationStage.lightweight(fromVersion:toVersion:) stage to
 //       BiteLedgerMigrationPlan.stages.
 //    3. Append the new version to BiteLedgerMigrationPlan.schemas.
-//    4. Do the same in RecipeCardSchema.swift (coordinated release required).
+//    4. Do the same in BitePlanSchema.swift (coordinated release required).
 //
 //  For BREAKING changes (rename, type change, required field with non-nil default):
 //    1. Add FROZEN nested model types inside the old schema enum — separate
@@ -30,7 +30,7 @@ import BiteLedgerCore
 // MARK: - SchemaV1 (baseline — shipping v1.0)
 //
 // Lists all 9 live model types in canonical order.
-// Must match RecipeCardSchema.swift exactly.
+// Must match BitePlanSchema.swift exactly.
 //
 // Includes all fields present at v1.0 launch:
 //   - ServingSize.unit (String?) — auto-migrated, nullable
@@ -66,8 +66,8 @@ enum BiteLedgerSchemaV1: VersionedSchema {
 // Backfill is handled at startup by backfillFoodHistory() in BiteLedgerApp,
 // guarded by UserPreferences.hasBackfilledFoodHistory.
 //
-// Must match RecipeCardSchemaV2 exactly (same models, same order, same version).
-// RecipeCard registers FoodHistoryEntry but never queries it — shared store
+// Must match BitePlanSchemaV2 exactly (same models, same order, same version).
+// BitePlan registers FoodHistoryEntry but never queries it — shared store
 // requires identical schemas across both apps.
 //
 enum BiteLedgerSchemaV2: VersionedSchema {
@@ -114,8 +114,8 @@ enum BiteLedgerSchemaV2: VersionedSchema {
 // with no required fields.
 //
 // Do NOT wire migrationPlan: into ModelContainer — see comment above.
-// Must match RecipeCardSchemaV3 exactly (same models, same order, same version).
-// RecipeCard reads MealPlan/MealPlanEntry. BiteLedger registers them but does
+// Must match BitePlanSchemaV3 exactly (same models, same order, same version).
+// BitePlan reads MealPlan/MealPlanEntry. BiteLedger registers them but does
 // not query them in v1.
 //
 enum BiteLedgerSchemaV3: VersionedSchema {
@@ -148,7 +148,7 @@ enum BiteLedgerSchemaV3: VersionedSchema {
 // Existing MealPlanEntry records are cleared on first V4 launch in loadOrCreatePlan().
 //
 // Do NOT wire migrationPlan: into ModelContainer — same policy as V2/V3.
-// Must match RecipeCardSchemaV4 exactly (same models, same order, same version).
+// Must match BitePlanSchemaV4 exactly (same models, same order, same version).
 //
 enum BiteLedgerSchemaV4: VersionedSchema {
     static let versionIdentifier = Schema.Version(4, 0, 0)

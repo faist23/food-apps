@@ -1,6 +1,6 @@
 # DESIGN.md — Food Apps Design System
 
-Inferred from BiteLedger's production code. Applies to both BiteLedger and RecipeCard.
+Inferred from BiteLedger's production code. Applies to both BiteLedger and BitePlan.
 Last updated: 2026-03-19 by /plan-design-review.
 
 ---
@@ -15,7 +15,7 @@ Last updated: 2026-03-19 by /plan-design-review.
 
 ## Color Tokens
 
-All colors live in `BiteLedger/Assets.xcassets`. RecipeCard has these same tokens in its own `Assets.xcassets` (added in v0.1.1.0). RecipeCard also has two additional CookingMode tokens: `CookingModeSurface` and `CookingModeText` (full-screen cooking overlay). Never use raw system colors (`Color.secondary`, `.accentColor`) in new code — always use a named token.
+All colors live in `BiteLedger/Assets.xcassets`. BitePlan has these same tokens in its own `Assets.xcassets` (added in v0.1.1.0). BitePlan also has two additional CookingMode tokens: `CookingModeSurface` and `CookingModeText` (full-screen cooking overlay). Never use raw system colors (`Color.secondary`, `.accentColor`) in new code — always use a named token.
 
 ### Brand
 | Token | Usage |
@@ -185,7 +185,7 @@ Empty states are features — not fallbacks. Every empty state must have:
 - `TabView` root: Today / History / Settings
 - Food addition: sheet presentation of `FoodSearchView` with 4-tab segmented picker
 
-### RecipeCard
+### BitePlan
 - `TabView` root: Recipes / Meal Planner / Shopping Cart (added v0.2.0.0)
 - `NavigationStack` inside each tab
 - Toolbar pattern: **gear (Settings) leading, `+` Menu trailing** — D-9 shipped v0.2.0.0
@@ -233,11 +233,11 @@ Every interactive feature must define all 5 states:
 
 ---
 
-## What RecipeCard Must Adopt
+## What BitePlan Must Adopt
 
-RecipeCard's `Assets.xcassets` currently has only `AccentColor` and `AppIcon`. To align with BiteLedger:
+BitePlan's `Assets.xcassets` currently has only `AccentColor` and `AppIcon`. To align with BiteLedger:
 
-1. **Add all BiteLedger color tokens** to `RecipeCard/Assets.xcassets` (or reference them from a shared xcassets)
+1. **Add all BiteLedger color tokens** to `BitePlan/Assets.xcassets` (or reference them from a shared xcassets)
 2. ✅ **Shipped D-6** — `Color.secondary` → `Color("TextSecondary")` applied throughout
 3. ✅ **Shipped D-6** — `.accentColor` → `Color("BrandAccent")` applied throughout
 4. ✅ **Shipped D-6** — `.regularMaterial` on cards → `Color("SurfaceCard")` applied throughout
