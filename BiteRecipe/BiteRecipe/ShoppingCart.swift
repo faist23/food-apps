@@ -231,30 +231,58 @@ final class ShoppingCart {
     // MARK: Private helpers
 
     private func scaledDisplayText(for ing: RecipeIngredient, scaleFactor: Double) -> String {
-        guard let qty = ing.recipeQuantity,
-              let unit = ing.recipeUnit, !unit.isEmpty else {
-            return ing.displayLabel
+        // URL/OCR imported ingredients — recipe quantities are the source of truth.
+        if let qty = ing.recipeQuantity,
+           let unit = ing.recipeUnit, !unit.isEmpty {
+            let scaled = qty * scaleFactor
+            let qtyStr = scaled.truncatingRemainder(dividingBy: 1) == 0
+                ? String(Int(scaled))
+                : String(format: "%.2g", scaled)
+            let name: String
+            if let food = ing.foodItem {
+                name = food.name
+            } else if let raw = ing.rawText {
+                name = Self.stripLeadingQuantity(from: raw)
+            } else {
+                return ing.displayLabel
+            }
+            return "\(qtyStr) \(unit) \(name)"
         }
 
-        let scaled = qty * scaleFactor
-        let qtyStr = scaled.truncatingRemainder(dividingBy: 1) == 0
-            ? String(Int(scaled))
-            : String(format: "%.2g", scaled)
-
-        // Build the ingredient name without any quantity prefix.
-        // Prefer the matched food item name (clean, no quantity baked in).
-        // Fall back to stripping the leading quantity+unit from rawText.
-        let name: String
-        if let food = ing.foodItem {
-            name = food.name
-        } else if let raw = ing.rawText {
-            name = Self.stripLeadingQuantity(from: raw)
+        // Manually-added ingredient — scale the stored quantity × servingSize.
+        let scaledQty = ing.quantity * scaleFactor
+        let foodName = ing.foodItem?.name ?? "Ingredient"
+        guard let serving = ing.servingSize else {
+            let qtyStr = scaledQty.truncatingRemainder(dividingBy: 1) == 0
+                ? String(Int(scaledQty)) : String(format: "%.2g", scaledQty)
+            return "\(qtyStr) serving \(foodName)"
+        }
+        // Resolve (servingUnit, amountPerServing) — stored unit field first,
+        // then ServingSizeParser on the label for older records where unit==nil.
+        let resolvedUnit: ServingUnit?
+        let resolvedAmount: Double
+        if let unitRaw = serving.unit, let su = ServingUnit(rawValue: unitRaw) {
+            resolvedUnit = su
+            resolvedAmount = serving.amount > 0 ? serving.amount : 1.0
+        } else if let parsed = ServingSizeParser.parse(serving.label),
+                  parsed.unit != .serving, parsed.unit != .container {
+            resolvedUnit = parsed.unit
+            resolvedAmount = parsed.amount > 0 ? parsed.amount : 1.0
         } else {
-            // Manual ingredient — displayLabel is name+serving, no qty prefix.
-            return ing.displayLabel
+            resolvedUnit = nil
+            resolvedAmount = 1.0
         }
-
-        return "\(qtyStr) \(unit) \(name)"
+        if let su = resolvedUnit {
+            let total = scaledQty * resolvedAmount
+            let totalStr = total.truncatingRemainder(dividingBy: 1) == 0
+                ? String(Int(total)) : String(format: "%.2g", total)
+            return "\(totalStr) \(su.abbreviation) \(foodName)"
+        }
+        // Opaque units (package, slice, etc.) — show qty × label only when > 1.
+        if scaledQty == 1.0 { return "\(serving.label) \(foodName)" }
+        let qtyStr = scaledQty.truncatingRemainder(dividingBy: 1) == 0
+            ? String(Int(scaledQty)) : String(format: "%.2g", scaledQty)
+        return "\(qtyStr) × \(serving.label) \(foodName)"
     }
 
     /// Strips a leading quantity expression (e.g. "1/4 tsp ", "2 ", "1 1/2 cups ")

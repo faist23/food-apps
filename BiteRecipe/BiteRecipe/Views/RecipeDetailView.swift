@@ -414,7 +414,12 @@ private struct IngredientRowView: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(ingredient.displayLabel).font(.body)
+                // URL/OCR imports: show the original recipe text (rawText).
+                // Manually-added: show the food name — serving info goes in the caption.
+                Text(ingredient.rawText == nil
+                     ? (ingredient.foodItem?.name ?? "Deleted Food")
+                     : ingredient.displayLabel)
+                    .font(.body)
                 // When scaled and original units are known, show the scaled amount
                 if scaleFactor != 1.0,
                    let rqty = ingredient.recipeQuantity,
@@ -429,7 +434,7 @@ private struct IngredientRowView: View {
                 } else if ingredient.rawText != nil, let food = ingredient.foodItem {
                     Text("→ \(food.name)").font(.caption).foregroundStyle(.secondary)
                 } else if ingredient.rawText == nil {
-                    Text(servingDescription).font(.caption).foregroundStyle(.secondary)
+                    Text(scaledServingDescription).font(.caption).foregroundStyle(.secondary)
                 }
             }
             Spacer()
@@ -444,8 +449,40 @@ private struct IngredientRowView: View {
         .padding(.vertical, 4)
     }
 
-    private var servingDescription: String {
-        guard let s = ingredient.servingSize else { return "\(ingredient.quantity.formatted()) serving" }
-        return ingredient.quantity == 1 ? s.label : "\(ingredient.quantity.formatted()) x \(s.label)"
+    /// Serving description for manually-added ingredients, scaled by `scaleFactor`.
+    private var scaledServingDescription: String {
+        let scaledQty = ingredient.quantity * scaleFactor
+        guard let s = ingredient.servingSize else {
+            let qtyStr = scaledQty.truncatingRemainder(dividingBy: 1) == 0
+                ? String(Int(scaledQty)) : String(format: "%.2g", scaledQty)
+            return "\(qtyStr) serving"
+        }
+        // Resolve (servingUnit, amountPerServing) — stored unit field first,
+        // then ServingSizeParser on the label for older records where unit==nil.
+        let resolvedUnit: ServingUnit?
+        let resolvedAmount: Double
+        if let unitRaw = s.unit, let su = ServingUnit(rawValue: unitRaw) {
+            resolvedUnit = su
+            resolvedAmount = s.amount > 0 ? s.amount : 1.0
+        } else if let parsed = ServingSizeParser.parse(s.label),
+                  parsed.unit != .serving, parsed.unit != .container {
+            resolvedUnit = parsed.unit
+            resolvedAmount = parsed.amount > 0 ? parsed.amount : 1.0
+        } else {
+            resolvedUnit = nil
+            resolvedAmount = 1.0
+        }
+        // Express as a natural quantity (e.g. 0.75 cup, 1.5 cup, 4.5 cup).
+        if let su = resolvedUnit {
+            let total = scaledQty * resolvedAmount
+            let totalStr = total.truncatingRemainder(dividingBy: 1) == 0
+                ? String(Int(total)) : String(format: "%.2g", total)
+            return "\(totalStr) \(su.abbreviation)"
+        }
+        // Opaque units (package, slice, etc.) — show qty × label only when > 1.
+        if scaledQty == 1.0 { return s.label }
+        let qtyStr = scaledQty.truncatingRemainder(dividingBy: 1) == 0
+            ? String(Int(scaledQty)) : String(format: "%.2g", scaledQty)
+        return "\(qtyStr) × \(s.label)"
     }
 }

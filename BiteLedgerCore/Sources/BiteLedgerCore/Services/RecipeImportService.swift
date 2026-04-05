@@ -1152,13 +1152,17 @@ public struct RecipeImportService: Sendable {
 
     // MARK: - Local Image Storage
 
+    /// App Group shared container identifier — used by both apps and the Share Extension.
+    public static let sharedAppGroupIdentifier = "group.com.ridepro.biteledger"
+
     /// Saves raw JPEG data for a recipe image.
-    /// Prefers the App Group container (stable path across simulator rebuilds) when
-    /// `appGroupIdentifier` is provided; falls back to the app's own Documents directory.
+    /// Always prefers the App Group container (stable path that survives app reinstalls).
+    /// Falls back to the app's own Documents directory only when the group container
+    /// is unavailable (e.g. unit tests, extensions without entitlements).
     /// Returns a `file://` URL string, or nil on failure.
     /// The caller is responsible for deleting the file when the recipe is deleted.
     public static func saveImageDataLocally(_ jpegData: Data,
-                                            appGroupIdentifier: String? = nil) -> String? {
+                                            appGroupIdentifier: String? = sharedAppGroupIdentifier) -> String? {
         let filename = "recipe-\(UUID().uuidString).jpg"
         let dir: URL
         if let groupID = appGroupIdentifier,
