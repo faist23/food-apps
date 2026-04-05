@@ -83,7 +83,7 @@ struct MealPickerSearchView: View {
             // Shared search bar for Recipes, Foods, and Meals tabs
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
                 TextField(
                     selectedTab == 0 ? "Search recipes…"
                         : selectedTab == 2 ? "Search past meals…"
@@ -98,12 +98,12 @@ struct MealPickerSearchView: View {
                         searchText = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(Color("TextSecondary"))
+                            .foregroundStyle(Color.textSecondary)
                     }
                 }
             }
             .padding(14)
-            .background(Color("SurfaceCard"), in: RoundedRectangle(cornerRadius: 14))
+            .background(Color.surfaceCard, in: RoundedRectangle(cornerRadius: 14))
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
 
@@ -223,19 +223,19 @@ struct MealPickerSearchView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(meal.mealType.rawValue.capitalized)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color("TextPrimary"))
+                        .foregroundStyle(Color.textPrimary)
                     Text(meal.date.lastUsedDisplay)
                         .font(.caption)
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(meal.logs.count) item\(meal.logs.count == 1 ? "" : "s")")
                         .font(.caption)
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                     Text("\(Int(meal.logs.reduce(0) { $0 + $1.caloriesAtLogTime })) cal")
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(Color("BrandAccent"))
+                        .foregroundStyle(Color.brandAccent)
                 }
             }
 
@@ -245,29 +245,29 @@ struct MealPickerSearchView: View {
                         HStack(spacing: 6) {
                             Image(systemName: "fork.knife")
                                 .font(.system(size: 10))
-                                .foregroundStyle(Color("TextTertiary"))
+                                .foregroundStyle(Color.textTertiary)
                                 .frame(width: 14)
                             Text(food.name)
                                 .font(.caption)
-                                .foregroundStyle(Color("TextSecondary"))
+                                .foregroundStyle(Color.textSecondary)
                                 .lineLimit(1)
                             Spacer()
                             Text("\(Int(log.caloriesAtLogTime)) cal")
                                 .font(.caption2)
-                                .foregroundStyle(Color("TextTertiary"))
+                                .foregroundStyle(Color.textTertiary)
                         }
                     }
                 }
                 if meal.logs.count > 3 {
                     Text("+ \(meal.logs.count - 3) more")
                         .font(.caption2)
-                        .foregroundStyle(Color("TextTertiary"))
+                        .foregroundStyle(Color.textTertiary)
                         .padding(.leading, 20)
                 }
             }
         }
         .padding(12)
-        .background(Color("SurfaceCard"), in: RoundedRectangle(cornerRadius: 12))
+        .background(Color.surfaceCard, in: RoundedRectangle(cornerRadius: 12))
         .contentShape(Rectangle())
         .accessibilityLabel(
             "\(meal.mealType.rawValue.capitalized), \(meal.date.lastUsedDisplay), \(meal.logs.count) items, \(Int(meal.logs.reduce(0) { $0 + $1.caloriesAtLogTime })) calories"
@@ -316,7 +316,7 @@ struct MealPickerSearchView: View {
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 10)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(Color("SurfacePrimary"))
+                                    .background(Color.surfacePrimary)
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
@@ -334,7 +334,7 @@ struct MealPickerSearchView: View {
                                         .padding(.horizontal, 16)
                                         .padding(.vertical, 10)
                                         .frame(maxWidth: .infinity, alignment: .leading)
-                                        .background(Color("SurfacePrimary"))
+                                        .background(Color.surfacePrimary)
                                         .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
@@ -352,7 +352,7 @@ struct MealPickerSearchView: View {
                                         .padding(.horizontal, 16)
                                         .padding(.vertical, 10)
                                         .frame(maxWidth: .infinity, alignment: .leading)
-                                        .background(Color("SurfacePrimary"))
+                                        .background(Color.surfacePrimary)
                                         .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
@@ -368,12 +368,12 @@ struct MealPickerSearchView: View {
     private func rowSectionHeader(_ title: String) -> some View {
         Text(title.uppercased())
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(Color("TextSecondary"))
+            .foregroundStyle(Color.textSecondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.top, 10)
             .padding(.bottom, 4)
-            .background(Color("SurfacePrimary"))
+            .background(Color.surfacePrimary)
     }
 
     // MARK: - Row views
@@ -384,17 +384,17 @@ struct MealPickerSearchView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(recipe.name)
                     .font(.subheadline)
-                    .foregroundStyle(Color("TextPrimary"))
+                    .foregroundStyle(Color.textPrimary)
                 if let category = recipe.recipeCategory {
                     Text(category)
                         .font(.caption)
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                 }
             }
             Spacer()
             Image(systemName: "chevron.right")
                 .font(.caption)
-                .foregroundStyle(Color("TextTertiary"))
+                .foregroundStyle(Color.textTertiary)
         }
     }
 
@@ -402,22 +402,22 @@ struct MealPickerSearchView: View {
         HStack(spacing: 12) {
             Image(systemName: "fork.knife")
                 .frame(width: 44, height: 44)
-                .background(Color("SurfaceCard"), in: RoundedRectangle(cornerRadius: 8))
-                .foregroundStyle(Color("TextSecondary"))
+                .background(Color.surfaceCard, in: RoundedRectangle(cornerRadius: 8))
+                .foregroundStyle(Color.textSecondary)
             VStack(alignment: .leading, spacing: 2) {
                 Text(food.name)
                     .font(.subheadline)
-                    .foregroundStyle(Color("TextPrimary"))
+                    .foregroundStyle(Color.textPrimary)
                 if let serving = food.defaultServing {
                     Text(serving.label)
                         .font(.caption)
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                 }
             }
             Spacer()
             Image(systemName: "chevron.right")
                 .font(.caption)
-                .foregroundStyle(Color("TextTertiary"))
+                .foregroundStyle(Color.textTertiary)
         }
     }
 
@@ -425,22 +425,22 @@ struct MealPickerSearchView: View {
         HStack(spacing: 12) {
             Image(systemName: "magnifyingglass")
                 .frame(width: 44, height: 44)
-                .background(Color("SurfaceCard"), in: RoundedRectangle(cornerRadius: 8))
-                .foregroundStyle(Color("TextSecondary"))
+                .background(Color.surfaceCard, in: RoundedRectangle(cornerRadius: 8))
+                .foregroundStyle(Color.textSecondary)
             VStack(alignment: .leading, spacing: 2) {
                 Text(product.displayName)
                     .font(.subheadline)
-                    .foregroundStyle(Color("TextPrimary"))
+                    .foregroundStyle(Color.textPrimary)
                 if let brand = product.brands, !brand.isEmpty {
                     Text(brand)
                         .font(.caption)
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                 }
             }
             Spacer()
             Image(systemName: "chevron.right")
                 .font(.caption)
-                .foregroundStyle(Color("TextTertiary"))
+                .foregroundStyle(Color.textTertiary)
         }
     }
 
@@ -455,36 +455,36 @@ struct MealPickerSearchView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(recipe.name)
                             .font(.headline)
-                            .foregroundStyle(Color("TextPrimary"))
+                            .foregroundStyle(Color.textPrimary)
                         if let category = recipe.recipeCategory {
                             Text(category)
                                 .font(.caption)
-                                .foregroundStyle(Color("TextSecondary"))
+                                .foregroundStyle(Color.textSecondary)
                         }
                     }
                 case .foodItem(let food, _):
                     Image(systemName: "fork.knife")
                         .frame(width: 56, height: 56)
-                        .background(Color("SurfaceCard"), in: RoundedRectangle(cornerRadius: 8))
-                        .foregroundStyle(Color("TextSecondary"))
+                        .background(Color.surfaceCard, in: RoundedRectangle(cornerRadius: 8))
+                        .foregroundStyle(Color.textSecondary)
                     Text(food.name)
                         .font(.headline)
-                        .foregroundStyle(Color("TextPrimary"))
+                        .foregroundStyle(Color.textPrimary)
                 case .liveProduct(let product):
                     Image(systemName: "magnifyingglass")
                         .frame(width: 56, height: 56)
-                        .background(Color("SurfaceCard"), in: RoundedRectangle(cornerRadius: 8))
-                        .foregroundStyle(Color("TextSecondary"))
+                        .background(Color.surfaceCard, in: RoundedRectangle(cornerRadius: 8))
+                        .foregroundStyle(Color.textSecondary)
                     Text(product.displayName)
                         .font(.headline)
-                        .foregroundStyle(Color("TextPrimary"))
+                        .foregroundStyle(Color.textPrimary)
                 }
                 Spacer()
                 Button {
                     selectedItem = nil
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                 }
             }
             .padding(.horizontal, 16)
@@ -498,14 +498,14 @@ struct MealPickerSearchView: View {
                     case .recipe:
                         Text("Batches")
                             .font(.subheadline)
-                            .foregroundStyle(Color("TextPrimary"))
+                            .foregroundStyle(Color.textPrimary)
                         Text("1 = full recipe")
                             .font(.caption)
-                            .foregroundStyle(Color("TextTertiary"))
+                            .foregroundStyle(Color.textTertiary)
                     case .foodItem, .liveProduct:
                         Text("Servings")
                             .font(.subheadline)
-                            .foregroundStyle(Color("TextPrimary"))
+                            .foregroundStyle(Color.textPrimary)
                     }
                 }
                 Spacer()
@@ -518,7 +518,7 @@ struct MealPickerSearchView: View {
                          ? String(Int(servingCount))
                          : String(format: "%.1g", servingCount))
                     .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(Color("TextPrimary"))
+                    .foregroundStyle(Color.textPrimary)
                     .frame(minWidth: 32, alignment: .center)
                 }
             }
@@ -542,7 +542,7 @@ struct MealPickerSearchView: View {
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                .background(Color("BrandPrimary"), in: RoundedRectangle(cornerRadius: 14))
+                .background(Color.brandPrimary, in: RoundedRectangle(cornerRadius: 14))
                 .foregroundStyle(.white)
             }
             .disabled(isCommitting)
@@ -784,10 +784,10 @@ private struct RecipeThumbnail: View {
 
     private var placeholderContent: some View {
         ZStack {
-            Color("SurfaceCard")
+            Color.surfaceCard
             Image(systemName: "fork.knife")
                 .font(.system(size: size * 0.35))
-                .foregroundStyle(Color("TextTertiary"))
+                .foregroundStyle(Color.textTertiary)
         }
     }
 }

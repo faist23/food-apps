@@ -21,7 +21,7 @@ struct SettingsView: View {
                     } label: {
                         HStack {
                             Image(systemName: "externaldrive.fill")
-                                .foregroundStyle(Color("BrandPrimary"))
+                                .foregroundStyle(Color.brandPrimary)
                             Text("Backup & Restore")
                                 .foregroundStyle(.primary)
                         }

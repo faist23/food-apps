@@ -203,7 +203,7 @@ struct CookingModeView: View {
             VStack(spacing: 16) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 64))
-                    .foregroundStyle(Color("BrandAccent"))
+                    .foregroundStyle(Color.brandAccent)
 
                 Text("You cooked it!")
                     .font(.title.bold())
@@ -230,7 +230,7 @@ struct CookingModeView: View {
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(Color("BrandAccent"))
+                .tint(Color.brandAccent)
                 // v1.2 slot: [Log to BiteLedger] button will appear here
             }
             .padding(.horizontal, 24)

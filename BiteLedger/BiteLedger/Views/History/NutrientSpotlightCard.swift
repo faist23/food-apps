@@ -27,40 +27,40 @@ struct NutrientSpotlightCard: View {
                     // MARK: Header
                     Text("THIS WEEK'S SPOTLIGHT")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                         .tracking(1)
 
                     // MARK: Observation — results.first guards against empty array at the type level
                     Text(results.first?.message ?? "")
                         .font(.body)
-                        .foregroundStyle(Color("TextPrimary"))
+                        .foregroundStyle(Color.textPrimary)
 
                     // MARK: Curiosity prompt — chevron signals this is tappable
                     HStack {
                         Text(NutrientSpotlightEngine.curiosityPrompt)
                             .font(.body.italic())
-                            .foregroundStyle(Color("TextSecondary"))
+                            .foregroundStyle(Color.textSecondary)
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.caption)
-                            .foregroundStyle(Color("TextTertiary"))
+                            .foregroundStyle(Color.textTertiary)
                     }
 
                     // MARK: Nutrient rows (up to 2)
                     VStack(spacing: 0) {
                         ForEach(Array(results.prefix(2).enumerated()), id: \.offset) { index, result in
                             if index > 0 {
-                                Color("DividerSubtle")
+                                Color.dividerSubtle
                                     .frame(height: 1)
                             }
                             HStack {
                                 Text(result.nutrient.spotlightDisplayName)
                                     .font(.subheadline)
-                                    .foregroundStyle(Color("TextPrimary"))
+                                    .foregroundStyle(Color.textPrimary)
                                 Spacer()
                                 Text("\(result.daysAboveThreshold) of 7 days")
                                     .font(.caption)
-                                    .foregroundStyle(Color("TextTertiary"))
+                                    .foregroundStyle(Color.textTertiary)
                             }
                             .padding(.vertical, 8)
                         }

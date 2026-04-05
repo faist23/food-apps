@@ -82,7 +82,7 @@ struct BackupRestoreView: View {
             // MARK: — Backup
             Section {
                 LabeledContent("Contents", value: storeSummary)
-                    .foregroundStyle(storeIsEmpty ? Color("TextSecondary") : .primary)
+                    .foregroundStyle(storeIsEmpty ? Color.textSecondary : .primary)
 
                 Button {
                     createBackup()
@@ -93,10 +93,10 @@ struct BackupRestoreView: View {
                                 .scaleEffect(0.85)
                         } else {
                             Image(systemName: "arrow.down.doc")
-                                .foregroundStyle(storeIsEmpty ? Color("TextSecondary") : Color("BrandPrimary"))
+                                .foregroundStyle(storeIsEmpty ? Color.textSecondary : Color.brandPrimary)
                         }
                         Text(isExporting ? "Creating backup…" : "Create Backup")
-                            .foregroundStyle(storeIsEmpty ? Color("TextSecondary") : Color("BrandPrimary"))
+                            .foregroundStyle(storeIsEmpty ? Color.textSecondary : Color.brandPrimary)
                     }
                 }
                 .disabled(storeIsEmpty || isExporting)
@@ -122,10 +122,10 @@ struct BackupRestoreView: View {
                                 .scaleEffect(0.85)
                         } else {
                             Image(systemName: "arrow.up.doc")
-                                .foregroundStyle(Color("BrandPrimary"))
+                                .foregroundStyle(Color.brandPrimary)
                         }
                         Text(isImporting ? importProgress : "Restore from Backup File")
-                            .foregroundStyle(Color("BrandPrimary"))
+                            .foregroundStyle(Color.brandPrimary)
                     }
                 }
                 .disabled(isImporting)
@@ -144,7 +144,7 @@ struct BackupRestoreView: View {
                 } label: {
                     HStack {
                         Image(systemName: "tablecells")
-                            .foregroundStyle(Color("BrandAccent"))
+                            .foregroundStyle(Color.brandAccent)
                         Text("Import from CSV")
                             .foregroundStyle(.primary)
                     }
@@ -233,7 +233,7 @@ struct BackupRestoreView: View {
         } label: {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: resetScope == scope ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(resetScope == scope ? Color("BrandPrimary") : Color("TextSecondary"))
+                    .foregroundStyle(resetScope == scope ? Color.brandPrimary : Color.textSecondary)
                     .font(.body)
                     .padding(.top, 1)
                 VStack(alignment: .leading, spacing: 2) {
@@ -241,7 +241,7 @@ struct BackupRestoreView: View {
                         .foregroundStyle(.primary)
                     Text(detail)
                         .font(.caption)
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                 }
                 Spacer()
             }

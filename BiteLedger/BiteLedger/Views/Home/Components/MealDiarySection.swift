@@ -68,7 +68,7 @@ struct SwipeableYesterdayRow: View {
         ZStack(alignment: .leading) {
             // BrandPrimary background fills the full revealed area as user swipes
             HStack(spacing: 0) {
-                Color("BrandPrimary")
+                Color.brandPrimary
                     .frame(maxWidth: max(offset, 0))
                 Spacer(minLength: 0)
             }
@@ -89,7 +89,7 @@ struct SwipeableYesterdayRow: View {
                         .frame(width: 80)
                 }
                 .frame(maxHeight: .infinity)
-                .background(Color("BrandPrimary"))
+                .background(Color.brandPrimary)
 
                 Spacer()
             }
@@ -98,7 +98,7 @@ struct SwipeableYesterdayRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Add \(relativeDayText) \(meal.rawValue), \(Int(calories)) calories")
                     .font(.system(size: 14))
-                    .foregroundStyle(Color("TextPrimary"))
+                    .foregroundStyle(Color.textPrimary)
                 
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.right")
@@ -106,17 +106,17 @@ struct SwipeableYesterdayRow: View {
                     Text("Swipe right to add meal")
                         .font(.system(size: 11))
                 }
-                .foregroundStyle(Color("TextSecondary"))
+                .foregroundStyle(Color.textSecondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color("SurfaceCard"))
+                    .fill(Color.surfaceCard)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color("DividerSubtle"), lineWidth: 1)
+                    .stroke(Color.dividerSubtle, lineWidth: 1)
             )
             .offset(x: offset)
             .gesture(
@@ -178,11 +178,11 @@ private extension MealDiarySection {
             Label {
                 Text(meal.rawValue.uppercased())
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color("TextPrimary"))
+                    .foregroundStyle(Color.textPrimary)
             } icon: {
                 Image(systemName: meal.icon)
                     .font(.system(size: 15))
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
             }
 
             Spacer()
@@ -190,7 +190,7 @@ private extension MealDiarySection {
             if !logs.isEmpty {
                 Text("\(Int(calories))")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
             }
         }
         .contentShape(Rectangle())
@@ -214,7 +214,7 @@ private extension MealDiarySection {
                 )
                 
                 Divider()
-                    .background(Color("DividerSubtle"))
+                    .background(Color.dividerSubtle)
                     .padding(.vertical, 8)
             }
             
@@ -226,15 +226,15 @@ private extension MealDiarySection {
                         .font(.system(size: 13))
                     Spacer()
                 }
-                .foregroundStyle(Color("BrandPrimary"))
+                .foregroundStyle(Color.brandPrimary)
                 .padding(12)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(Color("SurfaceCard"))
+                        .fill(Color.surfaceCard)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color("DividerSubtle"), lineWidth: 1)
+                        .stroke(Color.dividerSubtle, lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
@@ -252,7 +252,7 @@ private extension MealDiarySection {
                 
                 if log.id != logs.last?.id {
                     Divider()
-                        .background(Color("DividerSubtle"))
+                        .background(Color.dividerSubtle)
                 }
             }
             
@@ -264,14 +264,14 @@ private extension MealDiarySection {
                         .font(.system(size: 13))
                     Spacer()
                 }
-                .foregroundStyle(Color("BrandPrimary"))
+                .foregroundStyle(Color.brandPrimary)
                 .padding(.top, 8)
             }
         }
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color("SurfaceCard"))
+                .fill(Color.surfaceCard)
                 .shadow(
                     color: Color.black.opacity(0.3),
                     radius: 8,
@@ -281,7 +281,7 @@ private extension MealDiarySection {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .stroke(Color("DividerSubtle"), lineWidth: 1)
+                .stroke(Color.dividerSubtle, lineWidth: 1)
         )
     }
 }
@@ -299,19 +299,19 @@ struct FoodRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(log.foodItem?.name ?? "Unknown Food")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Color("TextPrimary"))
+                    .foregroundStyle(Color.textPrimary)
                     .lineLimit(1)
 
                 Text(log.quantityDescription)
                     .font(.system(size: 11))
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
             }
 
             Spacer()
 
             Text("\(Int(log.caloriesAtLogTime))")
                 .font(.system(size: 14, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color("TextSecondary"))
+                .foregroundStyle(Color.textSecondary)
         }
         .padding(.vertical, 8)
         .contentShape(Rectangle())
@@ -356,7 +356,7 @@ struct SwipeableFoodRow: View {
 
             // Main content
             FoodRow(log: log, onEdit: onEdit, onDelete: onDelete)
-                .background(Color("SurfaceCard"))
+                .background(Color.surfaceCard)
                 .offset(x: offset)
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 20)

@@ -23,7 +23,7 @@ struct RecipeDetailView: View {
     }
 
     private let scaleOptions: [(label: String, value: Double)] = [
-        ("1/2x", 0.5), ("1x", 1.0), ("2x", 2.0), ("3x", 3.0)
+        ("1/2x", 0.5), ("1x", 1.0), ("1.5x", 1.5), ("2x", 2.0), ("3x", 3.0)
     ]
 
     private func formatMinutes(_ m: Int) -> String {
@@ -140,8 +140,8 @@ struct RecipeDetailView: View {
                         }
                     }
                     .padding(.vertical, 10)
-                    .background(Color("SurfaceCard"), in: RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color("DividerSubtle"), lineWidth: 1))
+                    .background(Color.surfaceCard, in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.dividerSubtle, lineWidth: 1))
                     .padding(.horizontal)
                 }
 
@@ -332,7 +332,7 @@ struct RecipeDetailView: View {
                         .frame(height: 44)
                 }
                 .buttonStyle(.bordered)
-                .tint(Color("BrandPrimary"))
+                .tint(Color.brandPrimary)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -345,7 +345,7 @@ struct RecipeDetailView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
-                    .background(Color("BrandPrimary"), in: Capsule())
+                    .background(Color.brandPrimary, in: Capsule())
                     .offset(y: -52)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -354,7 +354,7 @@ struct RecipeDetailView: View {
 
     private var recipeHeroPlaceholder: some View {
         ZStack {
-            Color("SurfaceCard")
+            Color.surfaceCard
             VStack(spacing: 8) {
                 Image(systemName: "fork.knife")
                     .font(.system(size: 40))
@@ -390,8 +390,8 @@ private struct NutritionSummaryCard: View {
             }
             .frame(maxWidth: .infinity)
             .padding()
-            .background(Color("SurfaceCard"), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color("DividerSubtle"), lineWidth: 1))
+            .background(Color.surfaceCard, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.dividerSubtle, lineWidth: 1))
         }
     }
 }
@@ -425,7 +425,7 @@ private struct IngredientRowView: View {
                     let scaleStr = scaleFactor.truncatingRemainder(dividingBy: 1) == 0
                         ? String(Int(scaleFactor)) : String(format: "%.2g", scaleFactor)
                     Text("→ \(s) \(runit) (x\(scaleStr))")
-                        .font(.caption).foregroundStyle(Color("BrandPrimary"))
+                        .font(.caption).foregroundStyle(Color.brandPrimary)
                 } else if ingredient.rawText != nil, let food = ingredient.foodItem {
                     Text("→ \(food.name)").font(.caption).foregroundStyle(.secondary)
                 } else if ingredient.rawText == nil {

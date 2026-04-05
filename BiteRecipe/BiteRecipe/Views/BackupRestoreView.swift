@@ -54,7 +54,7 @@ struct BackupRestoreView: View {
             // MARK: — Backup
             Section {
                 LabeledContent("Contents", value: storeSummary)
-                    .foregroundStyle(storeIsEmpty ? Color("TextSecondary") : .primary)
+                    .foregroundStyle(storeIsEmpty ? Color.textSecondary : .primary)
 
                 Button {
                     createBackup()
@@ -65,10 +65,10 @@ struct BackupRestoreView: View {
                                 .scaleEffect(0.85)
                         } else {
                             Image(systemName: "arrow.down.doc")
-                                .foregroundStyle(storeIsEmpty ? Color("TextSecondary") : Color("BrandPrimary"))
+                                .foregroundStyle(storeIsEmpty ? Color.textSecondary : Color.brandPrimary)
                         }
                         Text(isExporting ? "Creating backup…" : "Create Backup")
-                            .foregroundStyle(storeIsEmpty ? Color("TextSecondary") : Color("BrandPrimary"))
+                            .foregroundStyle(storeIsEmpty ? Color.textSecondary : Color.brandPrimary)
                     }
                 }
                 .disabled(storeIsEmpty || isExporting)
@@ -94,10 +94,10 @@ struct BackupRestoreView: View {
                                 .scaleEffect(0.85)
                         } else {
                             Image(systemName: "arrow.up.doc")
-                                .foregroundStyle(Color("BrandPrimary"))
+                                .foregroundStyle(Color.brandPrimary)
                         }
                         Text(isImporting ? importProgress : "Restore from Backup File")
-                            .foregroundStyle(Color("BrandPrimary"))
+                            .foregroundStyle(Color.brandPrimary)
                     }
                 }
                 .disabled(isImporting)

@@ -186,11 +186,11 @@ struct MacroBalanceTile: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color("SurfaceCard"))
+                .fill(Color.surfaceCard)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color("DividerSubtle"), lineWidth: 1)
+                .stroke(Color.dividerSubtle, lineWidth: 1)
         )
         // D-4: VoiceOver — synthesize macro balance summary
         .accessibilityElement(children: .ignore)
@@ -227,24 +227,24 @@ struct NutritionTile: View {
             // Label
             Text(nutrient.rawValue.uppercased())
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Color("TextSecondary"))
+                .foregroundStyle(Color.textSecondary)
             
             // Value
             if nutrient == .calories {
                 // Don't show unit for calories since label already says "CALORIES"
                 Text("\(formattedValue)")
                     .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color("TextPrimary"))
+                    .foregroundStyle(Color.textPrimary)
             } else {
                 // Show unit for other nutrients (e.g., "125 g" for protein)
                 HStack(alignment: .firstTextBaseline, spacing: 2) {
                     Text("\(formattedValue)")
                         .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color("TextPrimary"))
+                        .foregroundStyle(Color.textPrimary)
                     
                     Text(nutrient.unit)
                         .font(.system(size: 11))
-                        .foregroundStyle(Color("TextTertiary"))
+                        .foregroundStyle(Color.textTertiary)
                 }
             }
             
@@ -257,11 +257,11 @@ struct NutritionTile: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color("SurfaceCard"))
+                .fill(Color.surfaceCard)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color("DividerSubtle"), lineWidth: 1)
+                .stroke(Color.dividerSubtle, lineWidth: 1)
         )
         // D-4: VoiceOver — synthesize meaningful label from nutrient + value + goal
         .accessibilityElement(children: .ignore)
@@ -305,7 +305,7 @@ struct NutritionTile: View {
             ZStack(alignment: .leading) {
                 // Background
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(Color("DividerSubtle"))
+                    .fill(Color.dividerSubtle)
                     .frame(height: 4)
                 
                 // Progress
@@ -344,7 +344,7 @@ struct NutritionTile: View {
         switch goal.goalType {
         case .minimum:
             // Green when reaching goal, stays green if over
-            return percentage >= 1.0 ? .green : Color("BrandPrimary")
+            return percentage >= 1.0 ? .green : Color.brandPrimary
             
         case .maximum:
             // Green → Yellow → Orange → Red as approaching/exceeding limit

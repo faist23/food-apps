@@ -112,16 +112,16 @@ struct MealPlanDayRow: View {
                 VStack(spacing: 1) {
                     Text(date.formatted(.dateTime.weekday(.abbreviated)).uppercased())
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(isToday ? Color("BrandPrimary") : Color("TextSecondary"))
+                        .foregroundStyle(isToday ? Color.brandPrimary : Color.textSecondary)
                     Text(date.formatted(.dateTime.day()))
                         .font(.system(size: 17, weight: .semibold, design: .rounded))
-                        .foregroundStyle(isToday ? Color("BrandPrimary") : Color("TextPrimary"))
+                        .foregroundStyle(isToday ? Color.brandPrimary : Color.textPrimary)
                 }
                 .frame(width: 36)
                 .padding(6)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(isToday ? Color("BrandPrimary") : Color.clear, lineWidth: 1.5)
+                        .stroke(isToday ? Color.brandPrimary : Color.clear, lineWidth: 1.5)
                 )
 
                 // Dinner cluster name
@@ -129,7 +129,7 @@ struct MealPlanDayRow: View {
                     if let displayName = dinnerMeal?.displayName {
                         Text(displayName)
                             .font(.subheadline)
-                            .foregroundStyle(Color("TextPrimary"))
+                            .foregroundStyle(Color.textPrimary)
                             .lineLimit(1)
                         if hasVarietyNudge {
                             Image(systemName: "repeat.circle")
@@ -141,10 +141,10 @@ struct MealPlanDayRow: View {
                         HStack(spacing: 4) {
                             Image(systemName: "plus.circle")
                                 .font(.system(size: 13))
-                                .foregroundStyle(Color("BrandAccent"))
+                                .foregroundStyle(Color.brandAccent)
                             Text("Add dinner")
                                 .font(.subheadline)
-                                .foregroundStyle(Color("BrandAccent"))
+                                .foregroundStyle(Color.brandAccent)
                         }
                     }
                 }
@@ -155,12 +155,12 @@ struct MealPlanDayRow: View {
                 if dayNutrition.calories > 0 {
                     Text("\(Int(dayNutrition.calories)) cal")
                         .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                 }
 
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color("TextTertiary"))
+                    .foregroundStyle(Color.textTertiary)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -194,7 +194,7 @@ struct MealPlanDayRow: View {
                     .padding(.vertical, 10)
             }
         }
-        .background(Color("SurfacePrimary"))
+        .background(Color.surfacePrimary)
     }
 
     // MARK: - Dinner cluster section
@@ -205,22 +205,22 @@ struct MealPlanDayRow: View {
             HStack(spacing: 10) {
                 Image(systemName: MealType.dinner.icon)
                     .font(.system(size: 14))
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
                     .frame(width: 24)
                     .padding(.leading, 16)
 
                 if isEditingClusterName {
                     TextField("Meal name", text: $clusterNameText)
                         .font(.subheadline)
-                        .foregroundStyle(Color("TextPrimary"))
+                        .foregroundStyle(Color.textPrimary)
                         .onSubmit { saveClusterName() }
                 } else {
                     Text(dinnerMeal?.displayName ?? "Dinner")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(
                             dinnerMeal?.displayName != nil
-                            ? Color("TextPrimary")
-                            : Color("TextSecondary")
+                            ? Color.textPrimary
+                            : Color.textSecondary
                         )
                         .lineLimit(1)
                 }
@@ -235,7 +235,7 @@ struct MealPlanDayRow: View {
                 } label: {
                     Image(systemName: isEditingClusterName ? "checkmark" : "pencil")
                         .font(.system(size: 13))
-                        .foregroundStyle(Color("BrandAccent"))
+                        .foregroundStyle(Color.brandAccent)
                         .frame(width: 32, height: 32)
                 }
                 .buttonStyle(.plain)
@@ -259,7 +259,7 @@ struct MealPlanDayRow: View {
                     } label: {
                         Image(systemName: "doc.on.doc")
                             .font(.system(size: 13))
-                            .foregroundStyle(Color("BrandAccent"))
+                            .foregroundStyle(Color.brandAccent)
                             .frame(width: 32, height: 32)
                     }
                     .buttonStyle(.plain)
@@ -288,7 +288,7 @@ struct MealPlanDayRow: View {
                     Text("Add to Dinner")
                         .font(.subheadline)
                 }
-                .foregroundStyle(Color("BrandAccent"))
+                .foregroundStyle(Color.brandAccent)
                 .padding(.leading, 64)
                 .padding(.vertical, 10)
             }
@@ -303,13 +303,13 @@ struct MealPlanDayRow: View {
         HStack(spacing: 10) {
             Image(systemName: item.recipe != nil ? "fork.knife" : item.isNoteOnly ? "pencil" : "leaf")
                 .font(.system(size: 13))
-                .foregroundStyle(Color("TextTertiary"))
+                .foregroundStyle(Color.textTertiary)
                 .frame(width: 24)
                 .padding(.leading, 40)
 
             Text(item.displayName)
                 .font(.subheadline)
-                .foregroundStyle(item.isValid ? Color("TextPrimary") : Color("TextTertiary"))
+                .foregroundStyle(item.isValid ? Color.textPrimary : Color.textTertiary)
                 .lineLimit(1)
 
             Spacer()
@@ -321,7 +321,7 @@ struct MealPlanDayRow: View {
                     : "×\(String(format: "%.1g", item.servingCount))"
                 Text(countStr)
                     .font(.caption)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
             }
 
             // Delete button
@@ -359,20 +359,20 @@ struct MealPlanDayRow: View {
         VStack(spacing: 2) {
             Text(label)
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Color("TextSecondary"))
+                .foregroundStyle(Color.textSecondary)
             Text("\(value)")
                 .font(.system(size: 17, weight: .bold, design: .rounded))
-                .foregroundStyle(Color("TextPrimary"))
+                .foregroundStyle(Color.textPrimary)
             Text(unit)
                 .font(.system(size: 11))
-                .foregroundStyle(Color("TextTertiary"))
+                .foregroundStyle(Color.textTertiary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
-        .background(Color("SurfaceCard"), in: RoundedRectangle(cornerRadius: 12))
+        .background(Color.surfaceCard, in: RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color("DividerSubtle"), lineWidth: 1)
+                .stroke(Color.dividerSubtle, lineWidth: 1)
         )
     }
 
@@ -410,8 +410,8 @@ struct MealPlanDayRow: View {
     }
 
     private var logButtonColor: Color {
-        if case .success(_, let skipped) = logResult { return skipped > 0 ? .orange : Color("BrandAccent") }
-        return (hasNoValidItems || isFutureDay) ? Color("TextTertiary") : Color("BrandAccent")
+        if case .success(_, let skipped) = logResult { return skipped > 0 ? .orange : Color.brandAccent }
+        return (hasNoValidItems || isFutureDay) ? Color.textTertiary : Color.brandAccent
     }
 
     // MARK: - Log Day

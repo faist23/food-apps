@@ -63,7 +63,7 @@ struct FoodSearchView: View {
                 // MARK: Search Bar
                 HStack {
                     Image(systemName: "magnifyingglass")
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
 
                     TextField("Search", text: $searchText)
                         .textFieldStyle(.plain)
@@ -129,18 +129,18 @@ struct FoodSearchView: View {
                             debounceTask?.cancel()
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(Color("TextSecondary"))
+                                .foregroundStyle(Color.textSecondary)
                         }
                     }
                 }
                 .padding(14)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(Color("SurfaceCard"))
+                        .fill(Color.surfaceCard)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 14)
-                        .stroke(Color("DividerSubtle"), lineWidth: 1)
+                        .stroke(Color.dividerSubtle, lineWidth: 1)
                 )
                 .padding(.horizontal, 20)
                 .padding(.top, 16)
@@ -152,7 +152,7 @@ struct FoodSearchView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .tint(Color("BrandAccent"))
+                .tint(Color.brandAccent)
                 .padding(.horizontal, 20)
                 .padding(.top, 16)
 
@@ -166,7 +166,7 @@ struct FoodSearchView: View {
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
-                        .tint(Color("BrandAccent"))
+                        .tint(Color.brandAccent)
 
                         Button {
                             quickAddWater()
@@ -175,7 +175,7 @@ struct FoodSearchView: View {
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
-                        .tint(Color("BrandAccent"))
+                        .tint(Color.brandAccent)
 
                         Button {
                             showManualEntry = true
@@ -184,7 +184,7 @@ struct FoodSearchView: View {
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
-                        .tint(Color("BrandAccent"))
+                        .tint(Color.brandAccent)
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 16)
@@ -207,7 +207,7 @@ struct FoodSearchView: View {
 
                 Spacer(minLength: 0)
             }
-            .background(Color("SurfacePrimary"))
+            .background(Color.surfacePrimary)
             .task {
                 // Load asynchronously so the sheet + keyboard appear without delay.
                 // allLogs: Meals tab + serving-size lookups only (capped at 1000).
@@ -234,7 +234,7 @@ struct FoodSearchView: View {
                     Button("Cancel") {
                         dismiss()
                     }
-                    .foregroundStyle(Color("BrandAccent"))
+                    .foregroundStyle(Color.brandAccent)
                 }
             }
             .fullScreenCover(isPresented: $showBarcodeScanner) {
@@ -1482,7 +1482,7 @@ struct ProductQuickRow: View {
                         Text(product.displayName)
                             .font(.subheadline)
                             .fontWeight(.semibold)
-                            .foregroundStyle(Color("TextPrimary"))
+                            .foregroundStyle(Color.textPrimary)
                             .lineLimit(2)
                         
                         Spacer()
@@ -1497,7 +1497,7 @@ struct ProductQuickRow: View {
                        !brand.isEmpty {
                         Text(brand)
                             .font(.caption)
-                            .foregroundStyle(Color("TextSecondary"))
+                            .foregroundStyle(Color.textSecondary)
                             .lineLimit(1)
                     }
                     
@@ -1511,7 +1511,7 @@ struct ProductQuickRow: View {
                                 Text("\(Int(servingCal)) cal per \(servingSize)")
                                     .font(.caption)
                                     .fontWeight(.medium)
-                                    .foregroundStyle(Color("BrandAccent"))
+                                    .foregroundStyle(Color.brandAccent)
                             } else if let portions = product.portions,
                                       let firstPortion = portions.first {
                                 // USDA foods with portions - show cal per portion
@@ -1521,23 +1521,23 @@ struct ProductQuickRow: View {
                                 Text("\(Int(calPerPortion)) cal per \(firstPortion.modifier)")
                                     .font(.caption)
                                     .fontWeight(.medium)
-                                    .foregroundStyle(Color("BrandAccent"))
+                                    .foregroundStyle(Color.brandAccent)
                             } else {
                                 // Fallback to per 100g
                                 Text("\(Int(nutriments.calories)) cal per 100g")
                                     .font(.caption)
                                     .fontWeight(.medium)
-                                    .foregroundStyle(Color("BrandAccent"))
+                                    .foregroundStyle(Color.brandAccent)
                             }
                         }
                         
                         if let lastUsed = product.lastUsed {
                             Text("•")
-                                .foregroundStyle(Color("TextSecondary"))
+                                .foregroundStyle(Color.textSecondary)
                                 .font(.caption)
                             Text(lastUsed.lastUsedDisplay)
                                 .font(.caption)
-                                .foregroundStyle(Color("TextSecondary"))
+                                .foregroundStyle(Color.textSecondary)
                         }
                     }
                 }
@@ -1546,7 +1546,7 @@ struct ProductQuickRow: View {
                 
                 Image(systemName: "chevron.right")
                     .font(.caption)
-                    .foregroundStyle(Color("TextTertiary"))
+                    .foregroundStyle(Color.textTertiary)
             }
         }
     }
@@ -1564,19 +1564,19 @@ struct ProductQuickRow: View {
                     .aspectRatio(contentMode: .fill)
             } placeholder: {
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color("SurfaceElevated"))
+                    .fill(Color.surfaceElevated)
             }
             .frame(width: 56, height: 56)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             
         } else {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color("SurfaceElevated"))
+                .fill(Color.surfaceElevated)
                 .frame(width: 56, height: 56)
                 .overlay {
                     Image(systemName: "fork.knife")
                         .font(.caption)
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                 }
         }
     }

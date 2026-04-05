@@ -65,7 +65,7 @@ struct TodayView: View {
                 headerSection
                     .padding(.horizontal, 20)
                     .padding(.vertical, 12)
-                    .background(Color("SurfacePrimary"))
+                    .background(Color.surfacePrimary)
                 
                 ScrollView {
                     VStack(spacing: 16) {
@@ -100,7 +100,7 @@ struct TodayView: View {
                     .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showSpotlightChip)
                 }
             }
-            .background(Color("SurfacePrimary"))
+            .background(Color.surfacePrimary)
             .navigationBarHidden(true)
             .gesture(
                 DragGesture(minimumDistance: 50)
@@ -252,7 +252,7 @@ struct TodayView: View {
                             loadLogsForSelectedDate()
                         }
                         .disabled(Calendar.current.isDateInToday(selectedDate))
-                        .foregroundStyle(Calendar.current.isDateInToday(selectedDate) ? Color.secondary : Color("BrandPrimary"))
+                        .foregroundStyle(Calendar.current.isDateInToday(selectedDate) ? Color.secondary : Color.brandPrimary)
                     }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Done") {
@@ -524,7 +524,7 @@ struct TodayView: View {
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.title3)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
             }
 
             Spacer()
@@ -536,7 +536,7 @@ struct TodayView: View {
                     HStack(spacing: 8) {
                         Text(dateDisplayText)
                             .font(.system(size: 20, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color("TextPrimary"))
+                            .foregroundStyle(Color.textPrimary)
                         
                         if currentStreak > 0 {
                             HStack(spacing: 4) {
@@ -552,7 +552,7 @@ struct TodayView: View {
 
                     Text("Daily Ledger")
                         .font(.caption)
-                        .foregroundStyle(Color("TextTertiary"))
+                        .foregroundStyle(Color.textTertiary)
                 }
             }
 
@@ -564,7 +564,7 @@ struct TodayView: View {
             } label: {
                 Image(systemName: "chevron.right")
                     .font(.title3)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
             }
             .disabled(Calendar.current.isDateInToday(selectedDate))
             .opacity(Calendar.current.isDateInToday(selectedDate) ? 0.3 : 1)
@@ -581,16 +581,16 @@ struct TodayView: View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "leaf.fill")
                 .font(.system(size: 18))
-                .foregroundStyle(Color("BrandPrimary"))
+                .foregroundStyle(Color.brandPrimary)
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Welcome to BiteLedger")
                     .font(.headline)
-                    .foregroundStyle(Color("TextPrimary"))
+                    .foregroundStyle(Color.textPrimary)
                 Text("Tap any meal below to log your first food. No judgment — just awareness.")
                     .font(.subheadline)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -608,11 +608,11 @@ struct TodayView: View {
             .accessibilityLabel("Dismiss welcome message")
         }
         .padding(14)
-        .background(Color("SurfaceCard"))
+        .background(Color.surfaceCard)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color("DividerSubtle"), lineWidth: 1)
+                .stroke(Color.dividerSubtle, lineWidth: 1)
         )
     }
 
@@ -653,11 +653,11 @@ struct TodayView: View {
         HStack(spacing: 8) {
             Image(systemName: "eye.fill")
                 .font(.system(size: 13))
-                .foregroundStyle(Color("BrandPrimary"))
+                .foregroundStyle(Color.brandPrimary)
 
             Text(top.message)
                 .font(.subheadline)
-                .foregroundStyle(Color("TextPrimary"))
+                .foregroundStyle(Color.textPrimary)
                 .lineLimit(2)
 
             Spacer(minLength: 4)
@@ -669,7 +669,7 @@ struct TodayView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
             }
             .buttonStyle(.plain)
         }
@@ -677,11 +677,11 @@ struct TodayView: View {
         .padding(.vertical, 10)
         .background(
             Capsule()
-                .fill(Color("SurfaceCard"))
+                .fill(Color.surfaceCard)
         )
         .overlay(
             Capsule()
-                .stroke(Color("DividerSubtle"), lineWidth: 1)
+                .stroke(Color.dividerSubtle, lineWidth: 1)
         )
         .onTapGesture {
             selectedTab = 1
@@ -736,12 +736,12 @@ private struct StreakMilestoneToast: View {
                 .foregroundStyle(.orange)
             Text("\(days) day streak! Keep it going")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color("TextPrimary"))
+                .foregroundStyle(Color.textPrimary)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         .background(
-            Capsule().fill(Color("SurfaceElevated"))
+            Capsule().fill(Color.surfaceElevated)
                 .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
         )
         .accessibilityLabel("\(days) day logging streak milestone")
@@ -758,12 +758,12 @@ private struct FirstLogCelebrationToast: View {
                 .foregroundStyle(.yellow)
             Text("You logged your first meal!")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color("TextPrimary"))
+                .foregroundStyle(Color.textPrimary)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         .background(
-            Capsule().fill(Color("SurfaceElevated"))
+            Capsule().fill(Color.surfaceElevated)
                 .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
         )
         .onTapGesture { onDismiss() }

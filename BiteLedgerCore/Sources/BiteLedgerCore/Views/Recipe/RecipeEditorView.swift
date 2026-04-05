@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import PhotosUI
 
 // MARK: - RecipeEditorView
 
@@ -82,6 +83,19 @@ public struct RecipeEditorView: View {
     @State private var editingDirectionText: String = ""
     @State private var newDirectionText: String = ""
 
+    // Scale
+    @State private var scaleMultiplier: Double = 1.0
+    @State private var baseServingsYield: Double
+    @State private var baseIngredientQuantities: [UUID: Double] = [:]
+
+    // Photo
+    @State private var currentImageURL: String? = nil
+    @State private var pendingImage: UIImage? = nil
+    @State private var selectedPhotoItem: PhotosPickerItem? = nil
+    @State private var showCamera = false
+    @State private var showPhotoOptions = false
+    @State private var showPhotoLibrary = false
+
     // MARK: - Init
 
     public init(recipe: Recipe?) {
@@ -103,7 +117,9 @@ public struct RecipeEditorView: View {
         _recipeCuisine     = State(initialValue: recipe?.recipeCuisine ?? "")
         let p = recipe?.prepMinutes ?? 0
         let c = recipe?.cookMinutes ?? 0
-        _prevAutoTotal     = State(initialValue: p + c)
+        _prevAutoTotal       = State(initialValue: p + c)
+        _baseServingsYield   = State(initialValue: yield)
+        _currentImageURL     = State(initialValue: recipe?.imageURL)
     }
 
     // MARK: - Computed
@@ -155,6 +171,7 @@ public struct RecipeEditorView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
+                    photoCard
                     basicInfoCard
                     detailsCard
                     ingredientsCard
@@ -188,14 +205,27 @@ public struct RecipeEditorView: View {
             .onAppear { loadIngredientsFromRecipe() }
             .onChange(of: prepMinutes) { _, _ in autoUpdateTotal() }
             .onChange(of: cookMinutes) { _, _ in autoUpdateTotal() }
+            .onChange(of: scaleMultiplier) { _, newScale in
+                for i in pendingIngredients.indices {
+                    let base = baseIngredientQuantities[pendingIngredients[i].id] ?? pendingIngredients[i].quantity
+                    pendingIngredients[i].quantity = base * newScale
+                }
+                let scaled = baseServingsYield * newScale
+                servingsYield = scaled
+                servingsYieldText = scaled.truncatingRemainder(dividingBy: 1) == 0
+                    ? String(Int(scaled)) : String(format: "%.1f", scaled)
+            }
             .sheet(isPresented: $showIngredientPicker, onDismiss: { hintBeingSearched = nil }) {
                 RecipeIngredientPickerView(
                     initialSearch:   hintBeingSearched?.searchTerm ?? "",
                     initialQuantity: hintBeingSearched?.quantity   ?? 1.0
                 ) { food, serving, quantity in
-                    pendingIngredients.append(
-                        PendingIngredient(food: food, serving: serving, quantity: quantity)
-                    )
+                    // quantity from picker is treated as the base (1x) amount;
+                    // apply current scale immediately so it matches the rest of the list.
+                    var ingredient = PendingIngredient(food: food, serving: serving, quantity: quantity)
+                    baseIngredientQuantities[ingredient.id] = quantity
+                    ingredient.quantity = quantity * scaleMultiplier
+                    pendingIngredients.append(ingredient)
                     if let hint = hintBeingSearched {
                         unmatchedHints.removeAll { $0.id == hint.id }
                     }
@@ -213,6 +243,100 @@ public struct RecipeEditorView: View {
             .sheet(isPresented: $showEditDirection) {
                 editDirectionSheet
             }
+            .sheet(isPresented: $showCamera) {
+                EditorCameraPickerView { image in
+                    pendingImage = image
+                    currentImageURL = nil
+                }
+            }
+            .photosPicker(isPresented: $showPhotoLibrary, selection: $selectedPhotoItem, matching: .images)
+            .onChange(of: selectedPhotoItem) { _, item in
+                Task {
+                    if let data = try? await item?.loadTransferable(type: Data.self),
+                       let img = UIImage(data: data) {
+                        pendingImage = img
+                        currentImageURL = nil
+                    }
+                }
+            }
+            .confirmationDialog("Recipe Photo", isPresented: $showPhotoOptions, titleVisibility: .hidden) {
+                Button("Choose from Library") { showPhotoLibrary = true }
+                Button("Take Photo") { showCamera = true }
+                if pendingImage != nil || currentImageURL != nil {
+                    Button("Remove Photo", role: .destructive) {
+                        pendingImage = nil
+                        currentImageURL = nil
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Card: Photo
+
+    private var photoCard: some View {
+        ElevatedCard(padding: 0, cornerRadius: 20) {
+            ZStack(alignment: .topTrailing) {
+                if let img = pendingImage {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 200)
+                        .clipped()
+                } else if let urlStr = currentImageURL, let url = URL(string: urlStr) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().scaledToFill()
+                        default:
+                            Color.surfaceCard.frame(height: 200)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 200)
+                    .clipped()
+                } else {
+                    Button { showPhotoOptions = true } label: {
+                        ZStack {
+                            Color.surfaceCard
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 140)
+                            VStack(spacing: 8) {
+                                Image(systemName: "camera.fill")
+                                    .font(.title2)
+                                    .foregroundStyle(Color.textTertiary)
+                                Text("Add Photo")
+                                    .font(.subheadline)
+                                    .foregroundStyle(Color.textTertiary)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if pendingImage != nil || currentImageURL != nil {
+                    HStack(spacing: 6) {
+                        Button { showPhotoOptions = true } label: {
+                            Image(systemName: "pencil.circle.fill")
+                                .font(.title2)
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(.white, Color.black.opacity(0.35))
+                        }
+                        Button {
+                            pendingImage = nil
+                            currentImageURL = nil
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title2)
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(.white, Color.black.opacity(0.35))
+                        }
+                    }
+                    .padding(10)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 20))
         }
     }
 
@@ -343,6 +467,10 @@ public struct RecipeEditorView: View {
 
     // MARK: - Card: Ingredients
 
+    private static let scaleOptions: [(label: String, value: Double)] = [
+        ("½x", 0.5), ("1x", 1.0), ("1½x", 1.5), ("2x", 2.0), ("3x", 3.0)
+    ]
+
     private var ingredientsCard: some View {
         ElevatedCard(padding: 16, cornerRadius: 20) {
             VStack(alignment: .leading, spacing: 12) {
@@ -358,6 +486,31 @@ public struct RecipeEditorView: View {
                             .foregroundStyle(Color.brandAccent)
                     }
                     .buttonStyle(.plain)
+                }
+
+                if !pendingIngredients.isEmpty {
+                    HStack(spacing: 0) {
+                        ForEach(Self.scaleOptions, id: \.value) { option in
+                            Button {
+                                scaleMultiplier = option.value
+                            } label: {
+                                Text(option.label)
+                                    .font(.caption)
+                                    .fontWeight(scaleMultiplier == option.value ? .semibold : .regular)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 5)
+                                    .background(scaleMultiplier == option.value
+                                        ? Color.brandPrimary
+                                        : Color.surfaceCard)
+                                    .foregroundStyle(scaleMultiplier == option.value
+                                        ? Color.white
+                                        : Color.textSecondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.dividerSubtle, lineWidth: 1))
                 }
 
                 if pendingIngredients.isEmpty {
@@ -878,6 +1031,8 @@ public struct RecipeEditorView: View {
                                      recipeQuantity: ingredient.recipeQuantity,
                                      recipeUnit: ingredient.recipeUnit)
         }
+        baseIngredientQuantities = Dictionary(uniqueKeysWithValues:
+            pendingIngredients.map { ($0.id, $0.quantity) })
     }
 
     /// Auto-fills Total when Prep or Cook changes, unless the user has manually set Total
@@ -899,19 +1054,21 @@ public struct RecipeEditorView: View {
         recipeName         = imported.name
         let y              = imported.servingsYield
         servingsYield      = y
+        baseServingsYield  = y
         servingsYieldText  = y.truncatingRemainder(dividingBy: 1) == 0
                              ? String(Int(y)) : String(format: "%.1f", y)
         sourceURL          = imported.sourceURL
         directions         = imported.directions
         unmatchedHints     = imported.unmatchedIngredients
         importedNutrition  = imported.nutrition
+        scaleMultiplier    = 1.0
 
         for item in imported.matchedIngredients {
-            pendingIngredients.append(
-                PendingIngredient(food: item.food, serving: item.serving,
-                                  quantity: item.quantity, rawText: item.rawText,
-                                  recipeQuantity: item.quantity, recipeUnit: item.unit)
-            )
+            let ingredient = PendingIngredient(food: item.food, serving: item.serving,
+                                               quantity: item.quantity, rawText: item.rawText,
+                                               recipeQuantity: item.quantity, recipeUnit: item.unit)
+            baseIngredientQuantities[ingredient.id] = item.quantity
+            pendingIngredients.append(ingredient)
         }
     }
 
@@ -940,6 +1097,15 @@ public struct RecipeEditorView: View {
             existing.recipeCategory    = recipeCategory.isEmpty ? nil : recipeCategory
             existing.recipeCuisine     = recipeCuisine.trimmingCharacters(in: .whitespaces).isEmpty
                 ? nil : recipeCuisine.trimmingCharacters(in: .whitespaces)
+
+            // Handle photo
+            if let img = pendingImage, let data = img.jpegData(compressionQuality: 0.85) {
+                if let old = existing.imageURL { RecipeImportService.deleteLocalImage(urlString: old) }
+                existing.imageURL = RecipeImportService.saveImageDataLocally(data)
+            } else if pendingImage == nil && currentImageURL == nil && existing.imageURL != nil {
+                RecipeImportService.deleteLocalImage(urlString: existing.imageURL!)
+                existing.imageURL = nil
+            }
 
             // Replace ingredient list
             for old in existing.ingredients { modelContext.delete(old) }
@@ -1042,8 +1208,11 @@ public struct RecipeEditorView: View {
                 sourceURL:     urlToStore,
                 directions:    directions
             )
-            newRecipe.foodItem         = foodItem
+            newRecipe.foodItem          = foodItem
             newRecipe.importedNutrition = importedNutrition
+            if let img = pendingImage, let data = img.jpegData(compressionQuality: 0.85) {
+                newRecipe.imageURL = RecipeImportService.saveImageDataLocally(data)
+            }
             newRecipe.recipeDescription = descTrimmed.isEmpty ? nil : descTrimmed
             newRecipe.prepMinutes       = Int(prepMinutes)
             newRecipe.cookMinutes       = Int(cookMinutes)
@@ -1858,5 +2027,40 @@ private struct MatchFoodPickerSheet: View {
               let match = regex.firstMatch(in: label, range: NSRange(label.startIndex..., in: label)),
               let range = Range(match.range(at: 1), in: label) else { return nil }
         return Double(label[range])
+    }
+}
+
+// MARK: - Camera Picker
+
+private struct EditorCameraPickerView: UIViewControllerRepresentable {
+    let onImage: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: EditorCameraPickerView
+        init(_ parent: EditorCameraPickerView) { self.parent = parent }
+
+        func imagePickerController(_ picker: UIImagePickerController,
+                                   didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let img = info[.editedImage] as? UIImage ?? info[.originalImage] as? UIImage {
+                parent.onImage(img)
+            }
+            parent.dismiss()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
+        }
     }
 }

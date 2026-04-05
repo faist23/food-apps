@@ -31,7 +31,7 @@ struct GoalEditorView: View {
                         .multilineTextAlignment(.trailing)
                         .frame(width: 100)
                     Text(nutrient.unit)
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                 }
                 
                 if goal.goalType == .range {
@@ -46,7 +46,7 @@ struct GoalEditorView: View {
                             .multilineTextAlignment(.trailing)
                             .frame(width: 100)
                         Text(nutrient.unit)
-                            .foregroundStyle(Color("TextSecondary"))
+                            .foregroundStyle(Color.textSecondary)
                     }
                 }
             } header: {

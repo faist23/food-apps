@@ -132,13 +132,13 @@ struct ShoppingListView: View {
             Spacer()
             Image(systemName: "cart")
                 .font(.system(size: 56))
-                .foregroundStyle(Color("TextSecondary"))
+                .foregroundStyle(Color.textSecondary)
             VStack(spacing: 6) {
                 Text("Your shopping list is empty")
                     .font(.title3.bold())
                 Text("Scale a recipe and tap '+ Shopping' to add ingredients.")
                     .font(.subheadline)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
             }
@@ -159,13 +159,13 @@ private struct ShoppingItemRow: View {
             HStack(spacing: 12) {
                 Image(systemName: item.isChecked ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundStyle(item.isChecked ? Color("BrandPrimary") : Color("TextSecondary"))
+                    .foregroundStyle(item.isChecked ? Color.brandPrimary : Color.textSecondary)
                     .frame(minWidth: 44, minHeight: 44)
 
                 Text(item.displayText)
                     .font(.body)
-                    .foregroundStyle(item.isChecked ? Color("TextTertiary") : Color("TextPrimary"))
-                    .strikethrough(item.isChecked, color: Color("TextTertiary"))
+                    .foregroundStyle(item.isChecked ? Color.textTertiary : Color.textPrimary)
+                    .strikethrough(item.isChecked, color: Color.textTertiary)
 
                 Spacer()
             }
@@ -192,11 +192,11 @@ private struct ReclassifySheet: View {
                 } label: {
                     HStack {
                         Text(category.rawValue)
-                            .foregroundStyle(Color("TextPrimary"))
+                            .foregroundStyle(Color.textPrimary)
                         Spacer()
                         if category == item.category {
                             Image(systemName: "checkmark")
-                                .foregroundStyle(Color("BrandPrimary"))
+                                .foregroundStyle(Color.brandPrimary)
                         }
                     }
                 }

@@ -18,7 +18,7 @@ struct RecipeCardView: View {
             // Photo area: Rectangle anchors layout — AsyncImage overlaid so it
             // can never inflate the card's width/height.
             Rectangle()
-                .fill(Color("SurfaceCard"))
+                .fill(Color.surfaceCard)
                 .frame(maxWidth: .infinity)
                 .frame(height: 150)
                 .overlay(
@@ -32,22 +32,22 @@ struct RecipeCardView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(recipe.name)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color("TextPrimary"))
+                    .foregroundStyle(Color.textPrimary)
                     .lineLimit(2)
 
                 if let minutes = recipe.totalMinutes ?? recipe.cookMinutes, minutes > 0 {
                     Label(formatMinutes(minutes), systemImage: "clock")
                         .font(.caption)
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                 }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 8)
         }
-        .background(Color("SurfaceCard"), in: RoundedRectangle(cornerRadius: 14))
+        .background(Color.surfaceCard, in: RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .stroke(Color("DividerSubtle"), lineWidth: 1)
+                .stroke(Color.dividerSubtle, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 14))
     }
@@ -56,7 +56,7 @@ struct RecipeCardView: View {
         // BrandPrimary gradient + utensils icon — intentional, not broken-looking.
         ZStack {
             LinearGradient(
-                colors: [Color("BrandPrimary").opacity(0.7), Color("BrandPrimary")],
+                colors: [Color.brandPrimary.opacity(0.7), Color.brandPrimary],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )

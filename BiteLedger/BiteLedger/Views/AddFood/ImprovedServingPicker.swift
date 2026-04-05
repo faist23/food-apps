@@ -257,7 +257,7 @@ struct ImprovedServingPicker: View {
                 HStack {
                     Text("Nutrition Facts")
                         .font(.system(size: 32, weight: .black))
-                        .foregroundStyle(Color("TextPrimary"))
+                        .foregroundStyle(Color.textPrimary)
                     Spacer()
                 }
                 .padding(.horizontal, 16)
@@ -265,7 +265,7 @@ struct ImprovedServingPicker: View {
                 
                 // Heavy divider under header
                 Rectangle()
-                    .fill(Color("TextPrimary"))
+                    .fill(Color.textPrimary)
                     .frame(height: 8)
                     .padding(.horizontal, 16)
                     .padding(.top, 4)
@@ -305,7 +305,7 @@ struct ImprovedServingPicker: View {
                 
                 // Heavy divider
                 Rectangle()
-                    .fill(Color("TextPrimary"))
+                    .fill(Color.textPrimary)
                     .frame(height: 6)
                     .padding(.vertical, 4)
                 
@@ -351,7 +351,7 @@ struct ImprovedServingPicker: View {
                 
                 // Heavy divider before vitamins/minerals
                 Rectangle()
-                    .fill(Color("TextPrimary"))
+                    .fill(Color.textPrimary)
                     .frame(height: 8)
                     .padding(.vertical, 4)
                 
@@ -468,14 +468,14 @@ struct ImprovedServingPicker: View {
                 
                 // Heavy divider at bottom
                 Rectangle()
-                    .fill(Color("TextPrimary"))
+                    .fill(Color.textPrimary)
                     .frame(height: 4)
                     .padding(.top, 4)
                 
                 // FDA Disclaimer
                 Text("* The % Daily Value (DV) tells you how much a nutrient in a serving of food contributes to a daily diet. 2,000 calories a day is used for general nutrition advice.")
                     .font(.system(size: 9))
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
                     .padding(.top, 8)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -490,7 +490,7 @@ struct ImprovedServingPicker: View {
     // Helper functions
     private func thinDivider() -> some View {
         Rectangle()
-            .fill(Color("TextPrimary"))
+            .fill(Color.textPrimary)
             .frame(height: 1)
     }
     
@@ -511,7 +511,7 @@ struct ImprovedServingPicker: View {
                 Text("\(percent)%")
                     .font(.system(size: 13))
                     .fontWeight(.light)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
                     .frame(width: 50, alignment: .trailing)
             } else {
                 Text("")
@@ -537,7 +537,7 @@ struct ImprovedServingPicker: View {
                 Text("\(percent)%")
                     .font(.system(size: 13))
                     .fontWeight(.light)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
                     .frame(width: 50, alignment: .trailing)
             } else {
                 Text("")

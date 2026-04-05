@@ -26,10 +26,10 @@ struct SpotlightDetailSheet: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(result.nutrient.spotlightDisplayName)
                             .font(.title2.bold())
-                            .foregroundStyle(Color("TextPrimary"))
+                            .foregroundStyle(Color.textPrimary)
                         Text("What's driving it this week")
                             .font(.subheadline)
-                            .foregroundStyle(Color("TextSecondary"))
+                            .foregroundStyle(Color.textSecondary)
                     }
                     .padding(.vertical, 4)
                     .listRowBackground(Color.clear)
@@ -41,7 +41,7 @@ struct SpotlightDetailSheet: View {
                     Section {
                         Text("No food data for this week.")
                             .font(.subheadline)
-                            .foregroundStyle(Color("TextSecondary"))
+                            .foregroundStyle(Color.textSecondary)
                     }
                 } else {
                     Section {
@@ -49,12 +49,12 @@ struct SpotlightDetailSheet: View {
                             HStack {
                                 Text(contribution.foodName)
                                     .font(.subheadline)
-                                    .foregroundStyle(Color("TextPrimary"))
+                                    .foregroundStyle(Color.textPrimary)
                                     .lineLimit(1)
                                 Spacer()
                                 Text(formattedAmount(contribution))
                                     .font(.subheadline.monospacedDigit())
-                                    .foregroundStyle(Color("TextSecondary"))
+                                    .foregroundStyle(Color.textSecondary)
                             }
                             .padding(.vertical, 2)
                         }
@@ -65,7 +65,7 @@ struct SpotlightDetailSheet: View {
                 Section {
                     Text("\(result.daysAboveThreshold) of 7 days above goal")
                         .font(.footnote)
-                        .foregroundStyle(Color("TextTertiary"))
+                        .foregroundStyle(Color.textTertiary)
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                 }
@@ -78,7 +78,7 @@ struct SpotlightDetailSheet: View {
                         dismiss()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(Color("TextTertiary"))
+                            .foregroundStyle(Color.textTertiary)
                     }
                     .accessibilityLabel("Close")
                 }

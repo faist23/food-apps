@@ -93,7 +93,7 @@ struct MealPlannerView: View {
                 } else {
                     ProgressView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color("SurfacePrimary"))
+                        .background(Color.surfacePrimary)
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -141,7 +141,7 @@ struct MealPlannerView: View {
                 }
             }
         }
-        .background(Color("SurfacePrimary"))
+        .background(Color.surfacePrimary)
     }
 
     // MARK: - Empty week banner
@@ -150,13 +150,13 @@ struct MealPlannerView: View {
         VStack(spacing: 12) {
             Image(systemName: "calendar.badge.plus")
                 .font(.system(size: 28))
-                .foregroundStyle(Color("BrandAccent"))
+                .foregroundStyle(Color.brandAccent)
             Text("Plan your week")
                 .font(.headline)
-                .foregroundStyle(Color("TextPrimary"))
+                .foregroundStyle(Color.textPrimary)
             Text("Add your dinners below, then generate a shopping list in one tap.")
                 .font(.subheadline)
-                .foregroundStyle(Color("TextSecondary"))
+                .foregroundStyle(Color.textSecondary)
                 .multilineTextAlignment(.center)
         }
         .padding(.horizontal, 32)
@@ -172,15 +172,15 @@ struct MealPlannerView: View {
                 .foregroundStyle(.orange)
             Text("Unable to load plan")
                 .font(.headline)
-                .foregroundStyle(Color("TextPrimary"))
+                .foregroundStyle(Color.textPrimary)
             Button("Retry") {
                 planLoadError = nil
                 loadOrCreatePlan()
             }
-            .foregroundStyle(Color("BrandAccent"))
+            .foregroundStyle(Color.brandAccent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color("SurfacePrimary"))
+        .background(Color.surfacePrimary)
     }
 
     // MARK: - Week navigation header (sticky)
@@ -195,13 +195,13 @@ struct MealPlannerView: View {
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Color("BrandAccent"))
+                        .foregroundStyle(Color.brandAccent)
                         .frame(width: 44, height: 44)
                 }
 
                 Text(weekHeaderTitle)
                     .font(.headline)
-                    .foregroundStyle(Color("TextPrimary"))
+                    .foregroundStyle(Color.textPrimary)
                     .frame(maxWidth: .infinity)
 
                 Button {
@@ -211,16 +211,16 @@ struct MealPlannerView: View {
                 } label: {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Color("BrandAccent"))
+                        .foregroundStyle(Color.brandAccent)
                         .frame(width: 44, height: 44)
                 }
             }
             Text("\(dinnerCount) of 7 dinners planned")
                 .font(.caption)
-                .foregroundStyle(Color("TextSecondary"))
+                .foregroundStyle(Color.textSecondary)
         }
         .padding(.bottom, 4)
-        .background(Color("SurfacePrimary"))
+        .background(Color.surfacePrimary)
         .overlay(alignment: .bottom) { Divider() }
     }
 
@@ -239,12 +239,12 @@ struct MealPlannerView: View {
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                .background(Color("BrandPrimary"), in: RoundedRectangle(cornerRadius: 14))
+                .background(Color.brandPrimary, in: RoundedRectangle(cornerRadius: 14))
                 .foregroundStyle(.white)
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
-        .background(Color("SurfacePrimary"))
+        .background(Color.surfacePrimary)
         .accessibilityLabel("Generate shopping list from this week's plan")
     }
 
@@ -255,7 +255,7 @@ struct MealPlannerView: View {
         ToolbarItem(placement: .principal) {
             Text("Plan")
                 .font(.headline)
-                .foregroundStyle(Color("TextPrimary"))
+                .foregroundStyle(Color.textPrimary)
         }
         ToolbarItem(placement: .navigationBarTrailing) {
             Menu {
@@ -266,7 +266,7 @@ struct MealPlannerView: View {
                 }
             } label: {
                 Image(systemName: "ellipsis")
-                    .foregroundStyle(Color("BrandAccent"))
+                    .foregroundStyle(Color.brandAccent)
             }
         }
     }

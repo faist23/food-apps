@@ -67,13 +67,13 @@ struct MealEntrySheet: View {
                         Label("Add Note", systemImage: "pencil")
                             .labelStyle(.titleAndIcon)
                             .font(.subheadline)
-                            .foregroundStyle(Color("BrandAccent"))
+                            .foregroundStyle(Color.brandAccent)
                     }
                     .accessibilityLabel(showNoteEntry ? "Cancel note" : "Add a note to this meal")
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") { dismiss() }
-                        .foregroundStyle(Color("BrandAccent"))
+                        .foregroundStyle(Color.brandAccent)
                 }
             }
         }
@@ -87,7 +87,7 @@ struct MealEntrySheet: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("ADDED")
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Color("TextSecondary"))
+                .foregroundStyle(Color.textSecondary)
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
 
@@ -104,10 +104,10 @@ struct MealEntrySheet: View {
                                 .font(item.isNote ? .subheadline.italic() : .subheadline)
                                 .lineLimit(1)
                         }
-                        .foregroundStyle(Color("TextPrimary"))
+                        .foregroundStyle(Color.textPrimary)
                         .padding(.horizontal, 12)
                         .frame(height: 32)
-                        .background(Color("SurfaceCard"), in: Capsule())
+                        .background(Color.surfaceCard, in: Capsule())
                     }
                 }
                 .padding(.horizontal, 16)
@@ -122,13 +122,13 @@ struct MealEntrySheet: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("NOTE")
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Color("TextSecondary"))
+                .foregroundStyle(Color.textSecondary)
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
 
             TextField("Restaurant, reminder, free text…", text: $noteEntryText, axis: .vertical)
                 .padding(14)
-                .background(Color("SurfaceCard"), in: RoundedRectangle(cornerRadius: 14))
+                .background(Color.surfaceCard, in: RoundedRectangle(cornerRadius: 14))
                 .padding(.horizontal, 16)
                 .lineLimit(3...6)
 
@@ -145,13 +145,13 @@ struct MealEntrySheet: View {
                     .padding(.vertical, 14)
                     .background(
                         noteEntryText.trimmingCharacters(in: .whitespaces).isEmpty
-                            ? Color("SurfaceCard")
-                            : Color("BrandPrimary"),
+                            ? Color.surfaceCard
+                            : Color.brandPrimary,
                         in: RoundedRectangle(cornerRadius: 14)
                     )
                     .foregroundStyle(
                         noteEntryText.trimmingCharacters(in: .whitespaces).isEmpty
-                            ? Color("TextTertiary")
+                            ? Color.textTertiary
                             : .white
                     )
             }
@@ -228,20 +228,20 @@ struct OccasionSelectionView: View {
                             HStack(spacing: 12) {
                                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                                     .font(.title2)
-                                    .foregroundStyle(isSelected ? Color("BrandAccent") : Color("TextTertiary"))
+                                    .foregroundStyle(isSelected ? Color.brandAccent : Color.textTertiary)
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(log.foodItem?.name ?? "Unknown")
                                         .font(.subheadline)
-                                        .foregroundStyle(Color("TextPrimary"))
+                                        .foregroundStyle(Color.textPrimary)
                                     if let serving = log.servingSize {
                                         Text("\(log.quantityDescription) · \(serving.label)")
                                             .font(.caption)
-                                            .foregroundStyle(Color("TextSecondary"))
+                                            .foregroundStyle(Color.textSecondary)
                                     } else {
                                         Text(log.quantityDescription)
                                             .font(.caption)
-                                            .foregroundStyle(Color("TextSecondary"))
+                                            .foregroundStyle(Color.textSecondary)
                                     }
                                 }
 
@@ -249,12 +249,12 @@ struct OccasionSelectionView: View {
 
                                 Text("\(Int(log.caloriesAtLogTime)) cal")
                                     .font(.subheadline.monospacedDigit())
-                                    .foregroundStyle(Color("TextSecondary"))
+                                    .foregroundStyle(Color.textSecondary)
                             }
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .listRowBackground(Color("SurfacePrimary"))
+                        .listRowBackground(Color.surfacePrimary)
                     }
                 }
                 .listStyle(.plain)
@@ -263,15 +263,15 @@ struct OccasionSelectionView: View {
                 HStack {
                     Text(selectedCount == 1 ? "1 item selected" : "\(selectedCount) items selected")
                         .font(.subheadline)
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                     Spacer()
                     Text("\(selectedCalories) cal")
                         .font(.subheadline.monospacedDigit().bold())
-                        .foregroundStyle(Color("TextPrimary"))
+                        .foregroundStyle(Color.textPrimary)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(Color("SurfaceCard"))
+                .background(Color.surfaceCard)
                 .overlay(alignment: .top) { Divider() }
 
                 Button {
@@ -285,23 +285,23 @@ struct OccasionSelectionView: View {
                         .padding(.vertical, 14)
                         .background(
                             selectedCount == 0
-                                ? Color("SurfaceCard")
-                                : Color("BrandPrimary"),
+                                ? Color.surfaceCard
+                                : Color.brandPrimary,
                             in: RoundedRectangle(cornerRadius: 14)
                         )
-                        .foregroundStyle(selectedCount == 0 ? Color("TextTertiary") : .white)
+                        .foregroundStyle(selectedCount == 0 ? Color.textTertiary : .white)
                 }
                 .disabled(selectedCount == 0)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(Color("SurfacePrimary"))
+                .background(Color.surfacePrimary)
             }
             .navigationTitle(occasion.displayName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundStyle(Color("BrandAccent"))
+                        .foregroundStyle(Color.brandAccent)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(selectedCount == validLogs.count ? "Deselect All" : "Select All") {
@@ -311,7 +311,7 @@ struct OccasionSelectionView: View {
                             selectedIDs = Set(validLogs.map(\.persistentModelID))
                         }
                     }
-                    .foregroundStyle(Color("BrandAccent"))
+                    .foregroundStyle(Color.brandAccent)
                 }
             }
         }

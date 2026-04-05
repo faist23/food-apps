@@ -344,7 +344,7 @@ struct FoodLogEditView: View {
                 HStack {
                     Text("Nutrition Facts")
                         .font(.system(size: 32, weight: .black))
-                        .foregroundStyle(Color("TextPrimary"))
+                        .foregroundStyle(Color.textPrimary)
                     
                     Spacer()
                     
@@ -353,7 +353,7 @@ struct FoodLogEditView: View {
                     } label: {
                         Image(systemName: "pencil.circle.fill")
                             .font(.title2)
-                            .foregroundStyle(Color("BrandAccent"))
+                            .foregroundStyle(Color.brandAccent)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -361,7 +361,7 @@ struct FoodLogEditView: View {
                 
                 // Heavy divider under header
                 Rectangle()
-                    .fill(Color("TextPrimary"))
+                    .fill(Color.textPrimary)
                     .frame(height: 8)
                     .padding(.horizontal, 16)
                     .padding(.top, 4)
@@ -400,7 +400,7 @@ struct FoodLogEditView: View {
             
             // Heavy divider
             Rectangle()
-                .fill(Color("TextPrimary"))
+                .fill(Color.textPrimary)
                 .frame(height: 6)
                 .padding(.vertical, 4)
             
@@ -466,7 +466,7 @@ struct FoodLogEditView: View {
             
             // Heavy divider before vitamins/minerals
             Rectangle()
-                .fill(Color("TextPrimary"))
+                .fill(Color.textPrimary)
                 .frame(height: 8)
                 .padding(.vertical, 4)
             
@@ -550,14 +550,14 @@ struct FoodLogEditView: View {
             
             // Heavy divider at bottom
             Rectangle()
-                .fill(Color("TextPrimary"))
+                .fill(Color.textPrimary)
                 .frame(height: 4)
                 .padding(.top, 4)
             
             // FDA Disclaimer
             Text("* The % Daily Value (DV) tells you how much a nutrient in a serving of food contributes to a daily diet. 2,000 calories a day is used for general nutrition advice.")
                 .font(.system(size: 9))
-                .foregroundStyle(Color("TextSecondary"))
+                .foregroundStyle(Color.textSecondary)
                 .padding(.top, 8)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -566,7 +566,7 @@ struct FoodLogEditView: View {
     // Helper functions
     private func thinDivider() -> some View {
         Rectangle()
-            .fill(Color("TextPrimary"))
+            .fill(Color.textPrimary)
             .frame(height: 1)
     }
     
@@ -587,7 +587,7 @@ struct FoodLogEditView: View {
                 Text("\(percent)%")
                     .font(.system(size: 13))
                     .fontWeight(.light)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
                     .frame(width: 50, alignment: .trailing)
             } else {
                 Text("")
@@ -613,7 +613,7 @@ struct FoodLogEditView: View {
                 Text("\(percent)%")
                     .font(.system(size: 13))
                     .fontWeight(.light)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
                     .frame(width: 50, alignment: .trailing)
             } else {
                 Text("")
@@ -686,7 +686,7 @@ struct FoodLogEditView: View {
                     Spacer()
                 }
                 .padding()
-                .background(Color("SurfacePrimary"))
+                .background(Color.surfacePrimary)
                 
                 ScrollView {
                     VStack(spacing: 0) {
@@ -705,7 +705,7 @@ struct FoodLogEditView: View {
                             Text("Size")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
-                                .foregroundStyle(Color("TextSecondary"))
+                                .foregroundStyle(Color.textSecondary)
                             
                             Menu {
                                 ForEach(foodItem.servingSizes) { servingSize in
@@ -724,18 +724,18 @@ struct FoodLogEditView: View {
                             } label: {
                                 HStack {
                                     Text(selectedPortion?.label.capitalized ?? "Select size")
-                                        .foregroundStyle(Color("TextPrimary"))
+                                        .foregroundStyle(Color.textPrimary)
                                     Spacer()
                                     Image(systemName: "chevron.up.chevron.down")
-                                        .foregroundStyle(Color("TextSecondary"))
+                                        .foregroundStyle(Color.textSecondary)
                                         .font(.caption)
                                 }
                                 .padding(14)
-                                .background(Color("SurfaceCard"))
+                                .background(Color.surfaceCard)
                                 .cornerRadius(12)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color("DividerSubtle"), lineWidth: 1)
+                                        .stroke(Color.dividerSubtle, lineWidth: 1)
                                 )
                             }
                         }
@@ -746,7 +746,7 @@ struct FoodLogEditView: View {
                         Text("Amount")
                             .font(.subheadline)
                             .fontWeight(.semibold)
-                            .foregroundStyle(Color("TextSecondary"))
+                            .foregroundStyle(Color.textSecondary)
                         
                         HStack(spacing: 12) {
                             // Quantity stepper
@@ -756,7 +756,7 @@ struct FoodLogEditView: View {
                                 } label: {
                                     Image(systemName: "minus.circle.fill")
                                         .font(.title2)
-                                        .foregroundStyle(Color("BrandAccent"))
+                                        .foregroundStyle(Color.brandAccent)
                                 }
                                 .disabled(amountValue <= 0.25)
                                 
@@ -789,7 +789,7 @@ struct FoodLogEditView: View {
                                 } label: {
                                     Image(systemName: "plus.circle.fill")
                                         .font(.title2)
-                                        .foregroundStyle(Color("BrandAccent"))
+                                        .foregroundStyle(Color.brandAccent)
                                 }
                             }
                             
@@ -813,28 +813,28 @@ struct FoodLogEditView: View {
                             } label: {
                                 HStack(spacing: 8) {
                                     Text(displayNameForUnit(selectedUnit))
-                                        .foregroundStyle(Color("TextPrimary"))
+                                        .foregroundStyle(Color.textPrimary)
                                         .fontWeight(.medium)
                                     Image(systemName: "chevron.up.chevron.down")
                                         .font(.caption)
-                                        .foregroundStyle(Color("TextSecondary"))
+                                        .foregroundStyle(Color.textSecondary)
                                 }
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 12)
-                                .background(Color("SurfaceCard"))
+                                .background(Color.surfaceCard)
                                 .cornerRadius(12)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color("DividerSubtle"), lineWidth: 1)
+                                        .stroke(Color.dividerSubtle, lineWidth: 1)
                                 )
                             }
                         }
                         .padding(16)
-                        .background(Color("SurfaceCard"))
+                        .background(Color.surfaceCard)
                         .cornerRadius(16)
                         .overlay(
                             RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color("DividerSubtle"), lineWidth: 1)
+                                .stroke(Color.dividerSubtle, lineWidth: 1)
                         )
                     }
                 }
@@ -873,7 +873,7 @@ struct FoodLogEditView: View {
                         commitTextFieldAmount()
                     }
                     .fontWeight(.semibold)
-                    .foregroundStyle(Color("BrandAccent"))
+                    .foregroundStyle(Color.brandAccent)
                 }
             }
             .sheet(isPresented: $showingNutritionEditor) {
@@ -1274,18 +1274,18 @@ struct NutritionEditorView: View {
                 }
                 .padding()
             }
-            .background(Color("SurfacePrimary"))
+            .background(Color.surfacePrimary)
             .navigationTitle("Edit Nutrition")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { saveNutrition() }
                         .fontWeight(.semibold)
-                        .foregroundStyle(Color("BrandAccent"))
+                        .foregroundStyle(Color.brandAccent)
                 }
             }
         }
@@ -1354,10 +1354,10 @@ private extension NutritionEditorView {
             // Header
             Text("Nutrition Facts")
                 .font(.system(size: 32, weight: .black))
-                .foregroundStyle(Color("TextPrimary"))
+                .foregroundStyle(Color.textPrimary)
                 .padding(.bottom, 4)
 
-            Rectangle().fill(Color("TextPrimary")).frame(height: 8)
+            Rectangle().fill(Color.textPrimary).frame(height: 8)
 
             // Serving info
             servingRow
@@ -1369,7 +1369,7 @@ private extension NutritionEditorView {
             caloriesRow
                 .padding(.vertical, 4)
 
-            Rectangle().fill(Color("TextPrimary")).frame(height: 8)
+            Rectangle().fill(Color.textPrimary).frame(height: 8)
 
             // % DV header
             Text("% Daily Value*")
@@ -1389,11 +1389,11 @@ private extension NutritionEditorView {
 
             proteinRow.padding(.vertical, 4)
 
-            Rectangle().fill(Color("TextPrimary")).frame(height: 8)
+            Rectangle().fill(Color.textPrimary).frame(height: 8)
 
             Text("Tap a unit (mg, mcg, g) to switch to % Daily Value.")
                 .font(.system(size: 10))
-                .foregroundStyle(Color("TextSecondary"))
+                .foregroundStyle(Color.textSecondary)
                 .padding(.vertical, 4)
 
             vitaminSection
@@ -1402,17 +1402,17 @@ private extension NutritionEditorView {
 
             Text("* The % Daily Value tells you how much a nutrient in a serving contributes to a daily diet.")
                 .font(.system(size: 9))
-                .foregroundStyle(Color("TextSecondary"))
+                .foregroundStyle(Color.textSecondary)
                 .padding(.top, 6)
         }
         .padding(20)
-        .background(Color("SurfacePrimary"))
+        .background(Color.surfacePrimary)
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(color: .black.opacity(0.05), radius: 10, y: 6)
     }
 
     var thinDivider: some View {
-        Rectangle().fill(Color("TextPrimary")).frame(height: 1)
+        Rectangle().fill(Color.textPrimary).frame(height: 1)
     }
 
     var servingRow: some View {
@@ -1428,25 +1428,25 @@ private extension NutritionEditorView {
             // Changing the amount and tapping ↵ rescales all fields from the
             // stored base values so the math stays exact.
             HStack(spacing: 4) {
-                Text("Per").foregroundStyle(Color("TextSecondary"))
+                Text("Per").foregroundStyle(Color.textSecondary)
                 TextField("1", text: $referenceAmount)
                     .keyboardType(.decimalPad)
                     .multilineTextAlignment(.center)
                     .frame(width: 52)
                     .onSubmit { commitReferenceAmount() }
                 Text(servingDescription.isEmpty ? "serving" : servingDescription)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
                     .lineLimit(1)
                 Spacer()
             }
             HStack {
-                Text("Grams per Serving").foregroundStyle(Color("TextSecondary"))
+                Text("Grams per Serving").foregroundStyle(Color.textSecondary)
                 Spacer()
                 TextField("—", text: $gramsPerServing)
                     .keyboardType(.decimalPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 60)
-                Text("g").foregroundStyle(Color("TextSecondary"))
+                Text("g").foregroundStyle(Color.textSecondary)
             }
         }
         .font(.subheadline)
@@ -1538,7 +1538,7 @@ private extension NutritionEditorView {
                 .multilineTextAlignment(.trailing)
                 .frame(width: 80)
             Text(unit)
-                .foregroundStyle(Color("TextSecondary"))
+                .foregroundStyle(Color.textSecondary)
                 .frame(width: 40, alignment: .leading)
         }
         .font(.subheadline)

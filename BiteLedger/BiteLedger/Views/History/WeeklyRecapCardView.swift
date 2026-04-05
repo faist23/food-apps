@@ -101,7 +101,7 @@ struct WeeklyRecapCardView: View {
         ZStack {
             // Background
             LinearGradient(
-                colors: [Color("BrandPrimary"), Color("BrandPrimary").opacity(0.75)],
+                colors: [Color.brandPrimary, Color.brandPrimary.opacity(0.75)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )

@@ -86,7 +86,7 @@ struct SettingsView: View {
                     } label: {
                         HStack {
                             Image(systemName: "externaldrive.fill")
-                                .foregroundStyle(Color("BrandPrimary"))
+                                .foregroundStyle(Color.brandPrimary)
                             Text("Backup & Restore")
                                 .foregroundStyle(.primary)
                         }
@@ -373,12 +373,12 @@ struct GoalRow: View {
                             .foregroundStyle(.primary)
                         Text(goalDescription(for: goal))
                             .font(.caption)
-                            .foregroundStyle(Color("TextSecondary"))
+                            .foregroundStyle(Color.textSecondary)
                     }
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.caption)
-                        .foregroundStyle(Color("TextTertiary"))
+                        .foregroundStyle(Color.textTertiary)
                 }
             }
             .sheet(isPresented: $showingEditor) {
@@ -414,7 +414,7 @@ struct GoalRow: View {
                     Spacer()
                     Text("Set Goal")
                         .font(.subheadline)
-                        .foregroundStyle(Color("BrandAccent"))
+                        .foregroundStyle(Color.brandAccent)
                 }
             }
         }

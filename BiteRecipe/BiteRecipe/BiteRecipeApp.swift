@@ -81,7 +81,7 @@ struct BiteRecipeApp: App {
                             consumePendingRecipeURL()
                         }
                 } else {
-                    Color("SurfacePrimary")
+                    Color.surfacePrimary
                         .ignoresSafeArea()
                         .task { loadContainer() }
                 }
