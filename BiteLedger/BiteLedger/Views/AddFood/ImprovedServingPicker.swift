@@ -1119,6 +1119,7 @@ struct ImprovedServingPicker: View {
         )
 
         onAdd(addedItem)
+        dismiss()
     }
 
     private func convertAmount(from oldUnit: ServingUnit, to newUnit: ServingUnit) {

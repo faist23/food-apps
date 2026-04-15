@@ -46,6 +46,7 @@ struct FoodSearchView: View {
     @State private var errorMessage: String?
     @State private var searchTask: Task<Void, Never>? // Track current search task
     @State private var debounceTask: Task<Void, Never>? // Track debounce task
+    @State private var addedCount = 0 // Items added this session
     
     private let foodService = UnifiedFoodSearchService.shared
     
@@ -236,6 +237,26 @@ struct FoodSearchView: View {
                     }
                     .foregroundStyle(Color.brandAccent)
                 }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 6) {
+                            if addedCount > 0 {
+                                Text("\(addedCount)")
+                                    .font(.caption2)
+                                    .fontWeight(.bold)
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.brandAccent, in: Capsule())
+                            }
+                            Image(systemName: "checkmark")
+                                .fontWeight(.semibold)
+                        }
+                    }
+                    .foregroundStyle(Color.brandAccent)
+                }
             }
             .fullScreenCover(isPresented: $showBarcodeScanner) {
                 BarcodeScannerView { barcode in
@@ -248,8 +269,9 @@ struct FoodSearchView: View {
                     mealType: mealType
                 ) { addedItem in
                     onFoodAdded(addedItem)
+                    addedCount += 1
                     refreshLogs()
-                    dismiss()
+                    selectedProduct = nil
                 }
             }
             .sheet(item: Binding(
@@ -280,16 +302,16 @@ struct FoodSearchView: View {
                     initialUnit: context.initialUnit
                 ) { addedItem in
                     onFoodAdded(addedItem)
+                    addedCount += 1
                     refreshLogs()
                     selectedProductContext = nil
-                    dismiss()
                 }
             }
             .sheet(isPresented: $showManualEntry) {
                 ManualFoodEntryView(mealType: mealType) { addedItem in
                     onFoodAdded(addedItem)
+                    addedCount += 1
                     refreshLogs()
-                    dismiss()
                 }
             }
         }
@@ -316,6 +338,13 @@ struct FoodSearchView: View {
                 RecentFoodsForMealView(
                     allLogs: allLogs,
                     mealType: mealType,
+                    onFoodQuickAdded: { foodItem in
+                        guard let serving = foodItem.defaultServing ?? foodItem.servingSizes.first else { return }
+                        let addedItem = AddedFoodItem(foodItem: foodItem, servingSize: serving, quantity: 1.0)
+                        onFoodAdded(addedItem)
+                        addedCount += 1
+                        refreshLogs()
+                    },
                     onFoodSelected: { foodItem in
                         // Find the most recent log entry for this food item
                         let mostRecentLog = allLogs.first { $0.foodItem?.id == foodItem.id }
@@ -489,6 +518,13 @@ struct FoodSearchView: View {
             allLogs: allLogs,
             searchText: searchText,
             mealType: mealType,
+            onFoodQuickAdded: { foodItem in
+                guard let serving = foodItem.defaultServing ?? foodItem.servingSizes.first else { return }
+                let addedItem = AddedFoodItem(foodItem: foodItem, servingSize: serving, quantity: 1.0)
+                onFoodAdded(addedItem)
+                addedCount += 1
+                refreshLogs()
+            },
             onFoodSelected: { foodItem in
                 // Find the most recent log entry for this food item to get the last used serving
                 let mostRecentLog = allLogs.first { $0.foodItem?.id == foodItem.id }
@@ -703,8 +739,9 @@ struct FoodSearchView: View {
             loggedUnit: servingCount == 1 ? "serving" : "servings"
         )
         onFoodAdded(addedItem)
+        addedCount += 1
         refreshLogs()
-        dismiss()
+        selectedRecipeForLog = nil
     }
 
     private func findOrCreateRecipeFoodItem(for recipe: Recipe) -> (FoodItem, ServingSize) {
@@ -896,8 +933,8 @@ struct FoodSearchView: View {
                             onFoodAdded(addedItem)
                         }
                     }
+                    addedCount += selectedLogs.count
                     refreshLogs()
-                    dismiss()
                 }
             )
         }
@@ -1063,8 +1100,8 @@ struct FoodSearchView: View {
         )
         
         onFoodAdded(addedItem)
+        addedCount += 1
         refreshLogs()
-        dismiss()
     }
 
     private func refreshLogs() {
@@ -1643,6 +1680,7 @@ struct MyFoodsListView: View {
     let allLogs: [FoodLog]
     let searchText: String
     let mealType: MealType
+    let onFoodQuickAdded: (FoodItem) -> Void
     let onFoodSelected: (FoodItem) -> Void
 
     // When a query is active: use SQL results (full history, no cap).
@@ -1795,9 +1833,12 @@ struct MyFoodsListView: View {
         ScrollView {
             LazyVStack(spacing: 8) {
                 ForEach(sortedFoods, id: \.id) { foodItem in
-                    FoodItemRow(foodItem: foodItem, lastUsed: lastUsedDates[foodItem.id], onTap: {
-                        onFoodSelected(foodItem)
-                    })
+                    FoodItemRow(
+                        foodItem: foodItem,
+                        lastUsed: lastUsedDates[foodItem.id],
+                        onTap: { onFoodSelected(foodItem) },
+                        onQuickAdd: { onFoodQuickAdded(foodItem) }
+                    )
                 }
             }
             .padding()
@@ -1809,24 +1850,25 @@ struct FoodItemRow: View {
     let foodItem: FoodItem
     let lastUsed: Date?
     let onTap: () -> Void
-    
+    var onQuickAdd: (() -> Void)? = nil
+
     var body: some View {
         HStack(spacing: 12) {
             foodImageView
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(foodItem.name)
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .lineLimit(1)
-                
+
                 if let brand = foodItem.brand, !brand.isEmpty {
                     Text(brand)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-                
+
                 HStack(spacing: 4) {
                     // Display calories per base serving
                     if let defaultServing = foodItem.defaultServing {
@@ -1849,15 +1891,27 @@ struct FoodItemRow: View {
                     }
                 }
             }
-            
+
             Spacer(minLength: 0)
-            
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+
+            if let onQuickAdd {
+                Button {
+                    onQuickAdd()
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(Color.brandAccent)
+                }
+                .buttonStyle(.plain)
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(12)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+        .contentShape(Rectangle())
         .onTapGesture {
             onTap()
         }
@@ -1898,6 +1952,7 @@ struct FoodItemRow: View {
 struct RecentFoodsForMealView: View {
     let allLogs: [FoodLog]
     let mealType: MealType
+    let onFoodQuickAdded: (FoodItem) -> Void
     let onFoodSelected: (FoodItem) -> Void
 
     private var lastUsedDates: [UUID: Date] {
@@ -1950,9 +2005,12 @@ struct RecentFoodsForMealView: View {
 
                         LazyVStack(spacing: 8) {
                             ForEach(recentFoods, id: \.id) { foodItem in
-                                FoodItemRow(foodItem: foodItem, lastUsed: lastUsedDates[foodItem.id], onTap: {
-                                    onFoodSelected(foodItem)
-                                })
+                                FoodItemRow(
+                                    foodItem: foodItem,
+                                    lastUsed: lastUsedDates[foodItem.id],
+                                    onTap: { onFoodSelected(foodItem) },
+                                    onQuickAdd: { onFoodQuickAdded(foodItem) }
+                                )
                             }
                         }
                         .padding(.horizontal)
