@@ -15,6 +15,8 @@ struct RecipesListView: View {
     @State private var showingOCRImport = false
     @State private var showingSettings = false
     @State private var pendingImportURL: String? = nil
+    @State private var importedToast: (id: UUID, name: String)? = nil
+    @State private var toastDismissTask: Task<Void, Never>? = nil
 
     private let gridColumns = [
         GridItem(.flexible(), spacing: 12),
@@ -23,82 +25,120 @@ struct RecipesListView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if recipes.isEmpty {
-                    recipeEmptyState
-                } else {
-                    ScrollView {
-                        LazyVGrid(columns: gridColumns, spacing: 12) {
-                            ForEach(recipes) { recipe in
-                                NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
-                                    RecipeCardView(recipe: recipe)
-                                }
-                                .buttonStyle(.plain)
-                                .frame(maxHeight: .infinity, alignment: .top)
-                                .contextMenu {
-                                    Button(role: .destructive) {
-                                        deleteRecipe(recipe)
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
+            ZStack(alignment: .bottom) {
+                Group {
+                    if recipes.isEmpty {
+                        recipeEmptyState
+                    } else {
+                        ScrollView {
+                            LazyVGrid(columns: gridColumns, spacing: 12) {
+                                ForEach(recipes) { recipe in
+                                    NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
+                                        RecipeCardView(recipe: recipe)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .frame(maxHeight: .infinity, alignment: .top)
+                                    .contextMenu {
+                                        Button(role: .destructive) {
+                                            deleteRecipe(recipe)
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
                                     }
                                 }
                             }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
                     }
                 }
-            }
-            .navigationTitle("Recipes")
-            .toolbar {
-                // Design: [gear] leading (Settings), [+▾] trailing menu (3 add methods)
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button { showingSettings = true } label: {
-                        Image(systemName: "gear")
+                .navigationTitle("Recipes")
+                .toolbar {
+                    // Design: [gear] leading (Settings), [+▾] trailing menu (3 add methods)
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button { showingSettings = true } label: {
+                            Image(systemName: "gear")
+                        }
+                        .accessibilityLabel("Settings")
                     }
-                    .accessibilityLabel("Settings")
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        Button { showingImport = true } label: {
-                            Label("Import from URL", systemImage: "link.badge.plus")
+                    ToolbarItem(placement: .primaryAction) {
+                        Menu {
+                            Button { showingImport = true } label: {
+                                Label("Import from URL", systemImage: "link.badge.plus")
+                            }
+                            Button { showingOCRImport = true } label: {
+                                Label("Scan Recipe Card", systemImage: "camera.viewfinder")
+                            }
+                            Button { showingNewRecipe = true } label: {
+                                Label("Create Manually", systemImage: "square.and.pencil")
+                            }
+                        } label: {
+                            Image(systemName: "plus")
                         }
-                        Button { showingOCRImport = true } label: {
-                            Label("Scan Recipe Card", systemImage: "camera.viewfinder")
-                        }
-                        Button { showingNewRecipe = true } label: {
-                            Label("Create Manually", systemImage: "square.and.pencil")
-                        }
-                    } label: {
-                        Image(systemName: "plus")
+                        .accessibilityLabel("Add recipe")
                     }
-                    .accessibilityLabel("Add recipe")
+                }
+                .sheet(isPresented: $showingImport, onDismiss: { pendingImportURL = nil }) {
+                    ImportRecipeView(prefilledURL: pendingImportURL)
+                }
+                .sheet(isPresented: $showingOCRImport) {
+                    OCRRecipeImportView()
+                }
+                .sheet(isPresented: $showingNewRecipe) {
+                    RecipeEditorView(recipe: nil)
+                }
+                .sheet(isPresented: $showingSettings) {
+                    SettingsView()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .biteRecipeImportURL)) { note in
+                    if let url = note.userInfo?["url"] as? URL {
+                        pendingImportURL = url.absoluteString
+                        showingImport = true
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .biteRecipeBundleImported)) { note in
+                    guard let id = note.userInfo?["recipeID"] as? UUID,
+                          let name = note.userInfo?["recipeName"] as? String else { return }
+                    showImportToast(id: id, name: name)
+                }
+
+                // Imported recipe toast with Undo
+                if let toast = importedToast {
+                    ImportedToastView(name: toast.name) {
+                        let undoID = toast.id
+                        toastDismissTask?.cancel()
+                        withAnimation { importedToast = nil }
+                        undoImport(id: undoID)
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.bottom, 8)
                 }
             }
-            .sheet(isPresented: $showingImport, onDismiss: { pendingImportURL = nil }) {
-                ImportRecipeView(prefilledURL: pendingImportURL)
-            }
-            .sheet(isPresented: $showingOCRImport) {
-                OCRRecipeImportView()
-            }
-            .sheet(isPresented: $showingNewRecipe) {
-                RecipeEditorView(recipe: nil)
-            }
-            .sheet(isPresented: $showingSettings) {
-                SettingsView()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .biteRecipeImportURL)) { note in
-                if let url = note.userInfo?["url"] as? URL {
-                    pendingImportURL = url.absoluteString
-                    showingImport = true
-                }
-            }
+            .animation(.spring(duration: 0.3), value: importedToast != nil)
         }
     }
 
     private func deleteRecipe(_ recipe: Recipe) {
         if let url = recipe.imageURL { RecipeImportService.deleteLocalImage(urlString: url) }
         modelContext.delete(recipe)
+    }
+
+    private func showImportToast(id: UUID, name: String) {
+        toastDismissTask?.cancel()
+        withAnimation { importedToast = (id: id, name: name) }
+        toastDismissTask = Task {
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation { importedToast = nil }
+            }
+        }
+    }
+
+    private func undoImport(id: UUID) {
+        let descriptor = FetchDescriptor<Recipe>(predicate: #Predicate { $0.id == id })
+        guard let recipe = try? modelContext.fetch(descriptor).first else { return }
+        deleteRecipe(recipe)
     }
 
     // D-2: Custom empty state with 3 import options
@@ -154,6 +194,35 @@ struct RecipesListView: View {
         }
     }
 }
+
+// MARK: - Toast
+
+private struct ImportedToastView: View {
+    let name: String
+    let onUndo: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("Added \"\(name)\"")
+                .font(.subheadline)
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 0)
+            Button("Undo", action: onUndo)
+                .font(.subheadline.bold())
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 16)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Added \(name). Undo button available.")
+    }
+}
+
+// MARK: - Photo
 
 ///Loads a recipe photo from either a remote https:// URL (via AsyncImage) or a
 /// local file:// URL (via UIImage(contentsOfFile:)).  AsyncImage silently fails

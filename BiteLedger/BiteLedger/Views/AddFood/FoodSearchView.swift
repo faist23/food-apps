@@ -941,8 +941,8 @@ struct FoodSearchView: View {
     }
     
     /// Debounced async meal search. Cancels any in-flight task before starting.
-    /// Finds FoodItems matching the first query word via SQL predicate, collects
-    /// complete meals from allLogs (recent) and individual matched logs (older).
+    /// Queries FoodLog directly with a JOIN predicate on foodItem.name — single SQL
+    /// query instead of fetching FoodItems then faulting .foodLogs for each one (N+1).
     private func startMealSearch(query: String) {
         mealSearchTask?.cancel()
         guard !query.isEmpty else {
@@ -953,17 +953,17 @@ struct FoodSearchView: View {
             try? await Task.sleep(for: .milliseconds(400))
             guard !Task.isCancelled else { return }
             let firstWord = query.split(separator: " ").first.map(String.init) ?? query
-            let matchingFoods = (try? modelContext.fetch(
-                FetchDescriptor<FoodItem>(
-                    predicate: #Predicate { $0.name.localizedStandardContains(firstWord) }
-                )
-            )) ?? []
             let calendar = Calendar.current
             func mealKey(_ log: FoodLog) -> String {
                 let day = calendar.startOfDay(for: log.timestamp)
                 return "\(day.timeIntervalSince1970)-\(log.mealType.rawValue)"
             }
-            let matchingFoodLogs = matchingFoods.flatMap { $0.foodLogs }
+            var descriptor = FetchDescriptor<FoodLog>(
+                predicate: #Predicate { $0.foodItem?.name.localizedStandardContains(firstWord) == true },
+                sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)]
+            )
+            descriptor.fetchLimit = 500
+            let matchingFoodLogs = (try? modelContext.fetch(descriptor)) ?? []
             let matchedMealKeys = Set(matchingFoodLogs.map { mealKey($0) })
             // Recent meals: pull ALL logs for the matching meal from allLogs (complete meal).
             let recentComplete = allLogs.filter { matchedMealKeys.contains(mealKey($0)) }

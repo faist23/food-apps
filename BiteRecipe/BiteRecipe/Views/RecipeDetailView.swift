@@ -16,6 +16,8 @@ struct RecipeDetailView: View {
     @State private var showingCookingMode = false
     @State private var scaleFactor: Double = 1.0
     @State private var showingAddedToast = false
+    @State private var showingShareConfirmation = false
+    @State private var showingDeleteConfirmation = false
 
     /// True when nutrition is sourced from the website rather than ingredient calculations.
     private var usingWebsiteNutrition: Bool {
@@ -271,13 +273,39 @@ struct RecipeDetailView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                HStack {
+                HStack(spacing: 4) {
                     if perServing.calories > 0 {
                         Button("Nutrition") { showingNutrition = true }
                     }
-                    Button("Edit") { showingEditor = true }
+                    Menu {
+                        Button { showingEditor = true } label: {
+                            Label("Edit", systemImage: "pencil")
+                        }
+                        Button { showingShareConfirmation = true } label: {
+                            Label("Share Recipe", systemImage: "square.and.arrow.up")
+                        }
+                        Divider()
+                        Button(role: .destructive) {
+                            showingDeleteConfirmation = true
+                        } label: {
+                            Label("Delete Recipe", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
                 }
             }
+        }
+        .confirmationDialog("Delete \"\(recipe.name)\"?",
+                            isPresented: $showingDeleteConfirmation,
+                            titleVisibility: .visible) {
+            Button("Delete Recipe", role: .destructive) {
+                if let url = recipe.imageURL { RecipeImportService.deleteLocalImage(urlString: url) }
+                modelContext.delete(recipe)
+            }
+        }
+        .sheet(isPresented: $showingShareConfirmation) {
+            ShareConfirmationView(recipe: recipe)
         }
         .sheet(isPresented: $showingEditor) {
             RecipeEditorView(recipe: recipe)

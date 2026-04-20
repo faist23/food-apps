@@ -182,7 +182,7 @@ Empty states are features — not fallbacks. Every empty state must have:
 ## Navigation Patterns
 
 ### BiteLedger
-- `TabView` root: Today / History / Settings
+- `TabView` root: Today / History / Recipes / Settings (Recipes tab added T-10, feature/v1-ship)
 - Food addition: sheet presentation of `FoodSearchView` with 4-tab segmented picker
 
 ### BitePlan

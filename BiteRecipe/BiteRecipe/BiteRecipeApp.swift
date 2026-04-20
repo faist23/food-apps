@@ -11,7 +11,24 @@ import UIKit
 import BiteLedgerCore
 
 extension Notification.Name {
-    static let biteRecipeImportURL = Notification.Name("biteRecipeImportURL")
+    static let biteRecipeImportURL   = Notification.Name("biteRecipeImportURL")
+    static let biteRecipeOpenBundle  = Notification.Name("biteRecipeOpenBundle")
+}
+
+// Catches .biterecipe file URLs on cold launch via the UIKit app-delegate path.
+// SwiftUI's onOpenURL bridges UISceneDelegate.scene(_:openURLContexts:), but on a
+// cold document-open the system sometimes routes through UIApplicationDelegate
+// application(_:open:options:) instead. Belt-and-suspenders with onOpenURL.
+final class BiteRecipeAppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ app: UIApplication,
+                     open url: URL,
+                     options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        if url.pathExtension == "biterecipe" {
+            NotificationCenter.default.post(name: .biteRecipeOpenBundle, object: url)
+            return true
+        }
+        return false
+    }
 }
 
 // E-2: App store error types for graceful failure handling.
@@ -52,10 +69,13 @@ private struct BiteRecipeErrorView: View {
 
 @main
 struct BiteRecipeApp: App {
+    @UIApplicationDelegateAdaptor(BiteRecipeAppDelegate.self) var appDelegate
+
     // E-2: State-driven container — no fatalError or force-unwrap on failure.
     @State private var modelContainer: ModelContainer?
     @State private var storeError: Error?
     @State private var shoppingCart = ShoppingCart()
+    @State private var pendingBundleURL: URL? = nil
 
     var body: some Scene {
         WindowGroup {
@@ -70,21 +90,46 @@ struct BiteRecipeApp: App {
                         .environment(shoppingCart)
                         .modifier(SeedingModifier(container: container))
                         .modelContainer(container)
-                        .onOpenURL { url in
-                            // Launched via biterecipe://import from the Share Extension.
-                            // The extension already wrote the URL to shared UserDefaults.
-                            guard url.scheme == "biterecipe", url.host == "import" else { return }
-                            consumePendingRecipeURL()
-                        }
-                        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-                            // Also check when returning to foreground in case the app was already open.
-                            consumePendingRecipeURL()
+                        .sheet(isPresented: Binding(
+                            get: { pendingBundleURL != nil },
+                            set: { if !$0 { pendingBundleURL = nil } }
+                        )) {
+                            if let url = pendingBundleURL {
+                                // Explicit .modelContainer required: SwiftData has a known bug
+                                // where .sheet content can receive an orphaned ModelContext
+                                // instead of the parent's mainContext. Saves appear to succeed
+                                // but writes go to a throwaway context the @Query never sees.
+                                RecipeBundleImportView(bundleURL: url)
+                                    .modelContainer(container)
+                            }
                         }
                 } else {
                     Color.surfacePrimary
                         .ignoresSafeArea()
                         .task { loadContainer() }
                 }
+            }
+            // Placed on the outer Group so URLs are captured even during the brief
+            // container-load window. pendingBundleURL survives in @State until the
+            // sheet modifier above becomes active.
+            .onOpenURL { url in
+                if url.scheme == "biterecipe", url.host == "import" {
+                    // Launched via biterecipe://import from the Safari Share Extension.
+                    consumePendingRecipeURL()
+                } else if url.pathExtension == "biterecipe" {
+                    // Opened via AirDrop, Messages, or Files (.biterecipe UTI).
+                    pendingBundleURL = url
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .biteRecipeOpenBundle)) { note in
+                // Fallback: UIApplicationDelegate path on cold document-open.
+                if let url = note.object as? URL {
+                    pendingBundleURL = url
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                // Also check when returning to foreground in case the app was already open.
+                consumePendingRecipeURL()
             }
         }
     }
