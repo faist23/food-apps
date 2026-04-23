@@ -53,18 +53,23 @@ and passes them to `NutritionDashboard` and `MealSection`.
 
 ## USDA Nutriments Invariant (Critical — Do Not Regress)
 
-`USDAFoodDetail.toProductInfo()` must set **all `*Serving` fields to `nil`**:
+`USDAFoodDetail.toProductInfo()` must set **all `*Serving` fields to `nil`** for
+SR Legacy and Foundation data types:
 ```swift
 energyKcalServing: nil, proteinsServing: nil, carbohydratesServing: nil,
 sugarsServing: nil, fatServing: nil, saturatedFatServing: nil,
 fiberServing: nil, sodiumServing: nil
 ```
-USDA is a per-100g database. Any non-nil `*Serving` field causes
-`ImprovedServingPicker.nutritionMultiplier` to take the `hasServingData = true`
+USDA SR Legacy and Foundation are per-100g databases. Any non-nil `*Serving` field
+causes `ImprovedServingPicker.nutritionMultiplier` to take the `hasServingData = true`
 branch, returning `resolvedServingCount` (= 1.0) × the serving value —
 producing wildly wrong calories (e.g. 1452 cal for one frankfurter instead of ~142).
-All USDA nutrition must flow through the `totalGrams / 100` path using `*100g`
-fields only.
+
+**Exception — USDA Branded Foods:** Branded Foods carry a declared `servingSize` (in
+grams) from the FDA label. `toProductInfo()` computes `*Serving = nutrientPer100g ×
+(servingSize / 100)` for Branded foods only. The `*100g` fields are also populated so
+the per-100g path still works for free entry. SR Legacy and Foundation are never
+affected — their `*Serving` fields remain nil.
 
 ---
 
@@ -95,14 +100,42 @@ unit words to `.serving` and would display "Serving".
 
 ## CSV Import/Export
 
-`CSVExporter` produces three files for full round-trip backup:
-`foods.csv`, `servings.csv`, `logs.csv`.
+`CSVExporter` produces five files for full round-trip backup:
+`foods.csv`, `servings.csv`, `logs.csv`, `recipes.csv`, `ingredients.csv`.
 
 `CSVImporter` auto-detects format:
 - **LoseIt export** — single CSV with daily logs
-- **BiteLedger full export** — three-file set (foods + servings + logs)
+- **BiteLedger full export** — five-file set (foods + servings + logs + recipes + ingredients)
+- **BiteLedger legacy export** — three-file set (foods + servings + logs); recipes/ingredients
+  gracefully skipped (nil parameters to `importBiteLedger`)
 
 Guarantee: export → delete app → import produces identical data.
+
+### JSON array fields in recipes.csv
+`directions`, `keywords`, `dietTags`, and `importedNutrition` are stored as
+**base64-encoded JSON Data** to keep each recipe on a single CSV line without
+embedded newlines breaking the parser. Decode with `Data(base64Encoded:)` on import.
+
+### Recipe images (separate files, not in CSV)
+Local `file://` images (OCR scans, camera photos) are exported as **`{recipeId}.jpg`** files
+written into an `images/` subdirectory of the temp export folder alongside the 5 CSVs.
+Remote `https://` images are **not** exported — `AsyncImage` re-fetches them naturally.
+
+On import: `LoseItImportView` detects `.jpg`/`.jpeg`/`.png`/`.heic` files, reads their data,
+and builds an `imageMap: [String: Data]` keyed by the UUID filename stem.
+`importBiteLedger(imageMap:)` passes the map to `importBiteLedgerRecipes()`, which calls
+`RecipeImportService.saveImageDataLocally()` to write each JPEG to Documents on the new device.
+Dead `file://` URLs without a matching image file are left nil.
+
+### Auto-detection signatures (LoseItImportView)
+| File | Detection |
+|---|---|
+| foods.csv | header contains `nutritionmode` |
+| servings.csv | header contains `gramweight` or `isdefault` |
+| logs.csv | header contains `caloriesatlogtime` |
+| recipes.csv | header contains `servingsyield` or `recipecategory` |
+| ingredients.csv | header contains `recipeid` or `recipeunit` |
+| `{uuid}.jpg` | file extension is `.jpg`/`.jpeg`/`.png`/`.heic`; UUID from filename stem |
 
 ---
 
@@ -138,12 +171,67 @@ Files: `LoseItEnrichmentService.swift`, `LoseItEnrichmentView.swift`,
 
 ---
 
+## FoodSearchView — Search Algorithms (Do Not Regress)
+
+### My Foods tab — SQL predicate (active search) + hybrid browse (empty query)
+
+**Active search (`searchText` non-empty):** `MyFoodsListView.startMyFoodsSearch()` fires a
+debounced (300ms) `FetchDescriptor<FoodItem>` with `localizedStandardContains` predicate against
+the full store — no recency cap. Results are filtered in-memory with a three-tier rule:
+
+1. **Catalog exclusion** — always drop `usda_seed_*` and `built_in_*`
+2. **User-created allowlist** — always keep `source.isEmpty`, `"Manual"`, `"Quick Add"`,
+   `recipe*`, `LoseIt*`, `CSV Import*` (backfill may be incomplete; trust source type)
+3. **API-fetched guard** — everything else (`usda_*`, `fatsecret_*`, OFacts barcodes)
+   requires `loggedIDs` membership to exclude BitePlan ghost foods
+
+Last-used dates are pre-computed in the same Task via a three-pass strategy:
+FoodHistoryEntry index → allLogs buffer → `food.foodLogs` fallback for any remainder.
+Stored in `sqlLastUsedDates`; `lastUsedDates` switches to it when search is active.
+
+**Do NOT replace** the SQL predicate path with an in-memory filter over `allLogs` — that
+regresses to a 1000-entry recency cap and hides foods logged more than ~3 months ago.
+
+**Browse mode (`searchText` empty):** hybrid merge of `FoodHistoryEntry` @Query (all
+history, no cap) + `allLogs` (recent 1000, fills backfill gaps), sorted by `lastLoggedDate`.
+
+### Meals and Recipes tabs — in-memory `matchesQuery`
+
+Meals and Recipes filter in memory via `matchesQuery(_:query:)` (free function at the top
+of `FoodSearchView.swift`):
+
+1. **Exact phrase** — `text.contains(query)` fast path
+2. **All words, any order** — `query.split(separator: " ").allSatisfy { text.contains($0) }`
+
+This means "margherita pizza" correctly finds "pizza, margherita". Do not replace with a
+bare `contains` or `localizedCaseInsensitiveContains` — that regresses to phrase-only matching.
+
+The Search tab's My Foods sub-search (inside `searchMyFoods`) uses word-split independently
+and is correct as-is.
+
+## MyFoodsManagementView — Filter Invariant (Do Not Regress)
+
+`loadFoods()` and `startMyFoodsSearch()` use identical three-tier filter logic:
+
+1. Exclude `usda_seed_*` and `built_in_*` (catalog)
+2. Always include known user-created sources: `isEmpty`, `"Manual"`, `"Quick Add"`,
+   `recipe*`, `LoseIt*`, `CSV Import*`
+3. Require `loggedIDs` for all other sources (API-fetched ghost food guard)
+
+**`loggedIDs` is built with `hasPrefix` matching** (`usda_*`, `fatsecret_*`), NOT exact
+strings like `"USDA"` or `"FatSecret"`. Real source values are `"usda_<fdcId>"` and
+`"fatsecret_<id>"` — exact-string matching silently never fires.
+
+Last-used sort uses FoodHistoryEntry + `food.foodLogs` fallback (two-pass). Do not
+revert to FoodHistoryEntry-only — foods logged before T-14 launched have no entry.
+
 ## FoodSearchView — Recipes Tab
 
 `FoodSearchView` has four tabs: **Search**, **My Foods**, **Meals**, **Recipes**.
 
 The Recipes tab loads all `Recipe` objects in `.task` (same async pattern as `allLogs` —
-not `@Query`, to avoid blocking keyboard appearance). It filters by `searchText` in memory.
+not `@Query`, to avoid blocking keyboard appearance). It filters by `searchText` in memory
+via `matchesQuery`.
 
 ### Logging a recipe (`findOrCreateRecipeFoodItem`)
 Recipes are logged via a synthetic `FoodItem` in `.perServing` mode:

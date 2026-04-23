@@ -14,7 +14,7 @@ struct ContentView: View {
     
     var body: some View {
         TabView(selection: $selectedTab) {
-            TodayView()
+            TodayView(selectedTab: $selectedTab)
                 .tabItem {
                     Label("Today", systemImage: "chart.bar.fill")
                 }
@@ -26,11 +26,17 @@ struct ContentView: View {
                 }
                 .tag(1)
             
+            MyRecipesView()
+                .tabItem {
+                    Label("Recipes", systemImage: "book.closed.fill")
+                }
+                .tag(2)
+
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gearshape.fill")
                 }
-                .tag(2)
+                .tag(3)
         }
     }
 }

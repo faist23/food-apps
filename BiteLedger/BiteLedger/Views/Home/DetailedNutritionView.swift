@@ -127,14 +127,14 @@ struct DetailedNutritionView: View {
                 }
                 .padding()
             }
-            .background(Color("SurfacePrimary"))
+            .background(Color.surfacePrimary)
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                         .fontWeight(.semibold)
-                        .foregroundStyle(Color("BrandAccent"))
+                        .foregroundStyle(Color.brandAccent)
                 }
             }
         }
@@ -150,7 +150,7 @@ private extension DetailedNutritionView {
                 // Donut
                 ZStack {
                     Circle()
-                        .stroke(Color("SurfacePrimary"), lineWidth: 18)
+                        .stroke(Color.surfacePrimary, lineWidth: 18)
                     
                     Circle()
                         .trim(from: 0, to: fatPercent)
@@ -176,7 +176,7 @@ private extension DetailedNutritionView {
                         
                         Text("calories")
                             .font(.caption)
-                            .foregroundStyle(Color("TextSecondary"))
+                            .foregroundStyle(Color.textSecondary)
                     }
                 }
                 .frame(width: 140, height: 140)
@@ -199,7 +199,7 @@ private extension DetailedNutritionView {
             
             Text(name)
                 .font(.caption)
-                .foregroundStyle(Color("TextSecondary"))
+                .foregroundStyle(Color.textSecondary)
             
             Text("\(Int(percent * 100))%")
                 .font(.subheadline)
@@ -222,11 +222,11 @@ private extension DetailedNutritionView {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Nutrition Facts")
                         .font(.system(size: 36, weight: .black))
-                        .foregroundStyle(Color("TextPrimary"))
+                        .foregroundStyle(Color.textPrimary)
                     
                     // Heavy divider under header
                     Rectangle()
-                        .fill(Color("TextPrimary"))
+                        .fill(Color.textPrimary)
                         .frame(height: 8)
                 }
                 .padding(.horizontal, 16)
@@ -267,7 +267,7 @@ private extension DetailedNutritionView {
                 Text("\(percent)%")
                     .font(.system(size: 13))
                     .fontWeight(.light)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
                     .frame(width: 50, alignment: .trailing)
             } else {
                 // Empty spacer to maintain alignment when no %DV
@@ -308,7 +308,7 @@ private extension DetailedNutritionView {
             
             // Heavy divider after calories
             Rectangle()
-                .fill(Color("TextPrimary"))
+                .fill(Color.textPrimary)
                 .frame(height: 6)
                 .padding(.vertical, 4)
             
@@ -322,7 +322,7 @@ private extension DetailedNutritionView {
             
             // Thin divider
             Rectangle()
-                .fill(Color("TextPrimary"))
+                .fill(Color.textPrimary)
                 .frame(height: 1)
             
             // Total Fat
@@ -386,7 +386,7 @@ private extension DetailedNutritionView {
             
             // Heavy divider before vitamins/minerals
             Rectangle()
-                .fill(Color("TextPrimary"))
+                .fill(Color.textPrimary)
                 .frame(height: 8)
                 .padding(.vertical, 4)
             
@@ -476,14 +476,14 @@ private extension DetailedNutritionView {
             
             // Heavy divider at bottom
             Rectangle()
-                .fill(Color("TextPrimary"))
+                .fill(Color.textPrimary)
                 .frame(height: 4)
                 .padding(.top, 4)
             
             // FDA Disclaimer
             Text("* The % Daily Value (DV) tells you how much a nutrient in a serving of food contributes to a daily diet. 2,000 calories a day is used for general nutrition advice.")
                 .font(.system(size: 9))
-                .foregroundStyle(Color("TextSecondary"))
+                .foregroundStyle(Color.textSecondary)
                 .padding(.top, 8)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -492,7 +492,7 @@ private extension DetailedNutritionView {
     // Helper for thin dividers
     func thinDivider() -> some View {
         Rectangle()
-            .fill(Color("TextPrimary"))
+            .fill(Color.textPrimary)
             .frame(height: 1)
     }
     
@@ -520,7 +520,7 @@ private extension DetailedNutritionView {
                 Text("\(percent)%")
                     .font(.system(size: 13))
                     .fontWeight(.light)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
                     .frame(width: 50, alignment: .trailing)
             } else {
                 // Empty spacer to maintain alignment when no %DV

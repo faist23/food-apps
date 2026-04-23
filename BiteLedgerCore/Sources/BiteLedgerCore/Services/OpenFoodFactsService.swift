@@ -196,6 +196,7 @@ public struct ProductInfo: Codable, Identifiable, Sendable {
     public let portions: [ServingPortion]?  // USDA portions (e.g., "1 medium banana")
     public let countriesTags: [String]?  // Countries where product is sold
     public let lastUsed: Date?  // For My Foods - when this item was last used
+    public let dataType: String?  // Source data type (e.g. "Branded", "SR Legacy", "Foundation")
 
     public var id: String { code }
     
@@ -220,11 +221,11 @@ public struct ProductInfo: Codable, Identifiable, Sendable {
         case quantity
         case portions
         case countriesTags = "countries_tags"
-        // lastUsed is not from API, so not in CodingKeys
+        // lastUsed and dataType are not from API, so not in CodingKeys
     }
     
-    // Custom initializer for creating ProductInfo manually (with lastUsed)
-    public init(code: String, productName: String?, brands: String?, imageUrl: String?, nutriments: Nutriments?, servingSize: String?, quantity: String?, portions: [ServingPortion]?, countriesTags: [String]?, lastUsed: Date?) {
+    // Custom initializer for creating ProductInfo manually (with lastUsed and dataType)
+    public init(code: String, productName: String?, brands: String?, imageUrl: String?, nutriments: Nutriments?, servingSize: String?, quantity: String?, portions: [ServingPortion]?, countriesTags: [String]?, lastUsed: Date?, dataType: String? = nil) {
         self.code = code
         self.productName = productName
         self.brands = brands
@@ -235,6 +236,7 @@ public struct ProductInfo: Codable, Identifiable, Sendable {
         self.portions = portions
         self.countriesTags = countriesTags
         self.lastUsed = lastUsed
+        self.dataType = dataType
     }
     
     // Custom decoder for API responses (lastUsed defaults to nil)
@@ -250,6 +252,7 @@ public struct ProductInfo: Codable, Identifiable, Sendable {
         portions = try? container.decode([ServingPortion].self, forKey: .portions)
         countriesTags = try? container.decode([String].self, forKey: .countriesTags)
         lastUsed = nil  // Not from API
+        dataType = nil  // Not from API
     }
 }
 

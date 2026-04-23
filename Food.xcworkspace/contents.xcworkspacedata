@@ -5,6 +5,6 @@
       location = "group:BiteLedger/BiteLedger.xcodeproj">
    </FileRef>
    <FileRef
-      location = "group:RecipeCard/RecipeCard.xcodeproj">
+      location = "group:BiteRecipe/BiteRecipe.xcodeproj">
    </FileRef>
 </Workspace>

@@ -29,13 +29,26 @@ public class USDAFoodDataService {
     ///   - pageSize: Number of results per page
     /// - Returns: Array of USDA food items
     public func searchFoods(query: String, page: Int = 1, pageSize: Int = 25) async throws -> [USDAFoodItem] {
-        // Search both SR Legacy (whole foods) and Survey (FNDDS - restaurant foods) in parallel
+        // Search SR Legacy (whole foods), Foundation (research-grade, clean names), and
+        // Branded (FDA label foods) in parallel. Survey (FNDDS) is excluded — it returns
+        // long scientific names like "Chicken, broilers or fryers, breast, meat only, raw"
+        // that clutter results without adding user value.
         async let srLegacyResults = searchFoodsByDataType(query: query, dataType: "SR Legacy", page: page, pageSize: pageSize)
-        async let fnddsResults = searchFoodsByDataType(query: query, dataType: "Survey (FNDDS)", page: page, pageSize: pageSize)
-        
+        async let foundationResults = searchFoodsByDataType(query: query, dataType: "Foundation", page: page, pageSize: pageSize)
+        async let brandedResults = searchFoodsByDataType(query: query, dataType: "Branded", page: page, pageSize: pageSize)
+
         var allResults: [USDAFoodItem] = []
-        
-        // SR Legacy first (whole foods with good portion data)
+
+        // Foundation first (highest quality, research-grade whole foods)
+        do {
+            let foundationFoods = try await foundationResults
+            print("✅ Foundation returned \(foundationFoods.count) results")
+            allResults.append(contentsOf: foundationFoods)
+        } catch {
+            print("⚠️ Foundation search failed: \(error.localizedDescription)")
+        }
+
+        // SR Legacy second (broad whole-food coverage)
         do {
             let srFoods = try await srLegacyResults
             print("✅ SR Legacy returned \(srFoods.count) results")
@@ -43,21 +56,21 @@ public class USDAFoodDataService {
         } catch {
             print("⚠️ SR Legacy search failed: \(error.localizedDescription)")
         }
-        
-        // FNDDS second (restaurant and survey foods)
+
+        // Branded last (FDA label packaged foods)
         do {
-            let surveyFoods = try await fnddsResults
-            print("✅ Survey (FNDDS) returned \(surveyFoods.count) results")
-            allResults.append(contentsOf: surveyFoods)
+            let brandedFoods = try await brandedResults
+            print("✅ Branded returned \(brandedFoods.count) results")
+            allResults.append(contentsOf: brandedFoods)
         } catch {
-            print("⚠️ Survey (FNDDS) search failed: \(error.localizedDescription)")
+            print("⚠️ Branded search failed: \(error.localizedDescription)")
         }
-        
-        // If both failed, throw an error
+
+        // If all three failed, throw an error
         if allResults.isEmpty {
             throw USDAError.noResults
         }
-        
+
         return allResults
     }
     
@@ -188,6 +201,22 @@ public struct USDAFoodDetail: Codable {
     public let dataType: String
     public let foodNutrients: [USDANutrientDetail]
     public let foodPortions: [USDAFoodPortion]?  // SR Legacy uses 'foodPortions'
+    public let servingSize: Double?              // Branded Foods: serving size in grams
+    public let servingSizeUnit: String?          // Branded Foods: unit (usually "g")
+    public let householdServingFullText: String? // Branded Foods: human readable (e.g. "1 cup")
+
+    public init(fdcId: Int, description: String, dataType: String, foodNutrients: [USDANutrientDetail],
+                foodPortions: [USDAFoodPortion]? = nil, servingSize: Double? = nil,
+                servingSizeUnit: String? = nil, householdServingFullText: String? = nil) {
+        self.fdcId = fdcId
+        self.description = description
+        self.dataType = dataType
+        self.foodNutrients = foodNutrients
+        self.foodPortions = foodPortions
+        self.servingSize = servingSize
+        self.servingSizeUnit = servingSizeUnit
+        self.householdServingFullText = householdServingFullText
+    }
     
     public var displayName: String {
         description
@@ -209,6 +238,11 @@ public struct USDANutrient: Codable, Sendable {
 public struct USDANutrientDetail: Codable {
     public let nutrient: USDANutrientInfo
     public let amount: Double?
+
+    public init(nutrient: USDANutrientInfo, amount: Double?) {
+        self.nutrient = nutrient
+        self.amount = amount
+    }
     
     // Different data types use different field names
     private enum CodingKeys: String, CodingKey {
@@ -243,6 +277,13 @@ public struct USDANutrientInfo: Codable {
     public let number: String
     public let name: String
     public let unitName: String
+
+    public init(id: Int, number: String, name: String, unitName: String) {
+        self.id = id
+        self.number = number
+        self.name = name
+        self.unitName = unitName
+    }
 }
 
 public struct USDAFoodPortion: Codable {
@@ -346,7 +387,8 @@ extension USDAFoodItem {
             quantity: nil,
             portions: nil,  // Search results don't include portions
             countriesTags: ["en:united-states"],  // USDA is US-only
-            lastUsed: nil  // Not from My Foods
+            lastUsed: nil,  // Not from My Foods
+            dataType: dataType
         )
     }
 }
@@ -418,11 +460,17 @@ extension USDAFoodDetail {
             }
         }
         
-        // USDA is a per-100g database. Do NOT populate *Serving fields here.
+        // USDA is a per-100g database. SR Legacy and Foundation MUST keep all *Serving fields nil.
         // The picker's nutritionMultiplier uses totalGrams/100 when hasServingData == false,
-        // which correctly scales all *100g nutrients (including sodium, cholesterol) by the
-        // selected portion's gram weight. Populating *Serving from the wrong (unsorted) portion
-        // would cause the picker to show 1452 cal for a single frankfurter.
+        // which correctly scales all *100g nutrients by the selected portion's gram weight.
+        //
+        // EXCEPTION — Branded Foods: USDA Branded foods carry a declared servingSize (in grams)
+        // from the FDA label. We compute *Serving = nutrientPer100g × (servingSize / 100) so the
+        // picker can display label-accurate values. This does NOT violate the invariant for the
+        // other data types.
+        let isBranded = dataType == "Branded"
+        let servingSizeGrams = servingSize ?? 0.0
+        let servingScale = isBranded && servingSizeGrams > 0 ? servingSizeGrams / 100.0 : 0.0
 
         // Nutriments.*100g fields use g/100g (OpenFoodFacts convention).
         // USDA provides micronutrients in mg or mcg per 100g — must convert.
@@ -456,14 +504,16 @@ extension USDAFoodDetail {
             magnesium100g: FlexibleDouble(magnesium / 1000),     // mg → g
             zinc100g: FlexibleDouble(zinc / 1000),               // mg → g
             caffeine100g: FlexibleDouble(caffeine / 1000),       // mg → g
-            energyKcalServing: nil,
-            proteinsServing: nil,
-            carbohydratesServing: nil,
-            sugarsServing: nil,
-            fatServing: nil,
-            saturatedFatServing: nil,
-            fiberServing: nil,
-            sodiumServing: nil
+            // Branded Foods: populate *Serving from per-100g × (servingSize / 100).
+            // SR Legacy / Foundation: all nil — the picker uses totalGrams/100 path.
+            energyKcalServing: servingScale > 0 ? FlexibleDouble(calories * servingScale) : nil,
+            proteinsServing: servingScale > 0 ? FlexibleDouble(protein * servingScale) : nil,
+            carbohydratesServing: servingScale > 0 ? FlexibleDouble(carbs * servingScale) : nil,
+            sugarsServing: servingScale > 0 ? FlexibleDouble(sugar * servingScale) : nil,
+            fatServing: servingScale > 0 ? FlexibleDouble(fat * servingScale) : nil,
+            saturatedFatServing: servingScale > 0 ? FlexibleDouble(saturatedFat * servingScale) : nil,
+            fiberServing: servingScale > 0 ? FlexibleDouble(fiber * servingScale) : nil,
+            sodiumServing: servingScale > 0 ? FlexibleDouble((sodium / 1000) * servingScale) : nil
         )
         
         // Log all portions for debugging
@@ -504,9 +554,7 @@ extension USDAFoodDetail {
                 .replacingOccurrences(of: " (9\" or longer)", with: "")
                 .replacingOccurrences(of: " (less than 6\" long)", with: "")
             
-            // For Survey/FNDDS data, keep "1.0 serving" portions as they're meaningful
-            // Skip only if there are better alternatives
-            let isServingPortion = cleanModifier.lowercased().contains("serving")
+            // Skip NLEA serving only if we have other non-serving portions
             let isNLEAServing = cleanModifier.lowercased() == "nlea serving"
             
             // Skip NLEA serving only if we have other non-serving portions
@@ -562,17 +610,27 @@ extension USDAFoodDetail {
         print("🍌 Default serving: \(defaultServing)")
         print("🍌 Available portions: \(portionsList ?? "none")")
         
+        // For Branded Foods, override the serving size with the FDA label serving
+        let effectiveServing: String
+        if isBranded, let householdText = householdServingFullText, !householdText.isEmpty {
+            let gramWeight = Int(servingSizeGrams)
+            effectiveServing = gramWeight > 0 ? "\(householdText) (\(gramWeight)g)" : householdText
+        } else {
+            effectiveServing = defaultServing
+        }
+
         return ProductInfo(
             code: "usda_\(fdcId)",
             productName: description,
             brands: "USDA",
             imageUrl: nil,
             nutriments: nutriments,
-            servingSize: defaultServing,
+            servingSize: effectiveServing,
             quantity: portionsList, // Store portions info for reference
             portions: sortedPortions,
             countriesTags: ["en:united-states"],  // USDA is US-only
-            lastUsed: nil  // Not from My Foods
+            lastUsed: nil,  // Not from My Foods
+            dataType: dataType
         )
     }
 }

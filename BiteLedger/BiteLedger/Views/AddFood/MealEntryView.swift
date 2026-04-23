@@ -149,7 +149,8 @@ struct MealEntryView: View {
                 serving: item.servingSize,
                 timestamp: Date(),
                 loggedAmount: item.loggedAmount,
-                loggedUnit: item.loggedUnit
+                loggedUnit: item.loggedUnit,
+                context: modelContext
             )
             modelContext.insert(foodLog)
         }

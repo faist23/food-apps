@@ -154,7 +154,7 @@ struct FoodItemEditorView: View {
                 }
                 .padding()
             }
-            .background(Color("SurfacePrimary"))
+            .background(Color.surfacePrimary)
             .navigationTitle("Edit Food")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -203,20 +203,20 @@ struct FoodItemEditorView: View {
                 HStack(spacing: 12) {
                     Image(systemName: "sparkle.magnifyingglass")
                         .font(.title2)
-                        .foregroundStyle(Color("BrandAccent"))
+                        .foregroundStyle(Color.brandAccent)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Find Nutrition Data")
                             .font(.headline)
                             .foregroundStyle(.primary)
                         Text("Search USDA, FatSecret, and Open Food Facts to fill in missing fields")
                             .font(.caption)
-                            .foregroundStyle(Color("TextSecondary"))
+                            .foregroundStyle(Color.textSecondary)
                             .multilineTextAlignment(.leading)
                     }
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.caption)
-                        .foregroundStyle(Color("TextTertiary"))
+                        .foregroundStyle(Color.textTertiary)
                 }
             }
         }
@@ -227,7 +227,7 @@ struct FoodItemEditorView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Basic Information")
                     .font(.headline)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
 
                 TextField("Food Name", text: $foodName)
                     .textFieldStyle(.roundedBorder)
@@ -245,7 +245,7 @@ struct FoodItemEditorView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Base Serving")
                     .font(.headline)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
 
                 TextField("Serving Description", text: $servingDescription)
                     .textFieldStyle(.roundedBorder)
@@ -266,7 +266,7 @@ struct FoodItemEditorView: View {
 
                 Text("All nutrition values below are for: \(servingDescription)" + (gramsPerServing.isEmpty ? "" : " (\(gramsPerServing)g)"))
                     .font(.caption)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
             }
         }
     }
@@ -277,7 +277,7 @@ struct FoodItemEditorView: View {
                 HStack {
                     Text("Portion Sizes")
                         .font(.headline)
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                     
                     Spacer()
                     
@@ -285,7 +285,7 @@ struct FoodItemEditorView: View {
                         showingAddPortion = true
                     } label: {
                         Image(systemName: "plus.circle.fill")
-                            .foregroundStyle(Color("BrandAccent"))
+                            .foregroundStyle(Color.brandAccent)
                     }
                 }
                 
@@ -381,10 +381,10 @@ struct FoodItemEditorView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Nutrition Facts")
                         .font(.system(size: 32, weight: .black))
-                        .foregroundStyle(Color("TextPrimary"))
+                        .foregroundStyle(Color.textPrimary)
 
                     Rectangle()
-                        .fill(Color("TextPrimary"))
+                        .fill(Color.textPrimary)
                         .frame(height: 8)
                 }
                 .padding(.horizontal, 16)
@@ -427,7 +427,7 @@ struct FoodItemEditorView: View {
 
             // Heavy divider
             Rectangle()
-                .fill(Color("TextPrimary"))
+                .fill(Color.textPrimary)
                 .frame(height: 6)
                 .padding(.vertical, 4)
 
@@ -487,7 +487,7 @@ struct FoodItemEditorView: View {
 
             // Heavy divider before vitamins/minerals
             Rectangle()
-                .fill(Color("TextPrimary"))
+                .fill(Color.textPrimary)
                 .frame(height: 8)
                 .padding(.vertical, 4)
 
@@ -540,14 +540,14 @@ struct FoodItemEditorView: View {
 
             // Heavy divider at bottom
             Rectangle()
-                .fill(Color("TextPrimary"))
+                .fill(Color.textPrimary)
                 .frame(height: 4)
                 .padding(.top, 4)
 
             // FDA Disclaimer
             Text("* The % Daily Value (DV) tells you how much a nutrient in a serving of food contributes to a daily diet. 2,000 calories a day is used for general nutrition advice.")
                 .font(.system(size: 9))
-                .foregroundStyle(Color("TextSecondary"))
+                .foregroundStyle(Color.textSecondary)
                 .padding(.top, 8)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -558,7 +558,7 @@ struct FoodItemEditorView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Metadata")
                     .font(.headline)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
 
                 HStack {
                     Text("Source")
@@ -626,7 +626,7 @@ struct FoodItemEditorView: View {
                 Text("\(percent)%")
                     .font(.system(size: 13))
                     .fontWeight(.light)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
                     .frame(width: 50, alignment: .trailing)
             } else {
                 Text("")
@@ -665,7 +665,7 @@ struct FoodItemEditorView: View {
                 Text("\(percent)%")
                     .font(.system(size: 13))
                     .fontWeight(.light)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
                     .frame(width: 50, alignment: .trailing)
             } else {
                 Text("")
@@ -677,7 +677,7 @@ struct FoodItemEditorView: View {
 
     private func thinDivider() -> some View {
         Rectangle()
-            .fill(Color("TextPrimary"))
+            .fill(Color.textPrimary)
             .frame(height: 1)
     }
 

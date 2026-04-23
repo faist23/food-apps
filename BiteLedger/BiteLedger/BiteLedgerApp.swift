@@ -10,58 +10,89 @@ import SwiftData
 import CoreData
 import BiteLedgerCore
 
+// E-2: Graceful error screen replacing fatalError for App Group and ModelContainer failures.
+enum AppStoreError: LocalizedError {
+    case appGroupNotConfigured(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .appGroupNotConfigured(let id):
+            return "App Group '\(id)' is not configured. Please reinstall the app or contact support if this persists."
+        }
+    }
+}
+
+struct AppStoreErrorView: View {
+    let error: Error
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 24) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 52))
+                .foregroundStyle(.orange)
+            Text("Unable to Load Data")
+                .font(.title2.bold())
+            Text(error.localizedDescription)
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 32)
+            Button("Retry", action: onRetry)
+                .buttonStyle(.borderedProminent)
+        }
+        .padding(32)
+    }
+}
+
 @main
 struct BiteLedgerApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            FoodItem.self,
-            FoodLog.self,
-            ServingSize.self,
-            UserPreferences.self,
-            Recipe.self,
-            RecipeIngredient.self,
-            CanonicalFood.self,
-            ServingConversion.self,
-            FallbackSource.self,
-        ])
-
-        // Store in the shared App Group container so RecipeCard can access the same
-        // food library. Both targets must have the App Group capability enabled in
-        // Xcode → Signing & Capabilities → + App Groups → group.com.ridepro.biteledger.
-        //
-        // cloudKitDatabase: .none — CloudKit capability in entitlements would cause
-        // SwiftData to attempt CloudKit integration unless explicitly disabled here.
-        //
-        // NOTE: First launch after this change will create a fresh store at the new
-        // App Group path. Export your data (Settings → Export) before updating, then
-        // re-import (Settings → Import CSV) after.
-        let groupID = "group.com.ridepro.biteledger"
-        guard let containerURL = FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: groupID) else {
-            fatalError("""
-                App Group '\(groupID)' is not configured.
-                In Xcode: select the BiteLedger target → Signing & Capabilities
-                → + Capability → App Groups → add group.com.ridepro.biteledger.
-                """)
-        }
-        let storeURL = containerURL.appendingPathComponent("biteledger.store")
-        do {
-            let modelConfiguration = ModelConfiguration(
-                schema: schema,
-                url: storeURL,
-                cloudKitDatabase: .none
-            )
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
+    // E-2: State-driven container — no fatalError on failure, shows Retry screen instead.
+    @State private var modelContainer: ModelContainer?
+    @State private var storeError: Error?
 
     var body: some Scene {
         WindowGroup {
-            SafeContentView(modelContainer: sharedModelContainer)
+            Group {
+                if let error = storeError {
+                    AppStoreErrorView(error: error) {
+                        storeError = nil
+                        loadContainer()
+                    }
+                } else if let container = modelContainer {
+                    SafeContentView(modelContainer: container)
+                        .modelContainer(container)
+                } else {
+                    Color.clear
+                        .onAppear { loadContainer() }
+                }
+            }
         }
-        .modelContainer(sharedModelContainer)
+    }
+
+    @MainActor
+    private func loadContainer() {
+        let groupID = "group.com.ridepro.biteledger"
+        guard let containerURL = FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: groupID) else {
+            storeError = AppStoreError.appGroupNotConfigured(groupID)
+            return
+        }
+        let storeURL = containerURL.appendingPathComponent("biteledger.store")
+        do {
+            let schema = Schema(versionedSchema: BiteLedgerSchemaV4.self)
+            let config = ModelConfiguration(schema: schema, url: storeURL, cloudKitDatabase: .none)
+            // NOTE: migrationPlan is intentionally omitted. SwiftData auto-migrates lightweight
+            // changes (new entity, nullable fields) without an explicit plan. Providing a plan
+            // with VersionedSchema enums that share live @Model types causes SwiftData to generate
+            // identical CoreData MOMs for both versions (implicit inverse relationships are included
+            // even if not declared in Swift), producing "Duplicate version checksums detected".
+            // The VersionedSchema enums are retained for documentation. Re-introduce the migration
+            // plan when a custom (non-lightweight) migration stage is required for SchemaV3.
+            modelContainer = try ModelContainer(for: schema, configurations: [config])
+        } catch {
+            storeError = error
+        }
     }
 }
 
@@ -73,12 +104,14 @@ struct SafeContentView: View {
         ZStack {
             ContentView()
                 .task {
+                    // E-1: Each backfill checks its completion flag — skips on subsequent launches.
                     await backfillServingUnits(container: modelContainer)
                     await backfillStaleLogs(container: modelContainer)
                     await backfillServingAmounts(container: modelContainer)
                     await normalizeExistingPerServingFoods(container: modelContainer)
                     await backfillFoodLogGramAmounts(container: modelContainer)
                     await fixLoseItGramUnitFoods(container: modelContainer)
+                    await backfillFoodHistory(container: modelContainer)
                     await IngredientSeeder.seedIfNeeded(container: modelContainer) { current, total in
                         seedingProgress = (current, total)
                     }
@@ -135,6 +168,11 @@ private struct IngredientSeedingOverlay: View {
 private func backfillStaleLogs(container: ModelContainer) async {
     let context = container.mainContext
     do {
+        // E-1: Skip on subsequent launches once complete.
+        // guard let ensures the flag assignment below actually persists (optional chaining is a no-op on nil).
+        guard let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first,
+              prefs.hasBackfilledStaleLogs != true else { return }
+
         let allServings = try context.fetch(FetchDescriptor<ServingSize>())
         let stale = allServings.filter { serving in
             // Must have unit="g" (gram) — indicates a gram-based origin
@@ -145,26 +183,27 @@ private func backfillStaleLogs(container: ModelContainer) async {
                           ?? ServingSizeParser.parseUnit(serving.label)
             return parsedUnit != nil && parsedUnit != .gram && parsedUnit != .serving
         }
-        guard !stale.isEmpty else { return }
-
-        for serving in stale {
-            guard let newGW = serving.gramWeight, newGW > 1 else { continue }
-            let parsedUnit = ServingSizeParser.parse(serving.label)?.unit
-                          ?? ServingSizeParser.parseUnit(serving.label)
-            if let pu = parsedUnit {
-                serving.unit = pu.rawValue
+        if !stale.isEmpty {
+            for serving in stale {
+                guard let newGW = serving.gramWeight, newGW > 1 else { continue }
+                let parsedUnit = ServingSizeParser.parse(serving.label)?.unit
+                              ?? ServingSizeParser.parseUnit(serving.label)
+                if let pu = parsedUnit {
+                    serving.unit = pu.rawValue
+                }
+                // Rescale any FoodLog.quantity that was stored as grams
+                let servingId = serving.id
+                let logs = try context.fetch(FetchDescriptor<FoodLog>(
+                    predicate: #Predicate { $0.servingSize?.id == servingId }
+                ))
+                for log in logs {
+                    log.quantity = log.quantity / newGW
+                }
             }
-            // Rescale any FoodLog.quantity that was stored as grams
-            let servingId = serving.id
-            let logs = try context.fetch(FetchDescriptor<FoodLog>(
-                predicate: #Predicate { $0.servingSize?.id == servingId }
-            ))
-            for log in logs {
-                log.quantity = log.quantity / newGW
-            }
+            print("✅ backfillStaleLogs: fixed \(stale.count) serving(s)")
         }
+        prefs.hasBackfilledStaleLogs = true
         try context.save()
-        print("✅ backfillStaleLogs: fixed \(stale.count) serving(s)")
     } catch {
         print("⚠️ backfillStaleLogs failed: \(error)")
     }
@@ -183,38 +222,45 @@ private func backfillStaleLogs(container: ModelContainer) async {
 private func normalizeExistingPerServingFoods(container: ModelContainer) async {
     let context = container.mainContext
     do {
+        // E-1: Skip on subsequent launches once complete.
+        // guard let ensures the flag assignment below actually persists (optional chaining is a no-op on nil).
+        guard let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first,
+              prefs.hasNormalizedPerServingFoods != true else { return }
+
         let foods = try context.fetch(FetchDescriptor<FoodItem>())
         let perServingFoods = foods.filter { $0.nutritionMode == .perServing }
-        guard !perServingFoods.isEmpty else { return }
 
-        for food in perServingFoods {
-            let defaultServing = food.defaultServing
+        if !perServingFoods.isEmpty {
+            for food in perServingFoods {
+                let defaultServing = food.defaultServing
 
-            // Determine effective gram weight
-            let gramWeight: Double?
-            if let gw = defaultServing?.gramWeight, gw > 0 {
-                gramWeight = gw
-            } else if let unitStr = defaultServing?.unit,
-                      let su = ServingUnit.fromAbbreviation(unitStr),
-                      su != .serving, su != .container {
-                let amount = defaultServing?.amount ?? 1.0
-                let density = ServingUnit.densityFor(foodType: FoodType.infer(from: food.name))
-                let estimated = su.toGrams(amount: amount, density: density)
-                gramWeight = estimated > 0 ? estimated : nil
-            } else {
-                gramWeight = nil  // will use 100g nominal
+                // Determine effective gram weight
+                let gramWeight: Double?
+                if let gw = defaultServing?.gramWeight, gw > 0 {
+                    gramWeight = gw
+                } else if let unitStr = defaultServing?.unit,
+                          let su = ServingUnit.fromAbbreviation(unitStr),
+                          su != .serving, su != .container {
+                    let amount = defaultServing?.amount ?? 1.0
+                    let density = ServingUnit.densityFor(foodType: FoodType.infer(from: food.name))
+                    let estimated = su.toGrams(amount: amount, density: density)
+                    gramWeight = estimated > 0 ? estimated : nil
+                } else {
+                    gramWeight = nil  // will use 100g nominal
+                }
+
+                let effectiveGrams = gramWeight ?? 100.0
+                food.normalizeToPerHundredGrams(gramWeightPerServing: gramWeight)
+
+                // Ensure all servings for this food have gramWeight set
+                if let serving = defaultServing, serving.gramWeight == nil {
+                    serving.gramWeight = effectiveGrams
+                }
             }
-
-            let effectiveGrams = gramWeight ?? 100.0
-            food.normalizeToPerHundredGrams(gramWeightPerServing: gramWeight)
-
-            // Ensure all servings for this food have gramWeight set
-            if let serving = defaultServing, serving.gramWeight == nil {
-                serving.gramWeight = effectiveGrams
-            }
+            print("✅ normalizeExistingPerServingFoods: normalized \(perServingFoods.count) food(s)")
         }
+        prefs.hasNormalizedPerServingFoods = true
         try context.save()
-        print("✅ normalizeExistingPerServingFoods: normalized \(perServingFoods.count) food(s)")
     } catch {
         print("⚠️ normalizeExistingPerServingFoods failed: \(error)")
     }
@@ -227,6 +273,11 @@ private func normalizeExistingPerServingFoods(container: ModelContainer) async {
 private func backfillServingAmounts(container: ModelContainer) async {
     let context = container.mainContext
     do {
+        // E-1: Skip on subsequent launches once complete.
+        // guard let ensures the flag assignment below actually persists (optional chaining is a no-op on nil).
+        guard let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first,
+              prefs.hasBackfilledServingAmounts != true else { return }
+
         let servings = try context.fetch(FetchDescriptor<ServingSize>())
         var changed = 0
         for serving in servings {
@@ -237,9 +288,10 @@ private func backfillServingAmounts(container: ModelContainer) async {
             }
         }
         if changed > 0 {
-            try context.save()
             print("✅ backfillServingAmounts: updated \(changed) serving(s)")
         }
+        prefs.hasBackfilledServingAmounts = true
+        try context.save()
     } catch {
         print("⚠️ backfillServingAmounts failed: \(error)")
     }
@@ -252,9 +304,13 @@ private func backfillServingAmounts(container: ModelContainer) async {
 private func backfillFoodLogGramAmounts(container: ModelContainer) async {
     let context = container.mainContext
     do {
+        // E-1: Skip on subsequent launches once complete.
+        // guard let ensures the flag assignment below actually persists (optional chaining is a no-op on nil).
+        guard let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first,
+              prefs.hasBackfilledGramAmounts != true else { return }
+
         let logs = try context.fetch(FetchDescriptor<FoodLog>())
         let unset = logs.filter { $0.gramAmount == 0 }
-        guard !unset.isEmpty else { return }
         for log in unset {
             let resolvedServing = log.servingSize ?? log.foodItem?.defaultServing
             if let gw = resolvedServing?.gramWeight {
@@ -277,8 +333,11 @@ private func backfillFoodLogGramAmounts(container: ModelContainer) async {
             if log.loggedAmount == nil { log.loggedAmount = log.quantity }
             if log.loggedUnit == nil { log.loggedUnit = resolvedServing?.unit }
         }
+        if !unset.isEmpty {
+            print("✅ backfillFoodLogGramAmounts: set gramAmount on \(unset.count) log(s)")
+        }
+        prefs.hasBackfilledGramAmounts = true
         try context.save()
-        print("✅ backfillFoodLogGramAmounts: set gramAmount on \(unset.count) log(s)")
     } catch {
         print("⚠️ backfillFoodLogGramAmounts failed: \(error)")
     }
@@ -290,12 +349,16 @@ private func backfillFoodLogGramAmounts(container: ModelContainer) async {
 private func backfillServingUnits(container: ModelContainer) async {
     let context = container.mainContext
     do {
+        // E-1: Skip on subsequent launches once complete.
+        // guard let ensures the flag assignment below actually persists (optional chaining is a no-op on nil).
+        guard let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first,
+              prefs.hasBackfilledServingUnits != true else { return }
+
         let servings = try context.fetch(
             FetchDescriptor<ServingSize>(
                 predicate: #Predicate { $0.unit == nil }
             )
         )
-        guard !servings.isEmpty else { return }
         for serving in servings {
             if let parsed = ServingSizeParser.parse(serving.label),
                parsed.unit != .serving {
@@ -304,10 +367,72 @@ private func backfillServingUnits(container: ModelContainer) async {
                 serving.unit = unit.rawValue
             }
         }
+        if !servings.isEmpty {
+            print("✅ backfillServingUnits: set unit on \(servings.count) ServingSize records")
+        }
+        prefs.hasBackfilledServingUnits = true
         try context.save()
-        print("✅ Backfilled unit on \(servings.count) ServingSize records")
     } catch {
         print("⚠️ backfillServingUnits failed: \(error)")
+    }
+}
+
+// MARK: - T-14: FoodHistoryEntry backfill
+
+/// Builds the personal food history index from existing FoodLog records.
+///
+/// Runs once on first launch after SchemaV2 migration. Subsequent launches skip
+/// immediately via the hasBackfilledFoodHistory flag. Force-quitting mid-backfill
+/// leaves the flag unset so the backfill restarts on next launch — the upsert
+/// logic handles any resulting duplicates by merging logCounts.
+///
+/// Processes FoodLogs in chunks of 500, yielding to the main actor between chunks
+/// so the UI remains responsive throughout (consistent with @MainActor pattern
+/// used by all other backfills in this app).
+///
+/// Shows a progress overlay when the total log count exceeds 5,000.
+@MainActor
+private func backfillFoodHistory(container: ModelContainer) async {
+    let context = container.mainContext
+    do {
+        guard let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first else { return }
+
+        // Skip if already completed — but re-run if the flag was set while the store
+        // had zero entries (flag set before any data was imported, or entries were lost
+        // due to a partial store reset).
+        if prefs.hasBackfilledFoodHistory == true {
+            let entryCount = (try? context.fetchCount(FetchDescriptor<FoodHistoryEntry>())) ?? 0
+            let logCount = (try? context.fetchCount(FetchDescriptor<FoodLog>())) ?? 0
+            guard entryCount == 0 && logCount > 0 else { return }
+            // Entries missing despite flag — clear it and fall through to re-index.
+            prefs.hasBackfilledFoodHistory = false
+        }
+
+        let allLogs = try context.fetch(FetchDescriptor<FoodLog>())
+        guard !allLogs.isEmpty else {
+            prefs.hasBackfilledFoodHistory = true
+            try context.save()
+            return
+        }
+
+        let chunkSize = 500
+        let chunks = stride(from: 0, to: allLogs.count, by: chunkSize).map {
+            Array(allLogs[$0 ..< min($0 + chunkSize, allLogs.count)])
+        }
+
+        for chunk in chunks {
+            for log in chunk {
+                guard let food = log.foodItem else { continue }
+                FoodHistoryEntry.upsert(food: food, mealType: log.mealType, in: context)
+            }
+            await Task.yield()
+        }
+
+        prefs.hasBackfilledFoodHistory = true
+        try context.save()
+        print("✅ backfillFoodHistory: indexed \(allLogs.count) log(s)")
+    } catch {
+        print("⚠️ backfillFoodHistory failed: \(error)")
     }
 }
 
@@ -326,13 +451,17 @@ private func backfillServingUnits(container: ModelContainer) async {
 private func fixLoseItGramUnitFoods(container: ModelContainer) async {
     let context = container.mainContext
     do {
+        // E-1: Skip on subsequent launches once complete.
+        // guard let ensures the flag assignment below actually persists (optional chaining is a no-op on nil).
+        guard let prefs = try context.fetch(FetchDescriptor<UserPreferences>()).first,
+              prefs.hasFixedLoseItGramUnits != true else { return }
+
         // Only look at LoseIt-imported foods
         let foods = try context.fetch(
             FetchDescriptor<FoodItem>(
                 predicate: #Predicate { $0.source.contains("LoseIt") }
             )
         )
-        guard !foods.isEmpty else { return }
 
         var nutritionFixed = 0
         var gramWeightFixed = 0
@@ -402,9 +531,10 @@ private func fixLoseItGramUnitFoods(container: ModelContainer) async {
         }
 
         if nutritionFixed > 0 || gramWeightFixed > 0 {
-            try context.save()
             print("✅ fixLoseItGramUnitFoods: fixed nutrition on \(nutritionFixed) food(s), gramWeight on \(gramWeightFixed) serving(s)")
         }
+        prefs.hasFixedLoseItGramUnits = true
+        try context.save()
     } catch {
         print("⚠️ fixLoseItGramUnitFoods failed: \(error)")
     }

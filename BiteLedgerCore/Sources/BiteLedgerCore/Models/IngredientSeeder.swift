@@ -292,7 +292,7 @@ private func exportBundleJSON(_ bundle: SeedBundle) {
     print(jsonString)
     print("📦 ===== END ingredients.json =====")
     print("📦 Copy the JSON above into a file named 'ingredients.json' and add it to both")
-    print("📦 BiteLedger and RecipeCard targets in Xcode as a bundle resource.")
+    print("📦 BiteLedger and BitePlan targets in Xcode as a bundle resource.")
 }
 
 // MARK: - Relevance Scoring

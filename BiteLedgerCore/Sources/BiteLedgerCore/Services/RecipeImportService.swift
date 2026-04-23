@@ -92,7 +92,7 @@ public enum RecipeImportError: Error, LocalizedError {
 
 // MARK: - Service
 
-public struct RecipeImportService {
+public struct RecipeImportService: Sendable {
 
     private let apiKey: String?
     private let model    = "claude-haiku-4-5-20251001"
@@ -1152,12 +1152,25 @@ public struct RecipeImportService {
 
     // MARK: - Local Image Storage
 
-    /// Saves raw JPEG data for a scanned recipe image to the app's Documents directory.
+    /// App Group shared container identifier — used by both apps and the Share Extension.
+    public static let sharedAppGroupIdentifier = "group.com.ridepro.biteledger"
+
+    /// Saves raw JPEG data for a recipe image.
+    /// Always prefers the App Group container (stable path that survives app reinstalls).
+    /// Falls back to the app's own Documents directory only when the group container
+    /// is unavailable (e.g. unit tests, extensions without entitlements).
     /// Returns a `file://` URL string, or nil on failure.
     /// The caller is responsible for deleting the file when the recipe is deleted.
-    public static func saveImageDataLocally(_ jpegData: Data) -> String? {
+    public static func saveImageDataLocally(_ jpegData: Data,
+                                            appGroupIdentifier: String? = sharedAppGroupIdentifier) -> String? {
         let filename = "recipe-\(UUID().uuidString).jpg"
-        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dir: URL
+        if let groupID = appGroupIdentifier,
+           let groupURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupID) {
+            dir = groupURL
+        } else {
+            dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        }
         let fileURL = dir.appendingPathComponent(filename)
         do {
             try jpegData.write(to: fileURL, options: .atomic)

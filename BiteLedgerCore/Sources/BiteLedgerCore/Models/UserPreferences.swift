@@ -16,6 +16,26 @@ public class UserPreferences {
     public var cachedStreak: Int = 0
     public var streakCachedDate: Date? = nil
 
+    // E-1: Startup backfill completion flags (nil = not yet run; true = done)
+    public var hasBackfilledServingUnits: Bool?
+    public var hasBackfilledStaleLogs: Bool?
+    public var hasBackfilledServingAmounts: Bool?
+    public var hasNormalizedPerServingFoods: Bool?
+    public var hasBackfilledGramAmounts: Bool?
+    public var hasFixedLoseItGramUnits: Bool?
+
+    // NEW-1: Weekly share card — tracks which ISO week the last card was generated
+    public var lastShareCardGeneratedWeek: Date?
+
+    // T-03: Streak milestone celebrations — highest milestone already celebrated
+    public var lastCelebratedMilestone: Int?
+
+    // T-08: First-log micro-celebration — nil = never fired, true = fired (one-time)
+    public var hasSeenFirstLogCelebration: Bool?
+
+    // T-14: FoodHistoryEntry backfill — nil = not yet run; true = complete
+    public var hasBackfilledFoodHistory: Bool?
+
     public init(pinnedNutrient: String? = nil, goalsData: Data? = nil, showMacroBalanceTile: Bool? = nil) {
         self.pinnedNutrient = pinnedNutrient
         self.goalsData = goalsData
@@ -59,7 +79,7 @@ public enum GoalType: String, Codable, CaseIterable {
 }
 
 // Comprehensive nutrient enum
-public enum Nutrient: String, CaseIterable, Codable, Identifiable {
+public enum Nutrient: String, CaseIterable, Codable, Identifiable, Sendable {
     // Macronutrients (always shown on dashboard)
     case calories = "Calories"
     case protein = "Protein"
@@ -103,7 +123,7 @@ public enum Nutrient: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .calories:
             return "cal"
-        case .sodium, .potassium, .calcium, .vitaminC, .vitaminD, .iron, .magnesium, .zinc, .caffeine:
+        case .sodium, .potassium, .calcium, .vitaminC, .vitaminD, .iron, .magnesium, .zinc, .caffeine, .cholesterol:
             return "mg"
         case .vitaminA, .vitaminK, .folate, .vitaminB12:
             return "mcg"
@@ -129,6 +149,28 @@ public enum Nutrient: String, CaseIterable, Codable, Identifiable {
         }
     }
     
+    // E-3: Default goal value for this nutrient (single source of truth — no duplication in views)
+    public var defaultGoalValue: Double {
+        switch self {
+        case .calories: return 2000
+        case .protein: return 150
+        case .carbs: return 250
+        case .fat: return 65
+        case .fiber: return 30
+        case .sugar: return 50
+        case .sodium: return 2300
+        case .saturatedFat: return 20
+        case .cholesterol: return 300
+        case .potassium: return 3500
+        case .calcium: return 1000
+        case .iron: return 18
+        case .vitaminC: return 90
+        case .vitaminD: return 20
+        case .caffeine: return 400
+        default: return 100
+        }
+    }
+
     // Default goal type for this nutrient
     public var defaultGoalType: GoalType {
         switch self {
@@ -156,5 +198,34 @@ public enum NutrientCategory {
 extension Nutrient {
     public static var pinnableNutrients: [Nutrient] {
         allCases.filter { ![$0].contains(where: { [.calories, .protein, .carbs, .fat].contains($0) }) }
+    }
+}
+
+// MARK: - Spotlight helpers (Phase 2, Feature 1)
+
+extension Nutrient {
+    /// FDA-aligned display name for the Nutrient Spotlight surfaces.
+    /// "Total Fat" and "Total Carbohydrate" match FDA label language;
+    /// all other nutrients use their rawValue.
+    public var spotlightDisplayName: String {
+        switch self {
+        case .fat:   return "Total Fat"
+        case .carbs: return "Total Carbohydrate"
+        default:     return rawValue
+        }
+    }
+
+    /// Returns the *AtLogTime value for this nutrient from a FoodLog.
+    /// Days where the return value is nil for every log are excluded from
+    /// the NutrientSpotlightEngine day count entirely (not counted as 0).
+    public func value(from log: FoodLog) -> Double? {
+        switch self {
+        case .sodium:        return log.sodiumAtLogTime
+        case .saturatedFat:  return log.saturatedFatAtLogTime
+        case .fat:           return log.fatAtLogTime          // non-optional — always present
+        case .cholesterol:   return log.cholesterolAtLogTime
+        case .carbs:         return log.carbsAtLogTime        // non-optional — always present
+        default:             return nil
+        }
     }
 }

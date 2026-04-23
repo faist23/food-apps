@@ -1,6 +1,6 @@
 # DESIGN.md — Food Apps Design System
 
-Inferred from BiteLedger's production code. Applies to both BiteLedger and RecipeCard.
+Inferred from BiteLedger's production code. Applies to both BiteLedger and BitePlan.
 Last updated: 2026-03-19 by /plan-design-review.
 
 ---
@@ -15,7 +15,7 @@ Last updated: 2026-03-19 by /plan-design-review.
 
 ## Color Tokens
 
-All colors live in `BiteLedger/Assets.xcassets`. RecipeCard **must** add these same tokens to its `Assets.xcassets` (or consume them from a shared location). Never use raw system colors (`Color.secondary`, `.accentColor`) in new code — always use a named token.
+All colors live in `BiteLedger/Assets.xcassets`. BitePlan has these same tokens in its own `Assets.xcassets` (added in v0.1.1.0). BitePlan also has two additional CookingMode tokens: `CookingModeSurface` and `CookingModeText` (full-screen cooking overlay). Never use raw system colors (`Color.secondary`, `.accentColor`) in new code — always use a named token.
 
 ### Brand
 | Token | Usage |
@@ -145,7 +145,7 @@ All text uses `.system()` — no custom fonts. The rounded design variant is res
 
 ### RecipeRowView (List row)
 - Thumbnail: 56×56, rounded 8pt
-- Placeholder: `Color.secondary.opacity(0.12)` — **FLAGGED: too invisible, replace with icon placeholder**
+- Placeholder: gradient + `fork.knife` icon centered in `SurfaceCard` fill (shipped D-3)
 - Title: `.headline`
 - Metadata: `.caption` in `.secondary`
 
@@ -165,7 +165,7 @@ Empty states are features — not fallbacks. Every empty state must have:
 | `RecipesListView` (empty) | ContentUnavailableView generic | **Improve: add primary import action** |
 | `RecipeDetailView` (no photo) | Nearly invisible gray | **Icon placeholder with camera affordance** |
 | `RecipeDetailView` (no ingredients) | "No ingredients added yet." plain text | **Icon + action to add first ingredient** |
-| `HistoryView` (no logs) | Unknown — needs check | **Encourage first log** |
+| `HistoryView` (no logs) | "Log some food to see your trend" — no action button (correct per product philosophy) | ✅ Shipped T-01 |
 | `FoodSearchView` (no results) | Unknown — needs check | **"No results for X" + suggest manual entry** |
 
 ---
@@ -182,12 +182,13 @@ Empty states are features — not fallbacks. Every empty state must have:
 ## Navigation Patterns
 
 ### BiteLedger
-- `TabView` root: Today / History / Settings
+- `TabView` root: Today / History / Recipes / Settings (Recipes tab added T-10, feature/v1-ship)
 - Food addition: sheet presentation of `FoodSearchView` with 4-tab segmented picker
 
-### RecipeCard
-- `NavigationStack` root in `RecipesListView`
-- Toolbar pattern: **max 2 leading items** — currently 4 (Edit + Import + Scan + Plus) — overcrowded
+### BitePlan
+- `TabView` root: Recipes / Meal Planner / Shopping Cart (added v0.2.0.0)
+- `NavigationStack` inside each tab
+- Toolbar pattern: **gear (Settings) leading, `+` Menu trailing** — D-9 shipped v0.2.0.0
 
 ### Toolbar Rule
 - Leading: max 1–2 items (prefer icon-only for non-destructive actions)
@@ -232,15 +233,15 @@ Every interactive feature must define all 5 states:
 
 ---
 
-## What RecipeCard Must Adopt
+## What BitePlan Must Adopt
 
-RecipeCard's `Assets.xcassets` currently has only `AccentColor` and `AppIcon`. To align with BiteLedger:
+BitePlan's `Assets.xcassets` currently has only `AccentColor` and `AppIcon`. To align with BiteLedger:
 
-1. **Add all BiteLedger color tokens** to `RecipeCard/Assets.xcassets` (or reference them from a shared xcassets)
-2. **Replace** `Color.secondary` → `Color("TextSecondary")`
-3. **Replace** `.accentColor` → `Color("BrandAccent")`
-4. **Replace** `.regularMaterial` on cards → `Color("SurfaceCard")`
-5. **Replace** thumbnail placeholder `Color.secondary.opacity(0.12)` → icon placeholder
+1. **Add all BiteLedger color tokens** to `BitePlan/Assets.xcassets` (or reference them from a shared xcassets)
+2. ✅ **Shipped D-6** — `Color.secondary` → `Color("TextSecondary")` applied throughout
+3. ✅ **Shipped D-6** — `.accentColor` → `Color("BrandAccent")` applied throughout
+4. ✅ **Shipped D-6** — `.regularMaterial` on cards → `Color("SurfaceCard")` applied throughout
+5. ✅ **Shipped D-3** — thumbnail placeholder `Color.secondary.opacity(0.12)` → gradient + fork-knife icon
 
 ---
 

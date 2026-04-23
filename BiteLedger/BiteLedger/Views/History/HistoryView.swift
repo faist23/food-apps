@@ -21,6 +21,28 @@ struct HistoryView: View {
     @State private var totalUniqueDaysAllTime = 0
     @State private var selectedTimeRange: TimeRange = .thirtyDays
     @AppStorage("historyExtraNutrients") private var extraNutrientKeys: String = ""
+    @State private var shareItems: [Any] = []
+    @State private var showShareSheet = false
+
+    // MARK: - Nutrient Spotlight (Phase 2, Feature 1)
+
+    // MARK: - Nutrient Spotlight state (cached to avoid recompute on every body pass)
+    @State private var spotlightResults: [SpotlightResult] = []
+    @State private var sevenDayLogs: [FoodLog] = []
+
+    private func computeSpotlightResults() {
+        let calendar = Calendar.current
+        // value: -6 = today + 6 previous days = 7 calendar days inclusive
+        let sixDaysAgo = calendar.date(
+            byAdding: .day, value: -6,
+            to: calendar.startOfDay(for: Date())
+        ) ?? Date()
+        sevenDayLogs = allLogs.filter { $0.timestamp >= sixDaysAgo }
+        spotlightResults = NutrientSpotlightEngine.compute(
+            logs: sevenDayLogs,
+            userGoals: preferences.first?.goals ?? [:]
+        )
+    }
 
     // MARK: - Persistence helpers
 
@@ -54,6 +76,13 @@ struct HistoryView: View {
                             VStack(spacing: 24) {
                                 statsRow
 
+                                if !spotlightResults.isEmpty {
+                                    NutrientSpotlightCard(
+                                        results: Array(spotlightResults.prefix(2)),
+                                        logs: sevenDayLogs
+                                    )
+                                }
+
                                 if !allLogs.isEmpty {
                                     goalChartsSection
                                 }
@@ -67,12 +96,60 @@ struct HistoryView: View {
                     }
                 }
             }
-            .background(Color("SurfacePrimary"))
+            .background(Color.surfacePrimary)
             .navigationTitle("History")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        generateAndShareRecap()
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .accessibilityLabel("Share weekly recap")
+                    .disabled(allLogs.isEmpty)
+                }
+            }
+            .sheet(isPresented: $showShareSheet) {
+                ShareSheet(items: shareItems)
+                    .presentationDetents([.medium, .large])
+            }
             .onAppear {
                 loadRecentLogs()
+                computeSpotlightResults()
+            }
+            .onChange(of: allLogs) { _, _ in
+                computeSpotlightResults()
             }
         }
+    }
+
+    // MARK: - Share Weekly Recap (NEW-1)
+
+    @MainActor
+    private func generateAndShareRecap() {
+        let calendar = Calendar(identifier: .iso8601)
+        // Last complete ISO week: Monday of (today - 7 days)
+        let lastWeekAny = calendar.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+        let weekStart = calendar.date(
+            from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: lastWeekAny)
+        ) ?? lastWeekAny
+
+        let recapData = WeeklyRecapData.build(
+            from: allLogs,
+            weekStart: weekStart,
+            streak: calculatedStreak
+        )
+
+        guard let image = renderWeeklyRecapCard(recapData) else { return }
+
+        // Mark the week as shared on UserPreferences
+        if let prefs = preferences.first {
+            prefs.lastShareCardGeneratedWeek = weekStart
+            try? modelContext.save()
+        }
+
+        shareItems = [image]
+        showShareSheet = true
     }
 
     // MARK: - Sticky Trends Header
@@ -83,7 +160,7 @@ struct HistoryView: View {
                 Text("Trends")
                     .font(.title2)
                     .fontWeight(.bold)
-                    .foregroundStyle(Color("TextPrimary"))
+                    .foregroundStyle(Color.textPrimary)
 
                 Spacer()
 
@@ -118,8 +195,8 @@ struct HistoryView: View {
                                 .fontWeight(.medium)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
-                                .background(allOn ? Color("BrandPrimary") : Color("SurfacePrimary"))
-                                .foregroundStyle(allOn ? Color.white : Color("TextPrimary"))
+                                .background(allOn ? Color.brandPrimary : Color.surfacePrimary)
+                                .foregroundStyle(allOn ? Color.white : Color.textPrimary)
                                 .cornerRadius(16)
                                 .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
                         }
@@ -136,8 +213,8 @@ struct HistoryView: View {
                                     .fontWeight(.medium)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 6)
-                                    .background(isOn ? Color("BrandPrimary") : Color("SurfacePrimary"))
-                                    .foregroundStyle(isOn ? Color.white : Color("TextPrimary"))
+                                    .background(isOn ? Color.brandPrimary : Color.surfacePrimary)
+                                    .foregroundStyle(isOn ? Color.white : Color.textPrimary)
                                     .cornerRadius(16)
                                     .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
                             }
@@ -149,7 +226,7 @@ struct HistoryView: View {
             }
         }
         .padding(.vertical, 12)
-        .background(Color("SurfacePrimary"))
+        .background(Color.surfacePrimary)
         .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
     }
     
@@ -447,7 +524,7 @@ struct HistoryView: View {
     }
     
     // MARK: - Stats Row
-    
+
     private var statsRow: some View {
         HStack(spacing: 12) {
             StatCard(
@@ -483,7 +560,7 @@ struct HistoryView: View {
             Text("Most Logged Foods")
                 .font(.title2)
                 .fontWeight(.bold)
-                .foregroundStyle(Color("TextPrimary"))
+                .foregroundStyle(Color.textPrimary)
                 .padding(.horizontal, 4)
             
             // All Time
@@ -618,22 +695,22 @@ struct StatCard: View {
             
             Text(value)
                 .font(.system(size: 24, weight: .bold, design: .rounded))
-                .foregroundStyle(Color("TextPrimary"))
+                .foregroundStyle(Color.textPrimary)
             
             VStack(spacing: 2) {
                 Text(title)
                     .font(.caption)
                     .fontWeight(.semibold)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
                 
                 Text(unit)
                     .font(.caption2)
-                    .foregroundStyle(Color("TextTertiary"))
+                    .foregroundStyle(Color.textTertiary)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
-        .background(Color("SurfacePrimary"))
+        .background(Color.surfacePrimary)
         .cornerRadius(16)
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
     }
@@ -662,12 +739,12 @@ struct GoalChartCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(nutrient.rawValue)
                         .font(.headline)
-                        .foregroundStyle(Color("TextPrimary"))
+                        .foregroundStyle(Color.textPrimary)
 
                     if let goalDescription {
                         Text(goalDescription)
                             .font(.caption)
-                            .foregroundStyle(Color("TextSecondary"))
+                            .foregroundStyle(Color.textSecondary)
                     }
                 }
 
@@ -677,11 +754,11 @@ struct GoalChartCard: View {
                     Text(averageValueFormatted)
                         .font(.title3)
                         .fontWeight(.bold)
-                        .foregroundStyle(Color("TextPrimary"))
+                        .foregroundStyle(Color.textPrimary)
 
                     Text("avg \(nutrient.unit)/day")
                         .font(.caption2)
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                 }
             }
 
@@ -694,7 +771,7 @@ struct GoalChartCard: View {
 
                     Text(weeklyAverageStatusText(goal: goal))
                         .font(.caption)
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                 }
             }
 
@@ -707,7 +784,7 @@ struct GoalChartCard: View {
                     )
                     .foregroundStyle(
                         LinearGradient(
-                            colors: [Color("BrandPrimary").opacity(0.2), Color("BrandPrimary").opacity(0.0)],
+                            colors: [Color.brandPrimary.opacity(0.2), Color.brandPrimary.opacity(0.0)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -720,7 +797,7 @@ struct GoalChartCard: View {
                         x: .value("Date", date),
                         y: .value("Average", avgValue)
                     )
-                    .foregroundStyle(Color("BrandPrimary"))
+                    .foregroundStyle(Color.brandPrimary)
                     .lineStyle(StrokeStyle(lineWidth: 3))
                     .interpolationMethod(.catmullRom)
                 }
@@ -771,20 +848,20 @@ struct GoalChartCard: View {
             HStack(spacing: 16) {
                 HStack(spacing: 4) {
                     Rectangle()
-                        .fill(Color("BrandPrimary").opacity(0.2))
+                        .fill(Color.brandPrimary.opacity(0.2))
                         .frame(width: 16, height: 12)
                     Text("Daily")
                         .font(.caption2)
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                 }
 
                 HStack(spacing: 4) {
                     Rectangle()
-                        .fill(Color("BrandPrimary"))
+                        .fill(Color.brandPrimary)
                         .frame(width: 16, height: 3)
                     Text("7-Day Avg")
                         .font(.caption2)
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(Color.textSecondary)
                 }
 
                 if let goal {
@@ -794,7 +871,7 @@ struct GoalChartCard: View {
                             .frame(width: 16, height: 2)
                         Text(goal.goalType == .range ? "Target Range" : "Goal")
                             .font(.caption2)
-                            .foregroundStyle(Color("TextSecondary"))
+                            .foregroundStyle(Color.textSecondary)
                     }
                 } else if fdaDailyValue != nil {
                     HStack(spacing: 4) {
@@ -803,14 +880,14 @@ struct GoalChartCard: View {
                             .frame(width: 16, height: 2)
                         Text("FDA DV")
                             .font(.caption2)
-                            .foregroundStyle(Color("TextSecondary"))
+                            .foregroundStyle(Color.textSecondary)
                     }
                 }
             }
             .padding(.top, 8)
         }
         .padding(16)
-        .background(Color("SurfaceCard"))
+        .background(Color.surfaceCard)
         .cornerRadius(16)
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
     }
@@ -911,7 +988,7 @@ struct GoalChartCard: View {
         case .fiber:           return 28
         case .sugar:           return nil  // BiteLedger tracks total sugar; FDA DV is for added sugars only
         case .saturatedFat:    return 20
-        case .cholesterol:     return 0.3   // 300 mg stored as g
+        case .cholesterol:     return 300   // mg
         case .sodium:          return 2300
         case .potassium:       return 4700
         case .calcium:         return 1300
@@ -951,8 +1028,8 @@ struct MealFilterButton: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(isSelected ? Color.orange : Color("SurfacePrimary"))
-            .foregroundStyle(isSelected ? .white : Color("TextPrimary"))
+            .background(isSelected ? Color.orange : Color.surfacePrimary)
+            .foregroundStyle(isSelected ? .white : Color.textPrimary)
             .cornerRadius(20)
             .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
         }
@@ -974,7 +1051,7 @@ struct FoodFrequencyCard: View {
                     .foregroundStyle(color)
                 Text(title)
                     .font(.headline)
-                    .foregroundStyle(Color("TextPrimary"))
+                    .foregroundStyle(Color.textPrimary)
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
@@ -982,7 +1059,7 @@ struct FoodFrequencyCard: View {
             if foods.isEmpty {
                 Text("No data yet")
                     .font(.subheadline)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 20)
             } else {
@@ -997,7 +1074,7 @@ struct FoodFrequencyCard: View {
                             
                             Text(food.name)
                                 .font(.subheadline)
-                                .foregroundStyle(Color("TextPrimary"))
+                                .foregroundStyle(Color.textPrimary)
                                 .lineLimit(1)
                             
                             Spacer()
@@ -1005,7 +1082,7 @@ struct FoodFrequencyCard: View {
                             Text("\(food.count)×")
                                 .font(.caption)
                                 .fontWeight(.semibold)
-                                .foregroundStyle(Color("TextSecondary"))
+                                .foregroundStyle(Color.textSecondary)
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
@@ -1019,7 +1096,7 @@ struct FoodFrequencyCard: View {
                 .padding(.bottom, 12)
             }
         }
-        .background(Color("SurfacePrimary"))
+        .background(Color.surfacePrimary)
         .cornerRadius(16)
         .shadow(color: .black.opacity(0.05), radius: 8, y: 4)
     }

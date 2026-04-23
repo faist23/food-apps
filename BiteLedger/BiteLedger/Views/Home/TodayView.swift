@@ -9,6 +9,8 @@ import BiteLedgerCore
 
 struct TodayView: View {
 
+    @Binding var selectedTab: Int
+
     @Environment(\.modelContext) private var modelContext
     @State private var logs: [FoodLog] = []
     @State private var preferences: UserPreferences?
@@ -21,11 +23,31 @@ struct TodayView: View {
     @State private var showingDatePicker = false
     @State private var currentStreak = 0
     @State private var yesterdayLogs: [FoodLog] = []
+    @AppStorage("firstRunBannerDismissed") private var firstRunBannerDismissed: Bool = false
+    @State private var streakMilestoneToast: Int?  // T-03
+    @State private var showFirstLogCelebration = false  // T-08
+
+    // MARK: - Nutrient Spotlight (Phase 2, Feature 1)
+    @State private var spotlightResults: [SpotlightResult] = []
+    @AppStorage("spotlightChipDismissedDate") private var spotlightChipDismissedDate: String = ""
 
     // MARK: - Computed
 
     private var todayLogs: [FoodLog] {
         logs
+    }
+
+    private var isChipDismissedToday: Bool {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let today = fmt.string(from: Date())
+        return spotlightChipDismissedDate == today
+    }
+
+    private var showSpotlightChip: Bool {
+        !spotlightResults.isEmpty &&
+        Set(todayLogs.map { $0.mealType }).count >= 2 &&
+        !isChipDismissedToday
     }
 
     private func caloriesFor(meal: MealType) -> Double {
@@ -43,10 +65,17 @@ struct TodayView: View {
                 headerSection
                     .padding(.horizontal, 20)
                     .padding(.vertical, 12)
-                    .background(Color("SurfacePrimary"))
+                    .background(Color.surfacePrimary)
                 
                 ScrollView {
                     VStack(spacing: 16) {
+                        // D-5: First-run banner — shown until dismissed, hidden once any food is logged
+                        if !firstRunBannerDismissed && todayLogs.isEmpty
+                            && (preferences == nil || preferences?.goals.isEmpty == true) {
+                            firstRunBanner
+                                .padding(.horizontal, 20)
+                        }
+
                         NutritionDashboard(
                             logs: todayLogs,
                             preferences: preferences,
@@ -56,14 +85,22 @@ struct TodayView: View {
                         )
                         .padding(.horizontal, 20)
 
+                        // Nutrient Spotlight chip (Phase 2, Feature 1)
+                        if showSpotlightChip, let top = spotlightResults.first {
+                            spotlightChip(top: top)
+                                .padding(.horizontal, 20)
+                                .transition(.opacity.combined(with: .scale(0.95, anchor: .top)))
+                        }
+
                         mealSections
 
                         Spacer(minLength: 60)
                     }
                     .padding(.top, 16)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showSpotlightChip)
                 }
             }
-            .background(Color("SurfacePrimary"))
+            .background(Color.surfacePrimary)
             .navigationBarHidden(true)
             .gesture(
                 DragGesture(minimumDistance: 50)
@@ -85,8 +122,34 @@ struct TodayView: View {
                 loadLogsForSelectedDate()
                 loadPreferences()  // must run before loadStreak so cache is available
                 loadStreak()
+                loadSevenDayLogs()
+            }
+            .onChange(of: currentStreak) { _, newStreak in
+                checkStreakMilestone(newStreak)
             }
         }
+        .overlay(alignment: .top) {
+            // T-03: Streak milestone toast — auto-dismisses after 2 seconds
+            if let milestone = streakMilestoneToast {
+                StreakMilestoneToast(days: milestone)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .padding(.top, 12)
+                    .zIndex(999)
+            }
+        }
+        .overlay(alignment: .top) {
+            // T-08: First-log micro-celebration — fires exactly once, auto-dismisses after 2s
+            if showFirstLogCelebration {
+                FirstLogCelebrationToast {
+                    withAnimation { showFirstLogCelebration = false }
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .padding(.top, 12)
+                .zIndex(1000)
+            }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: streakMilestoneToast)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showFirstLogCelebration)
         .sheet(item: $selectedMeal) { meal in
             FoodSearchView(mealType: meal) { addedItem in
                 let timestamp: Date
@@ -119,12 +182,27 @@ struct TodayView: View {
                     serving: addedItem.servingSize,
                     timestamp: timestamp,
                     loggedAmount: addedItem.loggedAmount,
-                    loggedUnit: addedItem.loggedUnit
+                    loggedUnit: addedItem.loggedUnit,
+                    context: modelContext
                 )
 
                 modelContext.insert(foodLog)
                 try? modelContext.save()
                 loadLogsForSelectedDate()
+                loadSevenDayLogs()
+
+                // T-08: First-log micro-celebration — fire exactly once when the flag is nil.
+                // Set the flag immediately before showing the overlay to prevent double-trigger.
+                if let prefs = preferences, prefs.hasSeenFirstLogCelebration == nil {
+                    prefs.hasSeenFirstLogCelebration = true
+                    try? modelContext.save()
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    withAnimation { showFirstLogCelebration = true }
+                    Task {
+                        try? await Task.sleep(for: .seconds(2))
+                        withAnimation { showFirstLogCelebration = false }
+                    }
+                }
 
                 // Invalidate the streak cache so the next loadStreak() recomputes.
                 // Only needed when logging for today — past-date edits don't change
@@ -174,7 +252,7 @@ struct TodayView: View {
                             loadLogsForSelectedDate()
                         }
                         .disabled(Calendar.current.isDateInToday(selectedDate))
-                        .foregroundStyle(Calendar.current.isDateInToday(selectedDate) ? Color.secondary : Color("BrandPrimary"))
+                        .foregroundStyle(Calendar.current.isDateInToday(selectedDate) ? Color.secondary : Color.brandPrimary)
                     }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Done") {
@@ -189,7 +267,29 @@ struct TodayView: View {
     }
     
     // MARK: - Data Loading
-    
+
+    /// Loads the rolling 7-day window anchored to real today (not selectedDate).
+    /// value: -6 = today + 6 previous days = 7 calendar days inclusive.
+    /// Called on appear and after every food log creation.
+    private func loadSevenDayLogs() {
+        let calendar = Calendar.current
+        let sixDaysAgo = calendar.date(
+            byAdding: .day, value: -6,
+            to: calendar.startOfDay(for: Date())
+        ) ?? Date()
+        let descriptor = FetchDescriptor<FoodLog>(
+            predicate: #Predicate { $0.timestamp >= sixDaysAgo }
+        )
+        let fetched = (try? modelContext.fetch(descriptor)) ?? []
+        spotlightResults = NutrientSpotlightEngine.compute(logs: fetched)
+    }
+
+    private func dismissChip() {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        spotlightChipDismissedDate = fmt.string(from: Date())
+    }
+
     private func loadLogsForSelectedDate() {
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: selectedDate)
@@ -287,6 +387,24 @@ struct TodayView: View {
         }
     }
     
+    // T-03: Check if the new streak value hits a milestone that hasn't been celebrated yet.
+    private func checkStreakMilestone(_ streak: Int) {
+        let milestones = [3, 7, 14, 30, 60, 100]
+        guard let milestone = milestones.last(where: { streak >= $0 }) else { return }
+        let alreadyCelebrated = preferences?.lastCelebratedMilestone ?? 0
+        guard milestone > alreadyCelebrated else { return }
+
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        withAnimation { streakMilestoneToast = milestone }
+        preferences?.lastCelebratedMilestone = milestone
+        try? modelContext.save()
+
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation { streakMilestoneToast = nil }
+        }
+    }
+
     private func loadPreferences() {
         let descriptor = FetchDescriptor<UserPreferences>()
         do {
@@ -348,7 +466,8 @@ struct TodayView: View {
                     quantity: oldLog.quantity,
                     food: foodItem,
                     serving: servingSize,
-                    timestamp: timestamp
+                    timestamp: timestamp,
+                    context: modelContext
                 )
                 
                 // Override with cached nutrition from original log to preserve exact values
@@ -405,7 +524,7 @@ struct TodayView: View {
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.title3)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
             }
 
             Spacer()
@@ -417,7 +536,7 @@ struct TodayView: View {
                     HStack(spacing: 8) {
                         Text(dateDisplayText)
                             .font(.system(size: 20, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color("TextPrimary"))
+                            .foregroundStyle(Color.textPrimary)
                         
                         if currentStreak > 0 {
                             HStack(spacing: 4) {
@@ -433,7 +552,7 @@ struct TodayView: View {
 
                     Text("Daily Ledger")
                         .font(.caption)
-                        .foregroundStyle(Color("TextTertiary"))
+                        .foregroundStyle(Color.textTertiary)
                 }
             }
 
@@ -445,7 +564,7 @@ struct TodayView: View {
             } label: {
                 Image(systemName: "chevron.right")
                     .font(.title3)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(Color.textSecondary)
             }
             .disabled(Calendar.current.isDateInToday(selectedDate))
             .opacity(Calendar.current.isDateInToday(selectedDate) ? 0.3 : 1)
@@ -455,6 +574,47 @@ struct TodayView: View {
     }
 
     // MARK: - Meals
+
+    // MARK: - First-Run Banner (D-5)
+
+    private var firstRunBanner: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "leaf.fill")
+                .font(.system(size: 18))
+                .foregroundStyle(Color.brandPrimary)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Welcome to BiteLedger")
+                    .font(.headline)
+                    .foregroundStyle(Color.textPrimary)
+                Text("Tap any meal below to log your first food. No judgment — just awareness.")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    firstRunBannerDismissed = true
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityLabel("Dismiss welcome message")
+        }
+        .padding(14)
+        .background(Color.surfaceCard)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.dividerSubtle, lineWidth: 1)
+        )
+    }
 
     private var mealSections: some View {
         VStack(spacing: 16) {
@@ -486,6 +646,62 @@ struct TodayView: View {
         }
     }
 
+    // MARK: - Nutrient Spotlight Chip
+
+    @ViewBuilder
+    private func spotlightChip(top: SpotlightResult) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "eye.fill")
+                .font(.system(size: 13))
+                .foregroundStyle(Color.brandPrimary)
+
+            Text(top.message)
+                .font(.subheadline)
+                .foregroundStyle(Color.textPrimary)
+                .lineLimit(2)
+
+            Spacer(minLength: 4)
+
+            Button {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    dismissChip()
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.textSecondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(
+            Capsule()
+                .fill(Color.surfaceCard)
+        )
+        .overlay(
+            Capsule()
+                .stroke(Color.dividerSubtle, lineWidth: 1)
+        )
+        .onTapGesture {
+            selectedTab = 1
+        }
+        .gesture(
+            DragGesture(minimumDistance: 20)
+                .onEnded { _ in
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        dismissChip()
+                    }
+                }
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(top.message). Tap to see details in History.")
+        .accessibilityAction(.default) { selectedTab = 1 }
+        .accessibilityAction(named: "Dismiss") {
+            dismissChip()
+        }
+    }
+
     // MARK: - Date Formatting
 
     private var dateDisplayText: String {
@@ -506,6 +722,52 @@ struct TodayView: View {
         }
         
         return formatter.string(from: selectedDate)
+    }
+}
+
+// MARK: - T-03: Streak Milestone Toast
+
+private struct StreakMilestoneToast: View {
+    let days: Int
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "flame.fill")
+                .foregroundStyle(.orange)
+            Text("\(days) day streak! Keep it going")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.textPrimary)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(
+            Capsule().fill(Color.surfaceElevated)
+                .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
+        )
+        .accessibilityLabel("\(days) day logging streak milestone")
+    }
+}
+
+// T-08: First-log micro-celebration — shown exactly once after the user's first ever food log.
+private struct FirstLogCelebrationToast: View {
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "star.fill")
+                .foregroundStyle(.yellow)
+            Text("You logged your first meal!")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.textPrimary)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(
+            Capsule().fill(Color.surfaceElevated)
+                .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
+        )
+        .onTapGesture { onDismiss() }
+        .accessibilityLabel("You logged your first meal")
     }
 }
 

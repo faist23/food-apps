@@ -14,17 +14,10 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var preferences: [UserPreferences]
 
-    @State private var logCount: Int = 0
-    @State private var foodItemsCount: Int = 0
-
     @State private var showingImport = false
-    @State private var showingExport = false
-    @State private var showingDeleteConfirmation = false
     @State private var showingCleanupConfirmation = false
     @State private var cleanupResultMessage = ""
     @State private var showingCleanupResult = false
-    @State private var isDeleting = false
-    @State private var deleteProgress = ""
     @State private var showingBackfillConfirmation = false
     @State private var backfillResultMessage = ""
     @State private var showingBackfillResult = false
@@ -78,17 +71,6 @@ struct SettingsView: View {
                 
                 Section {
                     NavigationLink {
-                        MyRecipesView()
-                    } label: {
-                        HStack {
-                            Image(systemName: "fork.knife.circle")
-                                .foregroundStyle(.purple)
-                            Text("My Recipes")
-                                .foregroundStyle(.primary)
-                        }
-                    }
-
-                    NavigationLink {
                         MyFoodsManagementView()
                     } label: {
                         HStack {
@@ -99,24 +81,13 @@ struct SettingsView: View {
                         }
                     }
                     
-                    Button {
-                        showingExport = true
+                    NavigationLink {
+                        BackupRestoreView()
                     } label: {
                         HStack {
-                            Image(systemName: "square.and.arrow.up")
-                                .foregroundStyle(.green)
-                            Text("Export Data")
-                                .foregroundStyle(.primary)
-                        }
-                    }
-                    
-                    Button {
-                        showingImport = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "square.and.arrow.down")
-                                .foregroundStyle(.orange)
-                            Text("Import from CSV")
+                            Image(systemName: "externaldrive.fill")
+                                .foregroundStyle(Color.brandPrimary)
+                            Text("Backup & Restore")
                                 .foregroundStyle(.primary)
                         }
                     }
@@ -154,19 +125,8 @@ struct SettingsView: View {
                         }
                     }
 
-                    Button(role: .destructive) {
-                        showingDeleteConfirmation = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "trash")
-                            Text("Delete All Food Logs")
-                        }
-                    }
                 } header: {
                     Text("Data")
-                } footer: {
-                    Text("You have \(logCount) food logs and \(foodItemsCount) food items")
-                        .font(.caption)
                 }
                 
                 Section("About") {
@@ -176,22 +136,6 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .onAppear {
                 loadPreferences()
-                logCount = (try? modelContext.fetchCount(FetchDescriptor<FoodLog>())) ?? 0
-                foodItemsCount = (try? modelContext.fetchCount(FetchDescriptor<FoodItem>())) ?? 0
-            }
-            .sheet(isPresented: $showingImport) {
-                LoseItImportView()
-            }
-            .sheet(isPresented: $showingExport) {
-                DataExportView()
-            }
-            .alert("Delete All Food Logs?", isPresented: $showingDeleteConfirmation) {
-                Button("Cancel", role: .cancel) { }
-                Button("Delete All", role: .destructive) {
-                    deleteAllData()
-                }
-            } message: {
-                Text("This will permanently delete all \(logCount) food logs and \(foodItemsCount) food items. This cannot be undone.")
             }
             .alert("Clean Up Duplicates?", isPresented: $showingCleanupConfirmation) {
                 Button("Cancel", role: .cancel) { }
@@ -238,33 +182,6 @@ struct SettingsView: View {
                     }
                 }
             }
-            .overlay {
-                if isDeleting {
-                    ZStack {
-                        Color.black.opacity(0.4)
-                            .ignoresSafeArea()
-                        
-                        VStack(spacing: 20) {
-                            ProgressView()
-                                .scaleEffect(1.5)
-                                .tint(.white)
-                            
-                            Text("Deleting all data...")
-                                .font(.headline)
-                                .foregroundStyle(.white)
-                            
-                            if !deleteProgress.isEmpty {
-                                Text(deleteProgress)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.white.opacity(0.8))
-                            }
-                        }
-                        .padding(40)
-                        .background(Color(UIColor.systemGray6))
-                        .cornerRadius(20)
-                    }
-                }
-            }
         }
     }
     
@@ -295,117 +212,6 @@ struct SettingsView: View {
             newPrefs.goals = goals
             modelContext.insert(newPrefs)
             try? modelContext.save()
-        }
-    }
-    
-    private func defaultGoalValue(for nutrient: Nutrient) -> Double {
-        switch nutrient {
-        case .calories: return 2000
-        case .protein: return 150
-        case .carbs: return 250
-        case .fat: return 65
-        case .fiber: return 30
-        case .sugar: return 50
-        case .sodium: return 2300
-        case .saturatedFat: return 20
-        case .cholesterol: return 300
-        case .potassium: return 3500
-        case .calcium: return 1000
-        case .iron: return 18
-        case .vitaminC: return 90
-        case .vitaminD: return 20
-        case .caffeine: return 400
-        default: return 100
-        }
-    }
-    
-    private func deleteAllData() {
-        isDeleting = true
-        deleteProgress = "Preparing deletion..."
-        
-        let container = modelContext.container
-        Task {
-            // Perform deletion on background thread
-            await Task.detached(priority: .userInitiated) {
-                // Create a new model context for background work
-                let backgroundContext = ModelContext(container)
-                
-                // Step 1: Delete all food logs (no relationships)
-                await MainActor.run {
-                    deleteProgress = "Deleting food logs..."
-                }
-                
-                let logsDescriptor = FetchDescriptor<FoodLog>()
-                if let logs = try? backgroundContext.fetch(logsDescriptor) {
-                    let total = logs.count
-                    await MainActor.run {
-                        deleteProgress = "Deleting \(total) food logs..."
-                    }
-                    
-                    // Delete all at once
-                    for log in logs {
-                        backgroundContext.delete(log)
-                    }
-                    
-                    // Single save for all logs
-                    try? backgroundContext.save()
-                }
-                
-                // Step 2: Delete all serving sizes
-                await MainActor.run {
-                    deleteProgress = "Deleting serving sizes..."
-                }
-                
-                let servingsDescriptor = FetchDescriptor<ServingSize>()
-                if let servings = try? backgroundContext.fetch(servingsDescriptor) {
-                    let total = servings.count
-                    await MainActor.run {
-                        deleteProgress = "Deleting \(total) serving sizes..."
-                    }
-                    
-                    for serving in servings {
-                        backgroundContext.delete(serving)
-                    }
-                    
-                    try? backgroundContext.save()
-                }
-                
-                // Step 3: Delete all food items
-                await MainActor.run {
-                    deleteProgress = "Deleting food items..."
-                }
-                
-                let foodsDescriptor = FetchDescriptor<FoodItem>()
-                if let foods = try? backgroundContext.fetch(foodsDescriptor) {
-                    let total = foods.count
-                    await MainActor.run {
-                        deleteProgress = "Deleting \(total) food items..."
-                    }
-                    
-                    for food in foods {
-                        backgroundContext.delete(food)
-                    }
-                    
-                    try? backgroundContext.save()
-                }
-                
-                await MainActor.run {
-                    deleteProgress = "Finalizing..."
-                }
-            }.value
-            
-            // Back on main thread
-            await MainActor.run {
-                isDeleting = false
-                deleteProgress = ""
-                logCount = 0
-                foodItemsCount = 0
-                if let prefs = preferences.first {
-                    prefs.cachedStreak = 0
-                    prefs.streakCachedDate = nil
-                    try? modelContext.save()
-                }
-            }
         }
     }
     
@@ -492,30 +298,33 @@ struct SettingsView: View {
         // Group foods by barcode
         let groupedByBarcode = Dictionary(grouping: currentFoodItems.filter { $0.barcode != nil && !$0.barcode!.isEmpty }) { $0.barcode! }
         
+        // E-5: Fetch all logs once (outside the loop) to avoid O(n²) DB scans.
+        let logDescriptor = FetchDescriptor<FoodLog>()
+        guard let allLogs = try? modelContext.fetch(logDescriptor) else {
+            cleanupResultMessage = "Failed to fetch food logs."
+            showingCleanupResult = true
+            return
+        }
+        // Build a lookup map from foodItem.id → [FoodLog] for O(1) access per group.
+        var logsByFoodID: [UUID: [FoodLog]] = [:]
+        for log in allLogs {
+            if let foodID = log.foodItem?.id {
+                logsByFoodID[foodID, default: []].append(log)
+            }
+        }
+
         // Process each group with duplicates
         for (_, duplicates) in groupedByBarcode where duplicates.count > 1 {
             mergedGroups += 1
-            
+
             // Keep the most recently added item
-            let keeper = duplicates.sorted { (a, b) in
-                return a.dateAdded > b.dateAdded
-            }.first!
-            
-            // Get all logs fresh from the database
-            let logDescriptor = FetchDescriptor<FoodLog>()
-            guard let currentLogs = try? modelContext.fetch(logDescriptor) else { continue }
-            
+            let keeper = duplicates.sorted { $0.dateAdded > $1.dateAdded }.first!
+
             // Update all logs pointing to duplicates to point to the keeper
             for duplicate in duplicates where duplicate.id != keeper.id {
-                // Find all logs using this duplicate
-                let logsUsingDuplicate = currentLogs.filter { $0.foodItem?.id == duplicate.id }
-                
-                // Point them to the keeper
-                for log in logsUsingDuplicate {
+                for log in logsByFoodID[duplicate.id, default: []] {
                     log.foodItem = keeper
                 }
-                
-                // Delete the duplicate
                 modelContext.delete(duplicate)
                 removedCount += 1
             }
@@ -564,12 +373,12 @@ struct GoalRow: View {
                             .foregroundStyle(.primary)
                         Text(goalDescription(for: goal))
                             .font(.caption)
-                            .foregroundStyle(Color("TextSecondary"))
+                            .foregroundStyle(Color.textSecondary)
                     }
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.caption)
-                        .foregroundStyle(Color("TextTertiary"))
+                        .foregroundStyle(Color.textTertiary)
                 }
             }
             .sheet(isPresented: $showingEditor) {
@@ -590,7 +399,7 @@ struct GoalRow: View {
             }
         } else {
             Button {
-                let defaultValue = defaultGoalValue(for: nutrient)
+                let defaultValue = nutrient.defaultGoalValue
                 let defaultGoal = NutrientGoal(
                     targetValue: defaultValue,
                     goalType: nutrient.defaultGoalType,
@@ -605,7 +414,7 @@ struct GoalRow: View {
                     Spacer()
                     Text("Set Goal")
                         .font(.subheadline)
-                        .foregroundStyle(Color("BrandAccent"))
+                        .foregroundStyle(Color.brandAccent)
                 }
             }
         }
@@ -623,26 +432,6 @@ struct GoalRow: View {
         }
     }
     
-    private func defaultGoalValue(for nutrient: Nutrient) -> Double {
-        switch nutrient {
-        case .calories: return 2000
-        case .protein: return 150
-        case .carbs: return 250
-        case .fat: return 65
-        case .fiber: return 30
-        case .sugar: return 50
-        case .sodium: return 2300
-        case .saturatedFat: return 20
-        case .cholesterol: return 300
-        case .potassium: return 3500
-        case .calcium: return 1000
-        case .iron: return 18
-        case .vitaminC: return 90
-        case .vitaminD: return 20
-        case .caffeine: return 400
-        default: return 100
-        }
-    }
 }
 
 

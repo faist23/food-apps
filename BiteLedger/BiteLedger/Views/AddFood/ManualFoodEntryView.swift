@@ -316,9 +316,9 @@ struct ManualFoodEntryView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Nutrition Facts")
                     .font(.system(size: 32, weight: .black))
-                    .foregroundStyle(Color("TextPrimary"))
+                    .foregroundStyle(Color.textPrimary)
                 Rectangle()
-                    .fill(Color("TextPrimary"))
+                    .fill(Color.textPrimary)
                     .frame(height: 8)
             }
             .padding(.horizontal, 16)
@@ -349,7 +349,7 @@ struct ManualFoodEntryView: View {
             .padding(.vertical, 4)
 
             Rectangle()
-                .fill(Color("TextPrimary"))
+                .fill(Color.textPrimary)
                 .frame(height: 5)
 
             // % DV header
@@ -373,7 +373,7 @@ struct ManualFoodEntryView: View {
             LabelNutrientRow(label: "Protein", value: $protein, unit: "g", dailyValue: nil, usePercent: .constant(false), bold: true, indented: false)
 
             Rectangle()
-                .fill(Color("TextPrimary"))
+                .fill(Color.textPrimary)
                 .frame(height: 6)
 
             // Vitamins & Minerals block
@@ -394,12 +394,12 @@ struct ManualFoodEntryView: View {
             LabelNutrientRow(label: "Caffeine", value: $caffeine, unit: "mg", dailyValue: nil, usePercent: .constant(false), bold: false, indented: false)
 
             Rectangle()
-                .fill(Color("TextPrimary"))
+                .fill(Color.textPrimary)
                 .frame(height: 4)
 
             Text("* The % Daily Value (DV) tells you how much a nutrient in a serving of food contributes to a daily diet. 2,000 calories a day is used for general nutrition advice. Tap unit to switch between amount and % DV.")
                 .font(.system(size: 9))
-                .foregroundStyle(Color("TextSecondary"))
+                .foregroundStyle(Color.textSecondary)
                 .padding(.top, 8)
                 .fixedSize(horizontal: false, vertical: true)
             } // end inner VStack
@@ -748,20 +748,20 @@ private struct LabelNutrientRow: View {
                         } label: {
                             Text(usePercent ? "%" : unit)
                                 .font(.system(size: 14, weight: usePercent ? .semibold : .regular))
-                                .foregroundStyle(usePercent ? Color.blue : Color("TextSecondary"))
+                                .foregroundStyle(usePercent ? Color.blue : Color.textSecondary)
                         }
                         .buttonStyle(.plain)
                     } else {
                         Text(unit)
                             .font(.system(size: 14))
-                            .foregroundStyle(Color("TextSecondary"))
+                            .foregroundStyle(Color.textSecondary)
                     }
                 }
             }
             .padding(.vertical, 4)
 
             Rectangle()
-                .fill(Color("TextPrimary"))
+                .fill(Color.textPrimary)
                 .frame(height: 1)
         }
     }

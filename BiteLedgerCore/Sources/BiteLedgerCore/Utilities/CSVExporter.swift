@@ -11,10 +11,14 @@ import SwiftData
 
 // MARK: - CSVExporter
 //
-// Exports BiteLedger data as three CSV files for full round-trip restore.
-// foods.csv → servings.csv → logs.csv
+// Exports BiteLedger data as CSV files for full round-trip restore.
+// foods.csv → servings.csv → logs.csv → recipes.csv → ingredients.csv
+// → meal_plans.csv → meal_meals.csv → meal_items.csv  (SchemaV5, T-12-RestoreUpdate)
 //
 // Design guarantee: export → delete app → import produces identical data.
+//
+// JSON array fields (directions, keywords, dietTags, importedNutrition) are stored
+// as base64-encoded JSON data to keep the CSV single-line and unambiguous.
 
 public struct CSVExporter {
 
@@ -24,6 +28,16 @@ public struct CSVExporter {
         public let foodsCSV: String
         public let servingsCSV: String
         public let logsCSV: String
+        public let recipesCSV: String
+        public let ingredientsCSV: String
+        // Meal plan CSVs (SchemaV5 — T-12-RestoreUpdate)
+        public let mealPlansCSV: String
+        public let mealMealsCSV: String
+        public let mealItemsCSV: String
+        /// Local recipe images: (filename e.g. "{uuid}.jpg", jpeg data).
+        /// Only populated for recipes whose imageURL starts with "file://".
+        /// Remote https:// images are not included — AsyncImage re-fetches them.
+        public let recipeImages: [(filename: String, data: Data)]
         public let exportDate: Date
 
         /// Suggested filename prefix
@@ -39,15 +53,38 @@ public struct CSVExporter {
     /// Exports all data for a full round-trip backup.
     @MainActor
     public static func exportAll(context: ModelContext) throws -> ExportPackage {
-        let foods    = try context.fetch(FetchDescriptor<FoodItem>())
-        let servings = try context.fetch(FetchDescriptor<ServingSize>())
-        let logs     = try context.fetch(FetchDescriptor<FoodLog>())
+        let foods       = try context.fetch(FetchDescriptor<FoodItem>())
+        let servings    = try context.fetch(FetchDescriptor<ServingSize>())
+        let logs        = try context.fetch(FetchDescriptor<FoodLog>())
+        let recipes     = try context.fetch(FetchDescriptor<Recipe>())
+        let ingredients = try context.fetch(FetchDescriptor<RecipeIngredient>())
+        let mealPlans   = try context.fetch(FetchDescriptor<MealPlan>())
+        let mealMeals   = try context.fetch(FetchDescriptor<MealPlanMeal>())
+        let mealItems   = try context.fetch(FetchDescriptor<MealPlanMealItem>())
+
+        // Collect local recipe images as (filename, jpegData) pairs.
+        // Filename is "{recipeId}.jpg" so the importer can match by UUID.
+        var recipeImages: [(filename: String, data: Data)] = []
+        for recipe in recipes {
+            guard let urlString = recipe.imageURL,
+                  urlString.hasPrefix("file://"),
+                  let url = URL(string: urlString),
+                  let data = try? Data(contentsOf: url)
+            else { continue }
+            recipeImages.append(("\(recipe.id.uuidString).jpg", data))
+        }
 
         return ExportPackage(
-            foodsCSV:    exportFoods(foods),
-            servingsCSV: exportServings(servings),
-            logsCSV:     exportLogs(logs),
-            exportDate:  Date()
+            foodsCSV:       exportFoods(foods),
+            servingsCSV:    exportServings(servings),
+            logsCSV:        exportLogs(logs),
+            recipesCSV:     exportRecipes(recipes),
+            ingredientsCSV: exportIngredients(ingredients),
+            mealPlansCSV:   exportMealPlans(mealPlans),
+            mealMealsCSV:   exportMealMeals(mealMeals),
+            mealItemsCSV:   exportMealItems(mealItems),
+            recipeImages:   recipeImages,
+            exportDate:     Date()
         )
     }
 
@@ -197,6 +234,133 @@ public struct CSVExporter {
         return csvString(rows)
     }
 
+    // MARK: - Recipes CSV
+    //
+    // JSON array fields (directions, keywords, dietTags, importedNutrition) are
+    // base64-encoded to avoid embedded commas/newlines breaking CSV line parsing.
+
+    public static func exportRecipes(_ recipes: [Recipe]) -> String {
+        let headers = [
+            "id", "name", "servingsYield", "sourceURL",
+            "prepMinutes", "cookMinutes", "totalMinutes",
+            "imageURL",
+            "recipeDescription", "recipeCategory", "recipeCuisine",
+            "author", "ratingValue", "ratingCount", "notes",
+            "keywords", "dietTags", "directions", "importedNutrition",
+            "dateAdded", "foodItemId"
+        ]
+        var rows: [[String]] = [headers]
+        let iso = ISO8601DateFormatter()
+
+        for recipe in recipes {
+            let row: [String] = [
+                recipe.id.uuidString,
+                recipe.name,
+                String(recipe.servingsYield),
+                recipe.sourceURL ?? "",
+                recipe.prepMinutes.map(String.init) ?? "",
+                recipe.cookMinutes.map(String.init) ?? "",
+                recipe.totalMinutes.map(String.init) ?? "",
+                recipe.imageURL ?? "",
+                recipe.recipeDescription ?? "",
+                recipe.recipeCategory ?? "",
+                recipe.recipeCuisine ?? "",
+                recipe.author ?? "",
+                recipe.ratingValue.map { String(format: "%.2g", $0) } ?? "",
+                recipe.ratingCount.map(String.init) ?? "",
+                recipe.notes ?? "",
+                base64Data(recipe.keywordsData),
+                base64Data(recipe.dietTagsData),
+                base64Data(recipe.directionsData),
+                base64Data(recipe.importedNutritionData),
+                iso.string(from: recipe.dateAdded),
+                recipe.foodItem?.id.uuidString ?? ""
+            ]
+            rows.append(row)
+        }
+
+        return csvString(rows)
+    }
+
+    // MARK: - Ingredients CSV
+
+    public static func exportIngredients(_ ingredients: [RecipeIngredient]) -> String {
+        let headers = [
+            "id", "recipeId", "foodItemId", "servingSizeId",
+            "quantity", "sortOrder", "rawText", "recipeQuantity", "recipeUnit"
+        ]
+        var rows: [[String]] = [headers]
+
+        for ingredient in ingredients {
+            guard let recipeId = ingredient.recipe?.id else { continue }
+            let row: [String] = [
+                ingredient.id.uuidString,
+                recipeId.uuidString,
+                ingredient.foodItem?.id.uuidString ?? "",
+                ingredient.servingSize?.id.uuidString ?? "",
+                String(ingredient.quantity),
+                String(ingredient.sortOrder),
+                ingredient.rawText ?? "",
+                ingredient.recipeQuantity.map { String(format: "%.4g", $0) } ?? "",
+                ingredient.recipeUnit ?? ""
+            ]
+            rows.append(row)
+        }
+
+        return csvString(rows)
+    }
+
+    // MARK: - Meal Plans CSV (SchemaV5 — T-12-RestoreUpdate)
+
+    public static func exportMealPlans(_ plans: [MealPlan]) -> String {
+        let headers = ["id", "weekStartDate"]
+        var rows: [[String]] = [headers]
+        let iso = ISO8601DateFormatter()
+        for plan in plans {
+            rows.append([plan.id.uuidString, iso.string(from: plan.weekStartDate)])
+        }
+        return csvString(rows)
+    }
+
+    // MARK: - Meal Meals CSV
+
+    public static func exportMealMeals(_ meals: [MealPlanMeal]) -> String {
+        let headers = ["id", "planId", "date", "mealType", "name"]
+        var rows: [[String]] = [headers]
+        let iso = ISO8601DateFormatter()
+        for meal in meals {
+            guard let planId = meal.mealPlan?.id else { continue }
+            rows.append([
+                meal.id.uuidString,
+                planId.uuidString,
+                iso.string(from: meal.date),
+                meal.mealType.rawValue,
+                meal.name ?? ""
+            ])
+        }
+        return csvString(rows)
+    }
+
+    // MARK: - Meal Items CSV
+
+    public static func exportMealItems(_ items: [MealPlanMealItem]) -> String {
+        let headers = ["id", "mealId", "recipeId", "foodItemId", "servingSizeId", "note", "servingCount"]
+        var rows: [[String]] = [headers]
+        for item in items {
+            guard let mealId = item.meal?.id else { continue }
+            rows.append([
+                item.id.uuidString,
+                mealId.uuidString,
+                item.recipe?.id.uuidString ?? "",
+                item.foodItem?.id.uuidString ?? "",
+                item.servingSize?.id.uuidString ?? "",
+                item.note ?? "",
+                String(format: "%.4g", item.servingCount)
+            ])
+        }
+        return csvString(rows)
+    }
+
     // MARK: - Helpers
 
     private static func optStr(_ value: Double?) -> String {
@@ -205,6 +369,12 @@ public struct CSVExporter {
         return v.truncatingRemainder(dividingBy: 1) == 0
             ? String(Int(v))
             : String(format: "%.4g", v)
+    }
+
+    /// Base64-encodes a Data blob for safe storage in a CSV cell.
+    /// Empty string when data is nil. Decode with Data(base64Encoded:).
+    private static func base64Data(_ data: Data?) -> String {
+        data?.base64EncodedString() ?? ""
     }
 
     private static func csvString(_ rows: [[String]]) -> String {

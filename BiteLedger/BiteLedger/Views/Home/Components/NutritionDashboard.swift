@@ -186,14 +186,21 @@ struct MacroBalanceTile: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color("SurfaceCard"))
+                .fill(Color.surfaceCard)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color("DividerSubtle"), lineWidth: 1)
+                .stroke(Color.dividerSubtle, lineWidth: 1)
         )
+        // D-4: VoiceOver — synthesize macro balance summary
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(macroBalanceAccessibilityLabel)
     }
-    
+
+    private var macroBalanceAccessibilityLabel: String {
+        "Macro balance: \(Int(proteinPercent * 100))% protein, \(Int(carbsPercent * 100))% carbs, \(Int(fatPercent * 100))% fat"
+    }
+
     private func macroRow(_ name: String, _ percent: Double, _ color: String) -> some View {
         HStack(spacing: 3) {
             Text(name)
@@ -220,24 +227,24 @@ struct NutritionTile: View {
             // Label
             Text(nutrient.rawValue.uppercased())
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Color("TextSecondary"))
+                .foregroundStyle(Color.textSecondary)
             
             // Value
             if nutrient == .calories {
                 // Don't show unit for calories since label already says "CALORIES"
                 Text("\(formattedValue)")
                     .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color("TextPrimary"))
+                    .foregroundStyle(Color.textPrimary)
             } else {
                 // Show unit for other nutrients (e.g., "125 g" for protein)
                 HStack(alignment: .firstTextBaseline, spacing: 2) {
                     Text("\(formattedValue)")
                         .font(.system(size: 20, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color("TextPrimary"))
+                        .foregroundStyle(Color.textPrimary)
                     
                     Text(nutrient.unit)
                         .font(.system(size: 11))
-                        .foregroundStyle(Color("TextTertiary"))
+                        .foregroundStyle(Color.textTertiary)
                 }
             }
             
@@ -250,14 +257,38 @@ struct NutritionTile: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color("SurfaceCard"))
+                .fill(Color.surfaceCard)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color("DividerSubtle"), lineWidth: 1)
+                .stroke(Color.dividerSubtle, lineWidth: 1)
         )
+        // D-4: VoiceOver — synthesize meaningful label from nutrient + value + goal
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(nutrientAccessibilityLabel)
     }
-    
+
+    private var nutrientAccessibilityLabel: String {
+        let nutrientName = nutrient.rawValue
+        let valueStr: String
+        if nutrient == .calories {
+            valueStr = "\(Int(value)) calories"
+        } else {
+            valueStr = "\(formattedValue) \(nutrient.unit) \(nutrientName)"
+        }
+        guard let goal else { return valueStr }
+        let pct = goal.targetValue > 0 ? Int((value / goal.targetValue) * 100) : 0
+        switch goal.goalType {
+        case .minimum:
+            return "\(valueStr) of \(Int(goal.targetValue)) \(nutrient.unit) goal — \(pct)% complete"
+        case .maximum:
+            return "\(valueStr) — \(pct)% of \(Int(goal.targetValue)) \(nutrient.unit) limit"
+        case .range:
+            let max = goal.rangeMax ?? goal.targetValue
+            return "\(valueStr) — target \(Int(goal.targetValue))–\(Int(max)) \(nutrient.unit)"
+        }
+    }
+
     private var formattedValue: String {
         if value >= 100 {
             return "\(Int(value))"
@@ -274,7 +305,7 @@ struct NutritionTile: View {
             ZStack(alignment: .leading) {
                 // Background
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(Color("DividerSubtle"))
+                    .fill(Color.dividerSubtle)
                     .frame(height: 4)
                 
                 // Progress
@@ -313,7 +344,7 @@ struct NutritionTile: View {
         switch goal.goalType {
         case .minimum:
             // Green when reaching goal, stays green if over
-            return percentage >= 1.0 ? .green : Color("BrandPrimary")
+            return percentage >= 1.0 ? .green : Color.brandPrimary
             
         case .maximum:
             // Green → Yellow → Orange → Red as approaching/exceeding limit

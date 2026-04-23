@@ -163,7 +163,7 @@ struct NutritionEnrichmentView: View {
                         enrichmentFields = []
                     }
                     .font(.caption)
-                    .foregroundStyle(Color("BrandAccent"))
+                    .foregroundStyle(Color.brandAccent)
                 }
 
                 let selectedCount = enrichmentFields.filter { $0.isSelected }.count
@@ -203,7 +203,7 @@ struct NutritionEnrichmentView: View {
                     .fontWeight(.semibold)
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(enrichmentFields.filter { $0.isSelected }.isEmpty ? Color.gray : Color("BrandAccent"))
+                    .background(enrichmentFields.filter { $0.isSelected }.isEmpty ? Color.gray : Color.brandAccent)
                     .foregroundStyle(.white)
                     .cornerRadius(12)
             }
