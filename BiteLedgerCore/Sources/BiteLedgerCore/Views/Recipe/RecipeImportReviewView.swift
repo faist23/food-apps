@@ -1,13 +1,14 @@
 //
 //  RecipeImportReviewView.swift
-//  BiteRecipe
+//  BiteLedgerCore
+//
+//  Shared ingredient-matching review screen used by both BiteLedger (URL + manual)
+//  and BiteRecipe (URL + OCR). Pass scannedImage: nil for URL-import paths.
 //
 
 import Combine
 import SwiftUI
 import SwiftData
-import UIKit
-import BiteLedgerCore
 
 // MARK: - Matched Ingredient (working model for the review screen)
 
@@ -51,7 +52,7 @@ private final class MatchedIngredient: Identifiable, ObservableObject {
 
 // MARK: - Review View
 
-struct RecipeImportReviewView: View {
+public struct RecipeImportReviewView: View {
     @Environment(\.modelContext) private var modelContext
 
     let result: RecipeImportResult
@@ -83,7 +84,7 @@ struct RecipeImportReviewView: View {
     /// True for OCR scans — source is a free-text field. False for URL imports — domain shown as label.
     private var isOCR: Bool { result.sourceURL == "ocr://scan" }
 
-    init(result: RecipeImportResult, prefilledSource: String = "", scannedImage: UIImage? = nil, onSave: @escaping () -> Void) {
+    public init(result: RecipeImportResult, prefilledSource: String = "", scannedImage: UIImage? = nil, onSave: @escaping () -> Void) {
         self.result = result
         self.scannedImage = scannedImage
         self.onSave = onSave
@@ -127,7 +128,7 @@ struct RecipeImportReviewView: View {
         )
     }
 
-    var body: some View {
+    public var body: some View {
         Form {
             // MARK: Recipe Info
             Section("Recipe Info") {
@@ -1057,21 +1058,8 @@ private struct IngredientFoodPickerView: View {
     }
 }
 
-// resolveGrams, volumeToTbsp, and ingredientScore live in IngredientMatching.swift
+// MARK: - Helpers
 
-// MARK: - Relevance Scoring
-
-/// Returns a relevance score for how well `foodName` matches `term`.
-/// Uses word-boundary checks so "pepper" never matches "pepperoni".
-///
-/// 100 — exact match
-///  50 — food name starts with term, followed by word boundary (, space, end)
-///  30 — every word in term appears as a whole word in the food name
-///  10 — raw substring match (kept for completeness; callers should ignore)
-///   0 — no match
-/// Replaces single-letter cooking abbreviations with their full names for readability.
-/// T (uppercase) = tablespoon, t (lowercase) = teaspoon — common in handwritten recipes.
-/// Applied to directions text so "Add 2 T butter" displays as "Add 2 tbsp butter".
 private func expandUnitAbbreviations(_ text: String) -> String {
     var s = text
     // \b word boundaries ensure we only match standalone T/t, not letters inside words.
@@ -1079,9 +1067,6 @@ private func expandUnitAbbreviations(_ text: String) -> String {
     s = s.replacingOccurrences(of: #"\bt\b"#, with: "tsp",  options: .regularExpression)
     return s
 }
-
-
-// MARK: - Helpers
 
 private struct NutritionRow: View {
     let label: String
@@ -1100,4 +1085,3 @@ private struct NutritionRow: View {
         }
     }
 }
-

@@ -1,13 +1,13 @@
 //
 //  IngredientMatching.swift
-//  BiteRecipe
+//  BiteLedgerCore
 //
-//  Extracted from RecipeImportReviewView so these pure functions are
-//  accessible from unit tests via @testable import BiteRecipe.
+//  Pure functions for ingredient-to-food matching. Shared by RecipeImportReviewView
+//  (used by both BiteLedger and BiteRecipe).
 //
 
 import Foundation
-import BiteLedgerCore
+import SwiftData
 
 // MARK: - Gram Resolution
 
@@ -17,7 +17,7 @@ import BiteLedgerCore
 /// Pass 1: exact unit match against a food serving (e.g. recipe "cup" → serving "1 cup = 112g")
 /// Pass 2: cross-unit volume via tbsp equivalents (e.g. "1/2 cup" → "1 tbsp = 14.2g")
 /// Pass 3: weight unit constants (oz, lb, g)
-func resolveGrams(
+public func resolveGrams(
     quantity: Double, unit: String, food: FoodItem
 ) -> (gramAmount: Double?, serving: ServingSize?) {
     let parsedUnit = unit.lowercased()
@@ -58,7 +58,7 @@ func resolveGrams(
 
 /// Converts a volume amount+unit to tablespoon equivalents, or nil if not a volume unit.
 /// Used for cross-unit gram estimation (e.g. "1/2 cup" → 8 tbsp, then × grams/tbsp).
-func volumeToTbsp(_ amount: Double, unit: String) -> Double? {
+public func volumeToTbsp(_ amount: Double, unit: String) -> Double? {
     switch unit.lowercased() {
     case "cup", "cups":                             return amount * 16
     case "tbsp", "tablespoon", "tablespoons":       return amount * 1
@@ -79,7 +79,7 @@ func volumeToTbsp(_ amount: Double, unit: String) -> Double? {
 ///  30 — every word in term appears as a whole word in the food name
 ///  10 — raw substring match (kept for completeness; callers threshold at 30)
 ///   0 — no match
-func ingredientScore(foodName: String, term: String) -> Int {
+public func ingredientScore(foodName: String, term: String) -> Int {
     let name    = foodName.lowercased()
     let termLow = term.lowercased()
     if name == termLow { return 100 }

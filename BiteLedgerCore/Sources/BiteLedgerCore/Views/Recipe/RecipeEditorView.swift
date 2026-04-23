@@ -233,7 +233,7 @@ public struct RecipeEditorView: View {
                 }
             }
             .sheet(isPresented: $showImportSheet) {
-                ImportRecipeView { imported in
+                EditorURLImportView { imported in
                     applyImport(imported)
                 }
             }
@@ -1260,9 +1260,9 @@ private struct ImportedRecipeData {
     }
 }
 
-// MARK: - Private: ImportRecipeView (callback-based, used by RecipeEditorView)
+// MARK: - Private: EditorURLImportView (callback-based, used by RecipeEditorView)
 
-private struct ImportRecipeView: View {
+private struct EditorURLImportView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
 

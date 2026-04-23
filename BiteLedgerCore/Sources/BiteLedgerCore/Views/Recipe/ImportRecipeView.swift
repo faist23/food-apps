@@ -1,13 +1,15 @@
 //
 //  ImportRecipeView.swift
-//  BiteRecipe
+//  BiteLedgerCore
+//
+//  URL-based recipe import sheet. Shared by BiteLedger and BiteRecipe.
+//  BiteRecipe also has OCR scan — that flow lives in OCRRecipeImportView (BiteRecipe only).
 //
 
 import SwiftUI
 import SwiftData
-import BiteLedgerCore
 
-struct ImportRecipeView: View {
+public struct ImportRecipeView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
@@ -21,7 +23,11 @@ struct ImportRecipeView: View {
 
     private let service = RecipeImportService.fromPlist()
 
-    var body: some View {
+    public init(prefilledURL: String? = nil) {
+        self.prefilledURL = prefilledURL
+    }
+
+    public var body: some View {
         NavigationStack {
             Form {
                 Section {

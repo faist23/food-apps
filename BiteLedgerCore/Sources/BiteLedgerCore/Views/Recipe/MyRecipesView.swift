@@ -12,6 +12,7 @@ public struct MyRecipesView: View {
     @State private var showDeleteConfirmation = false
 
     @State private var showingCreateEditor = false
+    @State private var showingURLImport = false
     @State private var recipeToEdit: Recipe?
 
     enum SortOrder: String, CaseIterable {
@@ -146,12 +147,24 @@ public struct MyRecipesView: View {
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showingCreateEditor = true
+                    Menu {
+                        Button {
+                            showingURLImport = true
+                        } label: {
+                            Label("Import from URL", systemImage: "link")
+                        }
+                        Button {
+                            showingCreateEditor = true
+                        } label: {
+                            Label("Create Manually", systemImage: "square.and.pencil")
+                        }
                     } label: {
                         Image(systemName: "plus")
                     }
                 }
+            }
+            .sheet(isPresented: $showingURLImport, onDismiss: loadRecipes) {
+                ImportRecipeView()
             }
             .sheet(isPresented: $showingCreateEditor, onDismiss: loadRecipes) {
                 RecipeEditorView(recipe: nil)
