@@ -151,9 +151,10 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ---
 
-### T-10: Recipe Creation in BiteLedger (Manual + URL)
-**What:** Allow BiteLedger-only users to create recipes — both manual and URL import. No OCR, no photos (BitePlan differentiators).
-**Effort:** L | **Priority:** P3 | **Depends on:** Stable BitePlan recipe model + SchemaV3
+### ~~T-10: Recipe Creation in BiteLedger (Manual + URL)~~ ✓ SHIPPED 2026-04-22
+**What:** Allow BiteLedger-only users to create recipes — both manual and URL import. No OCR, no photos (BiteRecipe differentiators).
+**Shipped:** Moved `IngredientMatching`, `ImportRecipeView`, and `RecipeImportReviewView` from BiteRecipe into `BiteLedgerCore` (all public). `MyRecipesView` now shows a `+` menu with "Import from URL" and "Create Manually". BiteRecipe gets the views automatically via `import BiteLedgerCore`. Renamed private `ImportRecipeView` in `RecipeEditorView` to `EditorURLImportView` to resolve name collision.
+**Effort:** L | **Priority:** P3 | **Depends on:** Stable BiteRecipe recipe model + SchemaV3
 
 ---
 
@@ -181,8 +182,8 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ---
 
-### T-12-RestoreUpdate: SchemaV5 + Meal Plan Backup Round-Trip
-**What:** Add meal plan data to the backup ZIP (3 new CSV files: `meal_plans.csv`, `meal_meals.csv`, `meal_items.csv`) and restore them in `BackupService.restoreBackup()`. Adds `var id: UUID = UUID()` to `MealPlan`, `MealPlanMeal`, `MealPlanMealItem` as SchemaV5 (lightweight migration — no explicit plan wired). Folds T-12-BackupTest (full round-trip XCTest suite, ~20 tests).
+### ~~T-12-RestoreUpdate: SchemaV5 + Meal Plan Backup Round-Trip~~ ✓ SHIPPED 2026-04-16
+**What:** Add meal plan data to the backup ZIP (3 new CSV files: `meal_plans.csv`, `meal_meals.csv`, `meal_items.csv`) and restore them in `BackupService.restoreBackup()`. Adds `var id: UUID = UUID()` to `MealPlan`, `MealPlanMeal`, `MealPlanMealItem` as SchemaV5 (lightweight migration — no explicit plan wired). Folds T-12-BackupTest (full round-trip XCTest suite, 22 tests). **Committed:** feat: T-12-RestoreUpdate (a245a14)
 **Why:** Export-only is a half-loop. Until this ships, a restore from a V4+ backup silently drops all meal plan data.
 **Pros:** Completes the backup/restore guarantee for the app. Zero data loss on reinstall.
 **Context:** Deliberately excluded from T-12-v2 per /plan-eng-review 2026-03-30. Plan reviewed 2026-04-03.

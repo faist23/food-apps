@@ -3,6 +3,19 @@
 All notable changes to BiteLedger and BitePlan are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## [0.3.0.0] - 2026-04-22
+
+### Added
+- **Recipe Creation in BiteLedger (T-10):** BiteLedger-only users can now create recipes via URL import or manual entry without installing BiteRecipe. The `+` button in My Recipes opens a menu: "Import from URL" (fetches structured recipe data from any site using standard recipe markup) and "Create Manually" (full recipe editor). Implemented by moving `ImportRecipeView`, `RecipeImportReviewView`, and `IngredientMatching` from BiteRecipe into `BiteLedgerCore` as public API — BiteRecipe picks them up automatically via `import BiteLedgerCore`.
+- **Meal Plan Backup Round-Trip (T-12-RestoreUpdate):** Export and restore now cover the full meal plan dataset. Three new CSV files in every backup ZIP: `meal_plans.csv`, `meal_meals.csv`, `meal_items.csv`. Restore supports merge mode (UUID-based dedup, weekStartDate secondary dedup for `MealPlan`) and validates XOR constraints on `MealPlanMealItem` rows. SchemaV5 lightweight migration adds stable `UUID` identity fields to `MealPlan`, `MealPlanMeal`, and `MealPlanMealItem`. 22-test `BackupRestoreTests` suite covers round-trip, dedup, import order, and edge cases.
+
+### Changed
+- **BiteRecipe rename:** The app formerly known as BitePlan is now BiteRecipe across all targets, schemes, display names, and marketing copy. The shared App Group ID and store file are unchanged (`group.com.ridepro.biteledger`, `biteledger.store`) — existing data is preserved on update.
+- Recipe editor URL import helper renamed from `ImportRecipeView` to `EditorURLImportView` (internal, resolves name collision with the new public `ImportRecipeView` in `BiteLedgerCore`).
+
+### Fixed
+- Various minor fixes and polish commits on `feature/v1-ship` (2026-04-03 through 2026-04-20)
+
 ## [0.2.0.0] - 2026-03-31
 
 ### Added
