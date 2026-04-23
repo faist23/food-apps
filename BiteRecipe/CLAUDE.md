@@ -131,7 +131,7 @@ via `Bundle.module`) into the shared store on first launch.
 
 ## autoMatch() — Ingredient Matching
 
-Located in `RecipeImportReviewView`. Runs once on view appear for all ingredients.
+Located in `RecipeImportReviewView` (now in `BiteLedgerCore/Sources/BiteLedgerCore/Views/Recipe/RecipeImportReviewView.swift` — moved from BiteRecipe in v0.3.0.0). Runs once on view appear for all ingredients.
 
 ### Term preparation (applied in order)
 1. **`termAliases`** dict maps ambiguous terms to specific ones:
@@ -168,6 +168,8 @@ Falls back gracefully to the local candidate if the API call fails.
 
 ## ingredientScore()
 
+Public free function in `BiteLedgerCore/Sources/BiteLedgerCore/Services/IngredientMatching.swift` (moved from BiteRecipe in v0.3.0.0).
+
 ```
 100 — exact name match
  50 — food name starts with the term, followed by space or end of string
@@ -188,7 +190,7 @@ Score floor is 0 (never negative).
 
 ## resolveGrams() — Gram Amount Resolution
 
-Free function in `RecipeImportReviewView.swift`. Converts a recipe ingredient's
+Public free function in `BiteLedgerCore/Sources/BiteLedgerCore/Services/IngredientMatching.swift` (moved from BiteRecipe in v0.3.0.0). Converts a recipe ingredient's
 `quantity + unit` to a gram amount using the matched food's servings.
 
 **Must be called in two places:**

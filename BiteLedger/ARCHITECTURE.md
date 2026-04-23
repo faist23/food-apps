@@ -27,7 +27,8 @@
 
 ## Backup & Restore (BackupService)
 - `BackupService` lives in `BiteLedgerCore` — shared by both apps
-- `createBackup` produces a single `.zip`: manifest.json + 5 CSVs + recipe images
+- `createBackup` produces a single `.zip`: manifest.json + 8 CSVs + recipe images
+  (foods, servings, logs, recipes, ingredients, meal_plans, meal_meals, meal_items — SchemaV5)
 - `restoreBackup` supports `.replaceAll` (wipe then import) and `.merge` (UUID-based skip)
 - `resetDatabase` supports 4 scopes: logsOnly / allFoodData / recipesOnly / everything
 - ZIP entry paths are validated against extract directory (no path traversal)
@@ -40,16 +41,3 @@
 - Qualifies if a nutrient exceeds threshold on ≥ `minDaysAbove` days (default 3 of 7)
 - Parameters are injectable — no schema fields, no user preferences
 - `Nutrient.value(from: FoodLog) -> Double?` maps each nutrient to its `*AtLogTime` field
-```
-
-**Step 2: Start every Claude Code session with this prompt**
-```
-Before writing any code, read the in the project root. 
-All models, logic, and views must comply with those rules. 
-If you're about to do something that conflicts, stop and tell me first.
-```
-
-**Step 3: When Claude drifts** (and it will), redirect it:
-```
-That conflicts with ARCHITECTURE.md — we don't store multipliers. 
-Rewrite using the centralized NutritionCalculator approach.

@@ -11,15 +11,15 @@ A privacy-first food tracking app for iOS.
 - ⚡ Quick-Add recent/frequent foods per meal type
 - 🔥 Streak milestone celebrations (3, 7, 14, 30, 60, 100 days)
 - 🔍 Nutrient Spotlight — surfaces nutrients consistently above 120% DV over 7 days
-- 💾 Backup & Restore — ZIP export with full round-trip import across devices
+- 💾 Backup & Restore — ZIP export with full round-trip import across devices (incl. meal plans)
 - 🧪 USDA search covers Foundation, SR Legacy, and Branded Foods with FDA label serving sizes
 - 💪 Full nutrition panel tracking (macros + 15 micronutrients)
+- 🍳 Recipe creation — import by URL or build manually, right inside BiteLedger
 
 ## Tech Stack
 
 - SwiftUI
 - SwiftData
-- HealthKit
 - Open Food Facts API
 - iOS 26.0+
 
