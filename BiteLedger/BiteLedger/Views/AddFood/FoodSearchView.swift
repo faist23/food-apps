@@ -963,14 +963,34 @@ struct FoodSearchView: View {
                 sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)]
             )
             descriptor.fetchLimit = 500
-            let matchingFoodLogs = (try? modelContext.fetch(descriptor)) ?? []
+            let fetchedLogs = (try? modelContext.fetch(descriptor)) ?? []
+            let matchingFoodLogs = fetchedLogs.filter { log in
+                guard let name = log.foodItem?.name else { return false }
+                return matchesQuery(name, query: query)
+            }
             let matchedMealKeys = Set(matchingFoodLogs.map { mealKey($0) })
             // Recent meals: pull ALL logs for the matching meal from allLogs (complete meal).
             let recentComplete = allLogs.filter { matchedMealKeys.contains(mealKey($0)) }
             let coveredKeys = Set(recentComplete.map { mealKey($0) })
-            // Older meals: just the matched food's own log.
-            let olderMatched = matchingFoodLogs.filter { !coveredKeys.contains(mealKey($0)) }
-            mealSearchLogs = (recentComplete + olderMatched)
+            // Older meals: fetch the full meal from DB using the timestamp range of matching logs.
+            let olderMealKeys = matchedMealKeys.subtracting(coveredKeys)
+            var olderComplete: [FoodLog] = []
+            if !olderMealKeys.isEmpty {
+                let olderLogs = matchingFoodLogs.filter { olderMealKeys.contains(mealKey($0)) }
+                if let minTime = olderLogs.map({ $0.timestamp }).min(),
+                   let maxTime = olderLogs.map({ $0.timestamp }).max() {
+                    let rangeStart = calendar.startOfDay(for: minTime)
+                    let rangeEnd = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: maxTime)) ?? maxTime
+                    var fullDescriptor = FetchDescriptor<FoodLog>(
+                        predicate: #Predicate { $0.timestamp >= rangeStart && $0.timestamp < rangeEnd },
+                        sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)]
+                    )
+                    fullDescriptor.fetchLimit = 2000
+                    let rangeLogs = (try? modelContext.fetch(fullDescriptor)) ?? []
+                    olderComplete = rangeLogs.filter { olderMealKeys.contains(mealKey($0)) }
+                }
+            }
+            mealSearchLogs = (recentComplete + olderComplete)
                 .sorted { $0.timestamp > $1.timestamp }
         }
     }
@@ -1722,10 +1742,19 @@ struct MyFoodsListView: View {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
 
-            // SQL predicate search — hits the full store, no recency cap.
+            let trimmed = query.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else {
+                sqlSearchResults = []
+                sqlLastUsedDates = [:]
+                return
+            }
+            let firstWord = trimmed.split(separator: " ").first.map(String.init) ?? trimmed
+
+            // SQL predicate uses firstWord for a broad fetch, then in-memory matchesQuery
+            // applies the full multi-word filter — mirrors the Meals tab strategy.
             let candidates = (try? modelContext.fetch(
                 FetchDescriptor<FoodItem>(
-                    predicate: #Predicate { $0.name.localizedStandardContains(query) }
+                    predicate: #Predicate { $0.name.localizedStandardContains(firstWord) }
                 )
             )) ?? []
 
@@ -1739,6 +1768,7 @@ struct MyFoodsListView: View {
             }
 
             let filtered = candidates.filter { food in
+                guard matchesQuery(food.name, query: trimmed) else { return false }
                 // Always exclude seeded catalog items.
                 guard !food.source.hasPrefix("usda_seed"),
                       !food.source.hasPrefix("built_in") else { return false }
