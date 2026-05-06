@@ -177,13 +177,18 @@ Files: `LoseItEnrichmentService.swift`, `LoseItEnrichmentView.swift`,
 
 **Active search (`searchText` non-empty):** `MyFoodsListView.startMyFoodsSearch()` fires a
 debounced (300ms) `FetchDescriptor<FoodItem>` with `localizedStandardContains` predicate against
-the full store — no recency cap. Results are filtered in-memory with a three-tier rule:
+**both `name` and `brand`** (`name OR brand?.contains(firstWord)`), covering the full store with
+no recency cap. Results are filtered in-memory with a three-tier rule:
 
 1. **Catalog exclusion** — always drop `usda_seed_*` and `built_in_*`
 2. **User-created allowlist** — always keep `source.isEmpty`, `"Manual"`, `"Quick Add"`,
    `recipe*`, `LoseIt*`, `CSV Import*` (backfill may be incomplete; trust source type)
 3. **API-fetched guard** — everything else (`usda_*`, `fatsecret_*`, OFacts barcodes)
    requires `loggedIDs` membership to exclude BitePlan ghost foods
+
+The in-memory filter passes `"name brand"` combined text to `matchesQuery` so every search
+word is tested against both fields. Results are sorted by **most recently used** (via
+`sqlLastUsedDates`), not alphabetically.
 
 Last-used dates are pre-computed in the same Task via a three-pass strategy:
 FoodHistoryEntry index → allLogs buffer → `food.foodLogs` fallback for any remainder.
@@ -195,10 +200,26 @@ regresses to a 1000-entry recency cap and hides foods logged more than ~3 months
 **Browse mode (`searchText` empty):** hybrid merge of `FoodHistoryEntry` @Query (all
 history, no cap) + `allLogs` (recent 1000, fills backfill gaps), sorted by `lastLoggedDate`.
 
-### Meals and Recipes tabs — in-memory `matchesQuery`
+### Meals tab — two-query SQL + in-memory `matchesQuery`
 
-Meals and Recipes filter in memory via `matchesQuery(_:query:)` (free function at the top
-of `FoodSearchView.swift`):
+`startMealSearch` runs two SQL queries then merges in memory:
+
+1. **Name query** — `FetchDescriptor<FoodLog>` where `foodItem?.name.localizedStandardContains(firstWord)`.
+   No fetchLimit — full history.
+2. **Brand query** — `FetchDescriptor<FoodItem>` where `brand?.localizedStandardContains(firstWord)`,
+   then `brandFoods.flatMap { $0.foodLogs }` for full log history via relationship traversal.
+   **Do NOT put brand in the FoodLog predicate** — CoreData cannot generate SQL for
+   `CONTAINS[cdl]` through an optional relationship and crashes with "bad RHS".
+
+Results are unioned (deduplicated by log ID), then filtered in memory via `matchesQuery` on
+`"name brand"` combined text. Meal reconstruction (showing all items in a matched meal, not
+just the matching food) uses `allLogs` for recent meals and a timestamp-range DB fetch for
+older ones — no fetchLimit on the range fetch.
+
+### Recipes tab — in-memory `matchesQuery`
+
+Recipes filter in memory via `matchesQuery(_:query:)` (free function at the top of
+`FoodSearchView.swift`):
 
 1. **Exact phrase** — `text.contains(query)` fast path
 2. **All words, any order** — `query.split(separator: " ").allSatisfy { text.contains($0) }`
@@ -206,8 +227,8 @@ of `FoodSearchView.swift`):
 This means "margherita pizza" correctly finds "pizza, margherita". Do not replace with a
 bare `contains` or `localizedCaseInsensitiveContains` — that regresses to phrase-only matching.
 
-The Search tab's My Foods sub-search (inside `searchMyFoods`) uses word-split independently
-and is correct as-is.
+The Search tab's My Foods sub-search (inside `searchMyFoods`) uses word-split on combined
+name+brand text independently and is correct as-is.
 
 ## MyFoodsManagementView — Filter Invariant (Do Not Regress)
 

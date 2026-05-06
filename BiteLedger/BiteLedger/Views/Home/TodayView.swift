@@ -162,17 +162,10 @@ struct TodayView: View {
                     timestamp = Calendar.current.date(from: components) ?? selectedDate
                 }
 
-                // Only insert FoodItem if it's not already in the context
-                // (e.g., when copying from an existing log, the FoodItem already exists)
-                if addedItem.foodItem.modelContext == nil {
+                // Insert FoodItem if new — no intermediate save needed.
+                let isNewFood = addedItem.foodItem.modelContext == nil
+                if isNewFood {
                     modelContext.insert(addedItem.foodItem)
-                    // Link to canonical food for authoritative unit→gram conversions.
-                    if addedItem.foodItem.canonicalFoodID == nil {
-                        addedItem.foodItem.canonicalFoodID = CanonicalFoodMatcher.match(
-                            foodName: addedItem.foodItem.name, context: modelContext
-                        )?.id
-                    }
-                    try? modelContext.save()
                 }
 
                 let foodLog = FoodLog.create(
@@ -185,17 +178,26 @@ struct TodayView: View {
                     loggedUnit: addedItem.loggedUnit,
                     context: modelContext
                 )
-
                 modelContext.insert(foodLog)
-                try? modelContext.save()
-                loadLogsForSelectedDate()
-                loadSevenDayLogs()
 
-                // T-08: First-log micro-celebration — fire exactly once when the flag is nil.
-                // Set the flag immediately before showing the overlay to prevent double-trigger.
+                // Batch all in-memory state mutations before the single save.
+                var triggerCelebration = false
                 if let prefs = preferences, prefs.hasSeenFirstLogCelebration == nil {
                     prefs.hasSeenFirstLogCelebration = true
-                    try? modelContext.save()
+                    triggerCelebration = true
+                }
+                if Calendar.current.isDateInToday(selectedDate), let prefs = preferences {
+                    prefs.streakCachedDate = nil
+                }
+
+                // One save for all mutations.
+                try? modelContext.save()
+
+                // Update the diary immediately — this is what the user sees first.
+                loadLogsForSelectedDate()
+
+                // T-08: First-log micro-celebration.
+                if triggerCelebration {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     withAnimation { showFirstLogCelebration = true }
                     Task {
@@ -204,14 +206,19 @@ struct TodayView: View {
                     }
                 }
 
-                // Invalidate the streak cache so the next loadStreak() recomputes.
-                // Only needed when logging for today — past-date edits don't change
-                // the streak display until the user navigates back to today anyway.
-                if Calendar.current.isDateInToday(selectedDate), let prefs = preferences {
-                    prefs.streakCachedDate = nil
-                    try? modelContext.save()
+                // Defer non-critical work so the diary update renders first.
+                let foodItem = addedItem.foodItem
+                let foodName = foodItem.name
+                Task { @MainActor in
+                    if isNewFood, foodItem.canonicalFoodID == nil {
+                        foodItem.canonicalFoodID = CanonicalFoodMatcher.match(
+                            foodName: foodName, context: modelContext
+                        )?.id
+                        try? modelContext.save()
+                    }
+                    loadSevenDayLogs()
+                    loadStreak()
                 }
-                loadStreak()
             }
         }
         .sheet(item: $editingLog) { log in
@@ -281,7 +288,11 @@ struct TodayView: View {
             predicate: #Predicate { $0.timestamp >= sixDaysAgo }
         )
         let fetched = (try? modelContext.fetch(descriptor)) ?? []
-        spotlightResults = NutrientSpotlightEngine.compute(logs: fetched)
+        let store = SpotlightFrequencyStore.shared
+        let all = NutrientSpotlightEngine.compute(logs: fetched)
+        let filtered = all.filter { store.shouldShow($0.nutrient) }
+        filtered.forEach { store.recordShown($0.nutrient) }
+        spotlightResults = filtered
     }
 
     private func dismissChip() {

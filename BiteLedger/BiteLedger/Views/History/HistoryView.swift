@@ -38,10 +38,14 @@ struct HistoryView: View {
             to: calendar.startOfDay(for: Date())
         ) ?? Date()
         sevenDayLogs = allLogs.filter { $0.timestamp >= sixDaysAgo }
-        spotlightResults = NutrientSpotlightEngine.compute(
+        let store = SpotlightFrequencyStore.shared
+        let all = NutrientSpotlightEngine.compute(
             logs: sevenDayLogs,
             userGoals: preferences.first?.goals ?? [:]
         )
+        let filtered = all.filter { store.shouldShow($0.nutrient) }
+        filtered.forEach { store.recordShown($0.nutrient) }
+        spotlightResults = filtered
     }
 
     // MARK: - Persistence helpers

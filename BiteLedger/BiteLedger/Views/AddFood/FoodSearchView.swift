@@ -958,15 +958,32 @@ struct FoodSearchView: View {
                 let day = calendar.startOfDay(for: log.timestamp)
                 return "\(day.timeIntervalSince1970)-\(log.mealType.rawValue)"
             }
-            var descriptor = FetchDescriptor<FoodLog>(
-                predicate: #Predicate { $0.foodItem?.name.localizedStandardContains(firstWord) == true },
-                sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)]
-            )
-            descriptor.fetchLimit = 500
-            let fetchedLogs = (try? modelContext.fetch(descriptor)) ?? []
+            // SQL fetch by food name (safe — name is non-optional on FoodLog.foodItem).
+            let nameMatchedLogs = (try? modelContext.fetch(
+                FetchDescriptor<FoodLog>(
+                    predicate: #Predicate { $0.foodItem?.name.localizedStandardContains(firstWord) == true },
+                    sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)]
+                )
+            )) ?? []
+
+            // Brand search: CoreData cannot generate SQL for CONTAINS[cdl] through an optional
+            // relationship (foodItem?.brand crashes with "bad RHS"). Instead, fetch FoodItems
+            // by brand directly, then intersect with allLogs in memory.
+            let brandFoods = (try? modelContext.fetch(
+                FetchDescriptor<FoodItem>(
+                    predicate: #Predicate { $0.brand?.localizedStandardContains(firstWord) == true }
+                )
+            )) ?? []
+            let brandMatchedLogs = brandFoods.flatMap { $0.foodLogs }
+
+            // Union: deduplicate by log ID
+            var seenIDs = Set(nameMatchedLogs.map { $0.id })
+            let fetchedLogs = nameMatchedLogs + brandMatchedLogs.filter { seenIDs.insert($0.id).inserted }
+
             let matchingFoodLogs = fetchedLogs.filter { log in
-                guard let name = log.foodItem?.name else { return false }
-                return matchesQuery(name, query: query)
+                guard let food = log.foodItem else { return false }
+                let combined = [food.name, food.brand].compactMap { $0 }.joined(separator: " ")
+                return matchesQuery(combined, query: query)
             }
             let matchedMealKeys = Set(matchingFoodLogs.map { mealKey($0) })
             // Recent meals: pull ALL logs for the matching meal from allLogs (complete meal).
@@ -981,12 +998,12 @@ struct FoodSearchView: View {
                    let maxTime = olderLogs.map({ $0.timestamp }).max() {
                     let rangeStart = calendar.startOfDay(for: minTime)
                     let rangeEnd = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: maxTime)) ?? maxTime
-                    var fullDescriptor = FetchDescriptor<FoodLog>(
-                        predicate: #Predicate { $0.timestamp >= rangeStart && $0.timestamp < rangeEnd },
-                        sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)]
-                    )
-                    fullDescriptor.fetchLimit = 2000
-                    let rangeLogs = (try? modelContext.fetch(fullDescriptor)) ?? []
+                    let rangeLogs = (try? modelContext.fetch(
+                        FetchDescriptor<FoodLog>(
+                            predicate: #Predicate { $0.timestamp >= rangeStart && $0.timestamp < rangeEnd },
+                            sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)]
+                        )
+                    )) ?? []
                     olderComplete = rangeLogs.filter { olderMealKeys.contains(mealKey($0)) }
                 }
             }
@@ -1707,7 +1724,9 @@ struct MyFoodsListView: View {
     // When browsing (empty query): use the history+allLogs hybrid sorted by recency.
     private var sortedFoods: [FoodItem] {
         if !searchText.isEmpty {
-            return sqlSearchResults.sorted { $0.name < $1.name }
+            return sqlSearchResults.sorted {
+                (sqlLastUsedDates[$0.id] ?? .distantPast) > (sqlLastUsedDates[$1.id] ?? .distantPast)
+            }
         }
 
         var seenIDs = Set<UUID>()
@@ -1754,7 +1773,10 @@ struct MyFoodsListView: View {
             // applies the full multi-word filter — mirrors the Meals tab strategy.
             let candidates = (try? modelContext.fetch(
                 FetchDescriptor<FoodItem>(
-                    predicate: #Predicate { $0.name.localizedStandardContains(firstWord) }
+                    predicate: #Predicate {
+                        $0.name.localizedStandardContains(firstWord) ||
+                        $0.brand?.localizedStandardContains(firstWord) == true
+                    }
                 )
             )) ?? []
 
@@ -1768,7 +1790,8 @@ struct MyFoodsListView: View {
             }
 
             let filtered = candidates.filter { food in
-                guard matchesQuery(food.name, query: trimmed) else { return false }
+                let combined = [food.name, food.brand].compactMap { $0 }.joined(separator: " ")
+                guard matchesQuery(combined, query: trimmed) else { return false }
                 // Always exclude seeded catalog items.
                 guard !food.source.hasPrefix("usda_seed"),
                       !food.source.hasPrefix("built_in") else { return false }
