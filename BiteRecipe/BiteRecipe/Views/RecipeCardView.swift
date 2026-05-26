@@ -12,6 +12,12 @@ import BiteLedgerCore
 
 struct RecipeCardView: View {
     let recipe: Recipe
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var cookMinutes: Int? {
+        if let m = recipe.totalMinutes ?? recipe.cookMinutes, m > 0 { return m }
+        return nil
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -26,7 +32,22 @@ struct RecipeCardView: View {
                         recipeCardPlaceholder
                     }
                 )
+                .overlay(alignment: .bottomTrailing) {
+                    if let minutes = cookMinutes {
+                        HStack(spacing: 3) {
+                            Image(systemName: "clock")
+                            Text(formatMinutes(minutes))
+                        }
+                        .font(.caption2.bold())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(.black.opacity(0.6), in: Capsule())
+                        .padding(6)
+                    }
+                }
                 .clipped()
+                .accessibilityHidden(true)
 
             // Name + time metadata
             VStack(alignment: .leading, spacing: 4) {
@@ -35,7 +56,7 @@ struct RecipeCardView: View {
                     .foregroundStyle(Color.textPrimary)
                     .lineLimit(2)
 
-                if let minutes = recipe.totalMinutes ?? recipe.cookMinutes, minutes > 0 {
+                if let minutes = cookMinutes {
                     Label(formatMinutes(minutes), systemImage: "clock")
                         .font(.caption)
                         .foregroundStyle(Color.textSecondary)
@@ -50,19 +71,44 @@ struct RecipeCardView: View {
                 .stroke(Color.dividerSubtle, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 14))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(recipe.name)\(cookMinutes.map { ", \(formatMinutes($0)) cook time" } ?? "")")
+        .accessibilityHint("Double tap to open")
     }
 
+    @ViewBuilder
     private var recipeCardPlaceholder: some View {
-        // BrandPrimary gradient + utensils icon — intentional, not broken-looking.
-        ZStack {
-            LinearGradient(
-                colors: [Color.brandPrimary.opacity(0.7), Color.brandPrimary],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            Image(systemName: "fork.knife")
-                .font(.system(size: 32))
-                .foregroundStyle(.white.opacity(0.8))
+        if reduceMotion {
+            ZStack {
+                LinearGradient(
+                    colors: [Color.brandPrimary.opacity(0.7), Color.brandPrimary],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                Image(systemName: "fork.knife")
+                    .font(.system(size: 32))
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+        } else {
+            TimelineView(.animation) { context in
+                let phase = (context.date.timeIntervalSinceReferenceDate / 1.5)
+                    .truncatingRemainder(dividingBy: 1.0)
+                ZStack {
+                    AngularGradient(
+                        colors: [
+                            Color.brandPrimary.opacity(0.5),
+                            Color.brandPrimary,
+                            Color.brandPrimary.opacity(0.5)
+                        ],
+                        center: .center,
+                        startAngle: .degrees(phase * 360),
+                        endAngle: .degrees(phase * 360 + 360)
+                    )
+                    Image(systemName: "fork.knife")
+                        .font(.system(size: 32))
+                        .foregroundStyle(.white.opacity(0.8))
+                }
+            }
         }
     }
 

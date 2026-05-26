@@ -119,6 +119,11 @@ final class ShoppingCart {
         items.removeAll { $0.id == item.id }
     }
 
+    func restoreItem(_ item: ShoppingCartItem, at index: Int) {
+        let clamped = max(0, min(index, items.count))
+        items.insert(item, at: clamped)
+    }
+
     func moveToCategory(_ item: ShoppingCartItem, to category: ShoppingCategory) {
         guard let idx = items.firstIndex(where: { $0.id == item.id }) else { return }
         items[idx].category = category

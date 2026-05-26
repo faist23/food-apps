@@ -7,149 +7,230 @@ import SwiftUI
 import SwiftData
 import BiteLedgerCore
 
+// MARK: - Sort Order
+
+enum RecipeSortOrder: String, CaseIterable, Identifiable {
+    case name     = "A–Z"
+    case cookTime = "Cook Time"
+    case newest   = "Newest"
+
+    var id: String { rawValue }
+}
+
+// MARK: - RecipesListView
+
 struct RecipesListView: View {
+    /// When non-nil, this view is operating as an iPad NavigationSplitView sidebar.
+    /// Card taps set the binding instead of pushing a NavigationLink.
+    var selectedRecipe: Binding<Recipe?>? = nil
+
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Recipe.name) private var recipes: [Recipe]
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.sizeCategory) private var sizeCategory
+    @Query private var allRecipes: [Recipe]
+
+    @State private var searchText = ""
+    @State private var sortOrder: RecipeSortOrder = .name
     @State private var showingNewRecipe = false
     @State private var showingImport = false
     @State private var showingOCRImport = false
     @State private var showingSettings = false
     @State private var pendingImportURL: String? = nil
-    @State private var importedToast: (id: UUID, name: String)? = nil
+    @State private var activeToast: AppToastModel? = nil
     @State private var toastDismissTask: Task<Void, Never>? = nil
 
-    private let gridColumns = [
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible())
-    ]
+    // MARK: Computed
+
+    private var displayedRecipes: [Recipe] {
+        let filtered: [Recipe]
+        if searchText.isEmpty {
+            filtered = allRecipes
+        } else {
+            filtered = allRecipes.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+        }
+        return sorted(filtered)
+    }
+
+    private func sorted(_ recipes: [Recipe]) -> [Recipe] {
+        switch sortOrder {
+        case .name:
+            return recipes.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .cookTime:
+            return recipes.sorted { lhs, rhs in
+                let l = lhs.totalMinutes ?? lhs.cookMinutes ?? Int.max
+                let r = rhs.totalMinutes ?? rhs.cookMinutes ?? Int.max
+                return l < r
+            }
+        case .newest:
+            return recipes.sorted { $0.dateAdded > $1.dateAdded }
+        }
+    }
+
+    private var gridColumns: [GridItem] {
+        let columnCount: Int
+        if sizeCategory >= .accessibilityMedium {
+            columnCount = 1
+        } else if sizeClass == .regular {
+            columnCount = 3
+        } else {
+            columnCount = 2
+        }
+        return Array(repeating: GridItem(.flexible(), spacing: 12), count: columnCount)
+    }
+
+    private var isSidebarMode: Bool { selectedRecipe != nil }
+
+    // MARK: Body
 
     var body: some View {
-        NavigationStack {
-            ZStack(alignment: .bottom) {
-                Group {
-                    if recipes.isEmpty {
-                        recipeEmptyState
-                    } else {
-                        ScrollView {
-                            LazyVGrid(columns: gridColumns, spacing: 12) {
-                                ForEach(recipes) { recipe in
-                                    NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
-                                        RecipeCardView(recipe: recipe)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .frame(maxHeight: .infinity, alignment: .top)
-                                    .contextMenu {
-                                        Button(role: .destructive) {
-                                            deleteRecipe(recipe)
-                                        } label: {
-                                            Label("Delete", systemImage: "trash")
-                                        }
-                                    }
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                        }
-                    }
+        let coreContent = ZStack(alignment: .bottom) {
+            Group {
+                if allRecipes.isEmpty {
+                    recipeEmptyState
+                } else if !searchText.isEmpty && displayedRecipes.isEmpty {
+                    noResultsState
+                } else {
+                    recipeGrid
                 }
-                .navigationTitle("Recipes")
-                .toolbar {
-                    // Design: [gear] leading (Settings), [+▾] trailing menu (3 add methods)
-                    ToolbarItem(placement: .navigationBarLeading) {
+            }
+            .navigationTitle("Recipes")
+            .searchable(text: $searchText, prompt: "Search recipes")
+            .navigationSubtitle(!searchText.isEmpty && !displayedRecipes.isEmpty
+                ? "\(displayedRecipes.count) recipe\(displayedRecipes.count == 1 ? "" : "s")"
+                : ""
+            )
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if !isSidebarMode {
                         Button { showingSettings = true } label: {
                             Image(systemName: "gear")
                         }
                         .accessibilityLabel("Settings")
                     }
-                    ToolbarItem(placement: .primaryAction) {
-                        Menu {
-                            Button { showingImport = true } label: {
-                                Label("Import from URL", systemImage: "link.badge.plus")
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Picker("Sort by", selection: $sortOrder) {
+                            ForEach(RecipeSortOrder.allCases) { order in
+                                Text(order.rawValue).tag(order)
                             }
-                            Button { showingOCRImport = true } label: {
-                                Label("Scan Recipe Card", systemImage: "camera.viewfinder")
-                            }
-                            Button { showingNewRecipe = true } label: {
-                                Label("Create Manually", systemImage: "square.and.pencil")
-                            }
-                        } label: {
-                            Image(systemName: "plus")
                         }
-                        .accessibilityLabel("Add recipe")
+                    } label: {
+                        Image(systemName: "arrow.up.arrow.down")
                     }
+                    .accessibilityLabel("Sort recipes")
                 }
-                .sheet(isPresented: $showingImport, onDismiss: { pendingImportURL = nil }) {
-                    ImportRecipeView(prefilledURL: pendingImportURL)
-                }
-                .sheet(isPresented: $showingOCRImport) {
-                    OCRRecipeImportView()
-                }
-                .sheet(isPresented: $showingNewRecipe) {
-                    RecipeEditorView(recipe: nil)
-                }
-                .sheet(isPresented: $showingSettings) {
-                    SettingsView()
-                }
-                .onReceive(NotificationCenter.default.publisher(for: .biteRecipeImportURL)) { note in
-                    if let url = note.userInfo?["url"] as? URL {
-                        pendingImportURL = url.absoluteString
-                        showingImport = true
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button { showingImport = true } label: {
+                            Label("Import from URL", systemImage: "link.badge.plus")
+                        }
+                        Button { showingOCRImport = true } label: {
+                            Label("Scan Recipe Card", systemImage: "camera.viewfinder")
+                        }
+                        Button { showingNewRecipe = true } label: {
+                            Label("Create Manually", systemImage: "square.and.pencil")
+                        }
+                    } label: {
+                        Image(systemName: "plus")
                     }
+                    .accessibilityLabel("Add recipe")
                 }
-                .onReceive(NotificationCenter.default.publisher(for: .biteRecipeBundleImported)) { note in
-                    guard let id = note.userInfo?["recipeID"] as? UUID,
-                          let name = note.userInfo?["recipeName"] as? String else { return }
-                    showImportToast(id: id, name: name)
+            }
+            .sheet(isPresented: $showingImport, onDismiss: { pendingImportURL = nil }) {
+                ImportRecipeView(prefilledURL: pendingImportURL)
+            }
+            .sheet(isPresented: $showingOCRImport) {
+                OCRRecipeImportView()
+            }
+            .sheet(isPresented: $showingNewRecipe) {
+                RecipeEditorView(recipe: nil)
+            }
+            .sheet(isPresented: $showingSettings) {
+                SettingsView()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .biteRecipeImportURL)) { note in
+                if let url = note.userInfo?["url"] as? URL {
+                    pendingImportURL = url.absoluteString
+                    showingImport = true
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .biteRecipeBundleImported)) { note in
+                guard let id = note.userInfo?["recipeID"] as? UUID,
+                      let name = note.userInfo?["recipeName"] as? String else { return }
+                showBundleImportToast(id: id, name: name)
+            }
 
-                // Imported recipe toast with Undo
-                if let toast = importedToast {
-                    ImportedToastView(name: toast.name) {
-                        let undoID = toast.id
-                        toastDismissTask?.cancel()
-                        withAnimation { importedToast = nil }
-                        undoImport(id: undoID)
-                    }
+            // AppToast overlay — replaces ImportedToastView
+            if let toast = activeToast {
+                AppToastView(model: toast)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .padding(.bottom, 8)
+            }
+        }
+        .animation(.spring(duration: 0.3), value: activeToast?.id)
+
+        if isSidebarMode {
+            // iPad sidebar: no NavigationStack (NavigationSplitView provides the nav context)
+            coreContent
+        } else {
+            // iPhone: wrap in NavigationStack
+            NavigationStack {
+                coreContent
+            }
+        }
+    }
+
+    // MARK: - Grid
+
+    private var recipeGrid: some View {
+        ScrollView {
+            LazyVGrid(columns: gridColumns, spacing: 12) {
+                ForEach(displayedRecipes) { recipe in
+                    recipeCell(for: recipe)
                 }
             }
-            .animation(.spring(duration: 0.3), value: importedToast != nil)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
     }
 
-    private func deleteRecipe(_ recipe: Recipe) {
-        if let url = recipe.imageURL { RecipeImportService.deleteLocalImage(urlString: url) }
-        modelContext.delete(recipe)
-    }
-
-    private func showImportToast(id: UUID, name: String) {
-        toastDismissTask?.cancel()
-        withAnimation { importedToast = (id: id, name: name) }
-        toastDismissTask = Task {
-            try? await Task.sleep(for: .seconds(4))
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                withAnimation { importedToast = nil }
+    @ViewBuilder
+    private func recipeCell(for recipe: Recipe) -> some View {
+        if let binding = selectedRecipe {
+            // iPad sidebar: tapping selects into detail column
+            Button {
+                binding.wrappedValue = recipe
+            } label: {
+                RecipeCardView(recipe: recipe)
+            }
+            .buttonStyle(.plain)
+            .frame(maxHeight: .infinity, alignment: .top)
+        } else {
+            // iPhone: NavigationLink push
+            NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
+                RecipeCardView(recipe: recipe)
+            }
+            .buttonStyle(.plain)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .contextMenu {
+                Button(role: .destructive) {
+                    deleteRecipe(recipe)
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
             }
         }
     }
 
-    private func undoImport(id: UUID) {
-        let descriptor = FetchDescriptor<Recipe>(predicate: #Predicate { $0.id == id })
-        guard let recipe = try? modelContext.fetch(descriptor).first else { return }
-        deleteRecipe(recipe)
-    }
+    // MARK: - Empty States
 
-    // D-2: Custom empty state with 3 import options
     private var recipeEmptyState: some View {
         VStack(spacing: 32) {
             Spacer()
-
             Image(systemName: "fork.knife.circle")
                 .font(.system(size: 64))
                 .foregroundStyle(.secondary)
-
             VStack(spacing: 8) {
                 Text("No Recipes Yet")
                     .font(.title2.bold())
@@ -158,29 +239,20 @@ struct RecipesListView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
-
             VStack(spacing: 12) {
-                Button {
-                    showingImport = true
-                } label: {
+                Button { showingImport = true } label: {
                     Label("Import from URL", systemImage: "link.badge.plus")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-
-                Button {
-                    showingOCRImport = true
-                } label: {
+                Button { showingOCRImport = true } label: {
                     Label("Scan Recipe Card", systemImage: "camera.viewfinder")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
-
-                Button {
-                    showingNewRecipe = true
-                } label: {
+                Button { showingNewRecipe = true } label: {
                     Label("Create Manually", systemImage: "square.and.pencil")
                         .frame(maxWidth: .infinity)
                 }
@@ -188,44 +260,48 @@ struct RecipesListView: View {
                 .controlSize(.large)
             }
             .padding(.horizontal, 32)
-
             Spacer()
             Spacer()
         }
     }
-}
 
-// MARK: - Toast
+    private var noResultsState: some View {
+        ContentUnavailableView.search(text: searchText)
+    }
 
-private struct ImportedToastView: View {
-    let name: String
-    let onUndo: () -> Void
+    // MARK: - Actions
 
-    var body: some View {
-        HStack(spacing: 12) {
-            Text("Added \"\(name)\"")
-                .font(.subheadline)
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 0)
-            Button("Undo", action: onUndo)
-                .font(.subheadline.bold())
-                .foregroundStyle(.white)
+    private func deleteRecipe(_ recipe: Recipe) {
+        if let url = recipe.imageURL { RecipeImportService.deleteLocalImage(urlString: url) }
+        modelContext.delete(recipe)
+    }
+
+    private func showBundleImportToast(id: UUID, name: String) {
+        let capturedID = id
+        toastDismissTask?.cancel()
+        withAnimation { activeToast = .undo("Added \"\(name)\"") { [self] in
+            toastDismissTask?.cancel()
+            withAnimation { activeToast = nil }
+            undoImport(id: capturedID)
+        }}
+        toastDismissTask = Task {
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            await MainActor.run { withAnimation { activeToast = nil } }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, 16)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Added \(name). Undo button available.")
+    }
+
+    private func undoImport(id: UUID) {
+        let descriptor = FetchDescriptor<Recipe>(predicate: #Predicate { $0.id == id })
+        guard let recipe = try? modelContext.fetch(descriptor).first else { return }
+        deleteRecipe(recipe)
     }
 }
 
 // MARK: - Photo
 
-///Loads a recipe photo from either a remote https:// URL (via AsyncImage) or a
-/// local file:// URL (via UIImage(contentsOfFile:)).  AsyncImage silently fails
+/// Loads a recipe photo from either a remote https:// URL (via AsyncImage) or a
+/// local file:// URL (via UIImage(contentsOfFile:)). AsyncImage silently fails
 /// on file:// URLs in some iOS versions; using UIImage avoids that issue.
 struct RecipePhotoView<Placeholder: View>: View {
     let urlString: String?
@@ -244,7 +320,9 @@ struct RecipePhotoView<Placeholder: View>: View {
             } else if let url = URL(string: urlStr) {
                 AsyncImage(url: url) { phase in
                     if let img = phase.image {
-                        img.resizable().aspectRatio(contentMode: contentMode)
+                        img.resizable()
+                            .aspectRatio(contentMode: contentMode)
+                            .transition(.opacity.animation(.easeIn(duration: 0.25)))
                     } else {
                         placeholder()
                     }

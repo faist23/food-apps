@@ -14900,6 +14900,60 @@
       "sugar": 0.18,
       "vitaminA": 0,
       "vitaminC": 0
+    },
+    {
+      "name": "Baking Soda",
+      "calories": 0.0,
+      "protein": 0.0,
+      "carbs": 0.0,
+      "fat": 0.0,
+      "fiber": null,
+      "sugar": null,
+      "saturatedFat": null,
+      "sodium": 27360.0,
+      "cholesterol": null,
+      "potassium": null,
+      "calcium": null,
+      "iron": null,
+      "vitaminA": null,
+      "vitaminC": null,
+      "servings": [
+        {
+          "label": "1/4 tsp",
+          "gramWeight": 1.15,
+          "isDefault": true,
+          "amount": 0.25,
+          "unit": "tsp"
+        },
+        {
+          "label": "1/2 tsp",
+          "gramWeight": 2.3,
+          "isDefault": false,
+          "amount": 0.5,
+          "unit": "tsp"
+        },
+        {
+          "label": "3/4 tsp",
+          "gramWeight": 3.45,
+          "isDefault": false,
+          "amount": 0.75,
+          "unit": "tsp"
+        },
+        {
+          "label": "1 tsp",
+          "gramWeight": 4.6,
+          "isDefault": false,
+          "amount": 1.0,
+          "unit": "tsp"
+        },
+        {
+          "label": "1 tbsp",
+          "gramWeight": 13.8,
+          "isDefault": false,
+          "amount": 1.0,
+          "unit": "tbsp"
+        }
+      ]
     }
   ],
   "version": "usda_seed_v4"

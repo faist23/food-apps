@@ -32,6 +32,7 @@ struct FoodSearchView: View {
     let mealType: MealType
     let onFoodAdded: (AddedFoodItem) -> Void
     
+    @FocusState private var isSearchFocused: Bool
     @State private var searchText = ""
     @State private var selectedTab: SearchTab = .search
     @State private var searchResults: [ProductInfo] = []
@@ -68,6 +69,7 @@ struct FoodSearchView: View {
 
                     TextField("Search", text: $searchText)
                         .textFieldStyle(.plain)
+                        .focused($isSearchFocused)
                         .onChange(of: searchText) { _, newValue in
                             if selectedTab == .meals {
                                 startMealSearch(query: newValue)
@@ -263,7 +265,7 @@ struct FoodSearchView: View {
                     fetchProductByBarcode(barcode)
                 }
             }
-            .sheet(item: $selectedProduct) { product in
+            .sheet(item: $selectedProduct, onDismiss: { isSearchFocused = true }) { product in
                 ImprovedServingPicker(
                     product: product,
                     mealType: mealType
@@ -292,7 +294,7 @@ struct FoodSearchView: View {
                         ($0.product, $0.existingFood, $0.initialServingAmount, $0.initialPortionId, $0.initialUnit)
                     }
                 }
-            )) { context in
+            ), onDismiss: { isSearchFocused = true }) { context in
                 ImprovedServingPicker(
                     product: context.product,
                     mealType: mealType,
@@ -307,7 +309,7 @@ struct FoodSearchView: View {
                     selectedProductContext = nil
                 }
             }
-            .sheet(isPresented: $showManualEntry) {
+            .sheet(isPresented: $showManualEntry, onDismiss: { isSearchFocused = true }) {
                 ManualFoodEntryView(mealType: mealType) { addedItem in
                     onFoodAdded(addedItem)
                     addedCount += 1
@@ -339,8 +341,14 @@ struct FoodSearchView: View {
                     allLogs: allLogs,
                     mealType: mealType,
                     onFoodQuickAdded: { foodItem in
-                        guard let serving = foodItem.defaultServing ?? foodItem.servingSizes.first else { return }
-                        let addedItem = AddedFoodItem(foodItem: foodItem, servingSize: serving, quantity: 1.0)
+                        let lastLog = allLogs.first { $0.foodItem?.id == foodItem.id }
+                        let serving = lastLog?.servingSize ?? foodItem.defaultServing ?? foodItem.servingSizes.first
+                        guard let serving else { return }
+                        let addedItem = AddedFoodItem(
+                            foodItem: foodItem, servingSize: serving,
+                            quantity: lastLog?.quantity ?? 1.0,
+                            loggedAmount: lastLog?.loggedAmount, loggedUnit: lastLog?.loggedUnit
+                        )
                         onFoodAdded(addedItem)
                         addedCount += 1
                         refreshLogs()
@@ -464,14 +472,18 @@ struct FoodSearchView: View {
                                 magnesium100g: mgToPer100g(foodItem.magnesium),
                                 zinc100g: mgToPer100g(foodItem.zinc),
                                 caffeine100g: mgToPer100g(foodItem.caffeine),
-                                energyKcalServing: FlexibleDouble(foodItem.calories),
-                                proteinsServing: FlexibleDouble(foodItem.protein),
-                                carbohydratesServing: FlexibleDouble(foodItem.carbs),
-                                sugarsServing: foodItem.sugar.map { FlexibleDouble($0) },
-                                fatServing: FlexibleDouble(foodItem.fat),
-                                saturatedFatServing: foodItem.saturatedFat.map { FlexibleDouble($0) },
-                                fiberServing: foodItem.fiber.map { FlexibleDouble($0) },
-                                sodiumServing: foodItem.sodium.map { FlexibleDouble($0 / 1000.0) },  // mg → g
+                                // Per-100g foods must NOT expose *Serving values — they cause the
+                                // picker's hasServingData=true branch to use resolvedServingCount
+                                // (e.g. 60) as a multiplier instead of totalGrams/100 (0.6),
+                                // giving ~100× inflated calories (60 × 381 = 22,860 instead of 228).
+                                energyKcalServing: foodItem.nutritionMode == .per100g ? nil : FlexibleDouble(foodItem.calories),
+                                proteinsServing: foodItem.nutritionMode == .per100g ? nil : FlexibleDouble(foodItem.protein),
+                                carbohydratesServing: foodItem.nutritionMode == .per100g ? nil : FlexibleDouble(foodItem.carbs),
+                                sugarsServing: foodItem.nutritionMode == .per100g ? nil : foodItem.sugar.map { FlexibleDouble($0) },
+                                fatServing: foodItem.nutritionMode == .per100g ? nil : FlexibleDouble(foodItem.fat),
+                                saturatedFatServing: foodItem.nutritionMode == .per100g ? nil : foodItem.saturatedFat.map { FlexibleDouble($0) },
+                                fiberServing: foodItem.nutritionMode == .per100g ? nil : foodItem.fiber.map { FlexibleDouble($0) },
+                                sodiumServing: foodItem.nutritionMode == .per100g ? nil : foodItem.sodium.map { FlexibleDouble($0 / 1000.0) },
                                 potassiumServing: baseGrams <= 1.0 ? foodItem.potassium.map { FlexibleDouble($0) } : nil,
                                 calciumServing: baseGrams <= 1.0 ? foodItem.calcium.map { FlexibleDouble($0) } : nil,
                                 ironServing: baseGrams <= 1.0 ? foodItem.iron.map { FlexibleDouble($0) } : nil,
@@ -487,12 +499,21 @@ struct FoodSearchView: View {
                         )
                         let initAmount: Double
                         let initUnit: String?
-                        if let log = mostRecentLog, let label = log.servingSize?.label,
-                           let parsed = ServingSizeParser.parse(label), parsed.unit != .serving {
-                            initAmount = log.quantity * parsed.amount
-                            initUnit = parsed.unit.abbreviation
+                        if let log = mostRecentLog {
+                            if let amount = log.loggedAmount, let unit = log.loggedUnit, !unit.isEmpty {
+                                // Prefer the stored display values — exactly what the user entered
+                                initAmount = amount
+                                initUnit = unit
+                            } else if let label = log.servingSize?.label,
+                                      let parsed = ServingSizeParser.parse(label), parsed.unit != .serving {
+                                initAmount = log.quantity * parsed.amount
+                                initUnit = parsed.unit.abbreviation
+                            } else {
+                                initAmount = log.quantity
+                                initUnit = nil
+                            }
                         } else {
-                            initAmount = mostRecentLog?.quantity ?? 1.0
+                            initAmount = 1.0
                             initUnit = nil
                         }
                         selectedProductContext = (productInfo, foodItem, initAmount, nil, initUnit)
@@ -519,8 +540,14 @@ struct FoodSearchView: View {
             searchText: searchText,
             mealType: mealType,
             onFoodQuickAdded: { foodItem in
-                guard let serving = foodItem.defaultServing ?? foodItem.servingSizes.first else { return }
-                let addedItem = AddedFoodItem(foodItem: foodItem, servingSize: serving, quantity: 1.0)
+                let lastLog = allLogs.first { $0.foodItem?.id == foodItem.id }
+                let serving = lastLog?.servingSize ?? foodItem.defaultServing ?? foodItem.servingSizes.first
+                guard let serving else { return }
+                let addedItem = AddedFoodItem(
+                    foodItem: foodItem, servingSize: serving,
+                    quantity: lastLog?.quantity ?? 1.0,
+                    loggedAmount: lastLog?.loggedAmount, loggedUnit: lastLog?.loggedUnit
+                )
                 onFoodAdded(addedItem)
                 addedCount += 1
                 refreshLogs()
@@ -630,14 +657,14 @@ struct FoodSearchView: View {
                         magnesium100g: mgToPer100g(foodItem.magnesium),
                         zinc100g: mgToPer100g(foodItem.zinc),
                         caffeine100g: mgToPer100g(foodItem.caffeine),
-                        energyKcalServing: FlexibleDouble(foodItem.calories),
-                        proteinsServing: FlexibleDouble(foodItem.protein),
-                        carbohydratesServing: FlexibleDouble(foodItem.carbs),
-                        sugarsServing: foodItem.sugar.map { FlexibleDouble($0) },
-                        fatServing: FlexibleDouble(foodItem.fat),
-                        saturatedFatServing: foodItem.saturatedFat.map { FlexibleDouble($0) },
-                        fiberServing: foodItem.fiber.map { FlexibleDouble($0) },
-                        sodiumServing: foodItem.sodium.map { FlexibleDouble($0 / 1000.0) },  // mg → g
+                        energyKcalServing: foodItem.nutritionMode == .per100g ? nil : FlexibleDouble(foodItem.calories),
+                        proteinsServing: foodItem.nutritionMode == .per100g ? nil : FlexibleDouble(foodItem.protein),
+                        carbohydratesServing: foodItem.nutritionMode == .per100g ? nil : FlexibleDouble(foodItem.carbs),
+                        sugarsServing: foodItem.nutritionMode == .per100g ? nil : foodItem.sugar.map { FlexibleDouble($0) },
+                        fatServing: foodItem.nutritionMode == .per100g ? nil : FlexibleDouble(foodItem.fat),
+                        saturatedFatServing: foodItem.nutritionMode == .per100g ? nil : foodItem.saturatedFat.map { FlexibleDouble($0) },
+                        fiberServing: foodItem.nutritionMode == .per100g ? nil : foodItem.fiber.map { FlexibleDouble($0) },
+                        sodiumServing: foodItem.nutritionMode == .per100g ? nil : foodItem.sodium.map { FlexibleDouble($0 / 1000.0) },
                         potassiumServing: baseGrams <= 1.0 ? foodItem.potassium.map { FlexibleDouble($0) } : nil,
                         calciumServing: baseGrams <= 1.0 ? foodItem.calcium.map { FlexibleDouble($0) } : nil,
                         ironServing: baseGrams <= 1.0 ? foodItem.iron.map { FlexibleDouble($0) } : nil,
@@ -653,12 +680,20 @@ struct FoodSearchView: View {
                 )
                 let initAmount: Double
                 let initUnit: String?
-                if let log = mostRecentLog, let label = log.servingSize?.label,
-                   let parsed = ServingSizeParser.parse(label), parsed.unit != .serving {
-                    initAmount = log.quantity * parsed.amount
-                    initUnit = parsed.unit.abbreviation
+                if let log = mostRecentLog {
+                    if let amount = log.loggedAmount, let unit = log.loggedUnit, !unit.isEmpty {
+                        initAmount = amount
+                        initUnit = unit
+                    } else if let label = log.servingSize?.label,
+                              let parsed = ServingSizeParser.parse(label), parsed.unit != .serving {
+                        initAmount = log.quantity * parsed.amount
+                        initUnit = parsed.unit.abbreviation
+                    } else {
+                        initAmount = log.quantity
+                        initUnit = nil
+                    }
                 } else {
-                    initAmount = mostRecentLog?.quantity ?? 1.0
+                    initAmount = 1.0
                     initUnit = nil
                 }
                 selectedProductContext = (productInfo, foodItem, initAmount, nil, initUnit)
@@ -696,7 +731,7 @@ struct FoodSearchView: View {
                 .listStyle(.plain)
             }
         }
-        .sheet(item: $selectedRecipeForLog) { recipe in
+        .sheet(item: $selectedRecipeForLog, onDismiss: { isSearchFocused = true }) { recipe in
             RecipeServingSheet(
                 recipe: recipe,
                 mealType: mealType,
@@ -916,7 +951,7 @@ struct FoodSearchView: View {
         .sheet(item: Binding(
             get: { selectedMeal != nil ? SelectedMeal(logs: selectedMeal!) : nil },
             set: { selectedMeal = $0?.logs }
-        )) { mealWrapper in
+        ), onDismiss: { isSearchFocused = true }) { mealWrapper in
             MealItemSelectionView(
                 sourceLogs: mealWrapper.logs,
                 targetMealType: mealType,
@@ -941,8 +976,9 @@ struct FoodSearchView: View {
     }
     
     /// Debounced async meal search. Cancels any in-flight task before starting.
-    /// Queries FoodLog directly with a JOIN predicate on foodItem.name — single SQL
-    /// query instead of fetching FoodItems then faulting .foodLogs for each one (N+1).
+    /// Queries FoodLog directly with a JOIN predicate on foodItem.name — one SQL pair
+    /// per query word, then intersects meal-key sets so "chicken milk" returns meals
+    /// that contain a food matching "chicken" AND a food matching "milk" (cross-item).
     private func startMealSearch(query: String) {
         mealSearchTask?.cancel()
         guard !query.isEmpty else {
@@ -952,63 +988,81 @@ struct FoodSearchView: View {
         mealSearchTask = Task {
             try? await Task.sleep(for: .milliseconds(400))
             guard !Task.isCancelled else { return }
-            let firstWord = query.split(separator: " ").first.map(String.init) ?? query
+            let words = query.split(separator: " ").map(String.init)
             let calendar = Calendar.current
             func mealKey(_ log: FoodLog) -> String {
                 let day = calendar.startOfDay(for: log.timestamp)
                 return "\(day.timeIntervalSince1970)-\(log.mealType.rawValue)"
             }
-            // SQL fetch by food name (safe — name is non-optional on FoodLog.foodItem).
-            let nameMatchedLogs = (try? modelContext.fetch(
-                FetchDescriptor<FoodLog>(
-                    predicate: #Predicate { $0.foodItem?.name.localizedStandardContains(firstWord) == true },
-                    sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)]
-                )
-            )) ?? []
 
-            // Brand search: CoreData cannot generate SQL for CONTAINS[cdl] through an optional
-            // relationship (foodItem?.brand crashes with "bad RHS"). Instead, fetch FoodItems
-            // by brand directly, then intersect with allLogs in memory.
-            let brandFoods = (try? modelContext.fetch(
-                FetchDescriptor<FoodItem>(
-                    predicate: #Predicate { $0.brand?.localizedStandardContains(firstWord) == true }
-                )
-            )) ?? []
-            let brandMatchedLogs = brandFoods.flatMap { $0.foodLogs }
+            // For each query word, find the set of meal keys that contain a matching food.
+            // Intersecting those sets means every word must be represented in the meal.
+            var perWordMealKeys: [Set<String>] = []
+            // Collect all matching logs (union across words) for older-meal timestamp range.
+            var allMatchingLogs: [FoodLog] = []
+            var allMatchingLogIDs = Set<UUID>()
 
-            // Union: deduplicate by log ID
-            var seenIDs = Set(nameMatchedLogs.map { $0.id })
-            let fetchedLogs = nameMatchedLogs + brandMatchedLogs.filter { seenIDs.insert($0.id).inserted }
+            for word in words {
+                // SQL fetch by food name (safe — name is non-optional on FoodLog.foodItem).
+                let nameLogs = (try? modelContext.fetch(
+                    FetchDescriptor<FoodLog>(
+                        predicate: #Predicate { $0.foodItem?.name.localizedStandardContains(word) == true },
+                        sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)]
+                    )
+                )) ?? []
 
-            let matchingFoodLogs = fetchedLogs.filter { log in
-                guard let food = log.foodItem else { return false }
-                let combined = [food.name, food.brand].compactMap { $0 }.joined(separator: " ")
-                return matchesQuery(combined, query: query)
-            }
-            let matchedMealKeys = Set(matchingFoodLogs.map { mealKey($0) })
-            // Recent meals: pull ALL logs for the matching meal from allLogs (complete meal).
-            let recentComplete = allLogs.filter { matchedMealKeys.contains(mealKey($0)) }
-            let coveredKeys = Set(recentComplete.map { mealKey($0) })
-            // Older meals: fetch the full meal from DB using the timestamp range of matching logs.
-            let olderMealKeys = matchedMealKeys.subtracting(coveredKeys)
-            var olderComplete: [FoodLog] = []
-            if !olderMealKeys.isEmpty {
-                let olderLogs = matchingFoodLogs.filter { olderMealKeys.contains(mealKey($0)) }
-                if let minTime = olderLogs.map({ $0.timestamp }).min(),
-                   let maxTime = olderLogs.map({ $0.timestamp }).max() {
-                    let rangeStart = calendar.startOfDay(for: minTime)
-                    let rangeEnd = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: maxTime)) ?? maxTime
-                    let rangeLogs = (try? modelContext.fetch(
-                        FetchDescriptor<FoodLog>(
-                            predicate: #Predicate { $0.timestamp >= rangeStart && $0.timestamp < rangeEnd },
-                            sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)]
-                        )
-                    )) ?? []
-                    olderComplete = rangeLogs.filter { olderMealKeys.contains(mealKey($0)) }
+                // Brand search: CoreData cannot generate SQL for CONTAINS[cdl] through an optional
+                // relationship (foodItem?.brand crashes with "bad RHS"). Fetch FoodItems by brand.
+                let brandFoods = (try? modelContext.fetch(
+                    FetchDescriptor<FoodItem>(
+                        predicate: #Predicate { $0.brand?.localizedStandardContains(word) == true }
+                    )
+                )) ?? []
+                let brandLogs = brandFoods.flatMap { $0.foodLogs }
+
+                // Union for this word (deduplicate by log ID)
+                var seenIDs = Set(nameLogs.map { $0.id })
+                let wordLogs = nameLogs + brandLogs.filter { seenIDs.insert($0.id).inserted }
+
+                perWordMealKeys.append(Set(wordLogs.map { mealKey($0) }))
+
+                for log in wordLogs where allMatchingLogIDs.insert(log.id).inserted {
+                    allMatchingLogs.append(log)
                 }
             }
-            mealSearchLogs = (recentComplete + olderComplete)
-                .sorted { $0.timestamp > $1.timestamp }
+
+            // A meal qualifies only if it has at least one food matching EVERY query word.
+            guard let firstSet = perWordMealKeys.first else { return }
+            let matchedMealKeys = perWordMealKeys.dropFirst().reduce(firstSet) { $0.intersection($1) }
+
+            guard !matchedMealKeys.isEmpty else {
+                mealSearchLogs = []
+                return
+            }
+
+            // Fetch the complete content of every matched meal from the DB.
+            // We cannot use allLogs (capped at 1000) because a meal may have some logs
+            // inside the cap and others outside it — the "covered keys" optimisation would
+            // silently drop the older logs, showing an incomplete meal (e.g. strawberries
+            // but no spinach). allMatchingLogs comes from uncapped SQL queries, so its
+            // timestamp range is authoritative for all matched meals.
+            let anchorLogs = allMatchingLogs.filter { matchedMealKeys.contains(mealKey($0)) }
+            if let minTime = anchorLogs.map({ $0.timestamp }).min(),
+               let maxTime = anchorLogs.map({ $0.timestamp }).max() {
+                let rangeStart = calendar.startOfDay(for: minTime)
+                let rangeEnd = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: maxTime)) ?? maxTime
+                let rangeLogs = (try? modelContext.fetch(
+                    FetchDescriptor<FoodLog>(
+                        predicate: #Predicate { $0.timestamp >= rangeStart && $0.timestamp < rangeEnd },
+                        sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)]
+                    )
+                )) ?? []
+                mealSearchLogs = rangeLogs
+                    .filter { matchedMealKeys.contains(mealKey($0)) }
+                    .sorted { $0.timestamp > $1.timestamp }
+            } else {
+                mealSearchLogs = []
+            }
         }
     }
 
@@ -1049,14 +1103,16 @@ struct FoodSearchView: View {
                         return
                     }
                     
-                    // Filter out products without nutrition data
+                    // Filter out products without nutrition data or that don't match all search terms
                     let filteredResults = results.filter {
                         if let nutriments = $0.nutriments {
                             let hasCalories = nutriments.calories > 0
                             if !hasCalories {
                                 print("⚠️ Filtered out \($0.displayName) - no calories")
+                                return false
                             }
-                            return hasCalories
+                            let combined = "\($0.displayName) \($0.brands ?? "")"
+                            return matchesQuery(combined, query: currentQuery)
                         }
                         print("⚠️ Filtered out \($0.displayName) - no nutriments")
                         return false
@@ -1712,6 +1768,7 @@ struct MyFoodsListView: View {
     // the cap on allLogs and finds foods from any point in history.
     @State private var sqlSearchResults: [FoodItem] = []
     @State private var sqlLastUsedDates: [UUID: Date] = [:]
+    @State private var sqlLastLogs: [UUID: FoodLog] = [:]
     @State private var sqlSearchTask: Task<Void, Never>? = nil
 
     let allLogs: [FoodLog]
@@ -1830,9 +1887,20 @@ struct MyFoodsListView: View {
                 dates[food.id] = food.foodLogs.max(by: { $0.timestamp < $1.timestamp })?.timestamp
             }
 
+            // Build last-log lookup (newest-first allLogs, so first match = most recent).
+            var logs: [UUID: FoodLog] = [:]
+            for log in allLogs {
+                guard let food = log.foodItem, logs[food.id] == nil else { continue }
+                logs[food.id] = log
+            }
+            for food in filtered where logs[food.id] == nil {
+                logs[food.id] = food.foodLogs.max(by: { $0.timestamp < $1.timestamp })
+            }
+
             guard !Task.isCancelled else { return }
             sqlSearchResults = filtered
             sqlLastUsedDates = dates
+            sqlLastLogs = logs
         }
     }
 
@@ -1882,6 +1950,18 @@ struct MyFoodsListView: View {
         return result
     }
 
+    // Most-recent FoodLog per food — drives the serving subtitle in FoodItemRow.
+    // allLogs is sorted newest-first, so the first match is always the latest log.
+    private var lastLogs: [UUID: FoodLog] {
+        if !searchText.isEmpty { return sqlLastLogs }
+        var result: [UUID: FoodLog] = [:]
+        for log in allLogs {
+            guard let food = log.foodItem, result[food.id] == nil else { continue }
+            result[food.id] = log
+        }
+        return result
+    }
+
     private var foodListView: some View {
         ScrollView {
             LazyVStack(spacing: 8) {
@@ -1890,7 +1970,8 @@ struct MyFoodsListView: View {
                         foodItem: foodItem,
                         lastUsed: lastUsedDates[foodItem.id],
                         onTap: { onFoodSelected(foodItem) },
-                        onQuickAdd: { onFoodQuickAdded(foodItem) }
+                        onQuickAdd: { onFoodQuickAdded(foodItem) },
+                        lastLog: lastLogs[foodItem.id]
                     )
                 }
             }
@@ -1904,6 +1985,28 @@ struct FoodItemRow: View {
     let lastUsed: Date?
     let onTap: () -> Void
     var onQuickAdd: (() -> Void)? = nil
+    var lastLog: FoodLog? = nil
+
+    // Shows last-used amount+unit+calories when a log is available;
+    // falls back to the default serving when there's no history.
+    private var servingSubtitle: String {
+        if let log = lastLog {
+            let cal = Int(log.caloriesAtLogTime)
+            if let amount = log.loggedAmount, let unit = log.loggedUnit, !unit.isEmpty {
+                let amountStr = amount.truncatingRemainder(dividingBy: 1) == 0
+                    ? "\(Int(amount))" : String(format: "%.2g", amount)
+                return "\(amountStr) \(unit) · \(cal) cal"
+            }
+            if let serving = log.servingSize {
+                return "\(serving.label) · \(cal) cal"
+            }
+            return "\(cal) cal"
+        }
+        if let defaultServing = foodItem.defaultServing {
+            return caloriesDisplayText(for: foodItem, serving: defaultServing)
+        }
+        return "\(Int(foodItem.calories)) cal"
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1923,16 +2026,9 @@ struct FoodItemRow: View {
                 }
 
                 HStack(spacing: 4) {
-                    // Display calories per base serving
-                    if let defaultServing = foodItem.defaultServing {
-                        Text(caloriesDisplayText(for: foodItem, serving: defaultServing))
-                            .font(.caption2)
-                            .foregroundStyle(.blue)
-                    } else {
-                        Text("\(Int(foodItem.calories)) cal")
-                            .font(.caption2)
-                            .foregroundStyle(.blue)
-                    }
+                    Text(servingSubtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.blue)
 
                     if let lastUsed {
                         Text("•")
@@ -1969,7 +2065,7 @@ struct FoodItemRow: View {
             onTap()
         }
     }
-    
+
     @ViewBuilder
     private var foodImageView: some View {
         RoundedRectangle(cornerRadius: 8)
@@ -1981,21 +2077,16 @@ struct FoodItemRow: View {
                     .foregroundStyle(.secondary)
             }
     }
-    
+
     private func caloriesDisplayText(for foodItem: FoodItem, serving: ServingSize) -> String {
         if foodItem.nutritionMode == .per100g, let gramWeight = serving.gramWeight, gramWeight > 0 {
-            // For per-100g foods, calculate calories for the serving
             let displayCalories = Int((foodItem.calories / 100.0) * gramWeight)
-            
-            // Format serving size nicely
             let gramsText = gramWeight.truncatingRemainder(dividingBy: 1) == 0
                 ? String(Int(gramWeight))
                 : String(format: "%.0f", gramWeight)
             return "\(displayCalories) cal per \(gramsText)g"
         } else {
-            // For per-serving foods, use calories directly
-            let displayCalories = Int(foodItem.calories)
-            return "\(displayCalories) cal/\(serving.label)"
+            return "\(Int(foodItem.calories)) cal/\(serving.label)"
         }
     }
 }
@@ -2013,6 +2104,15 @@ struct RecentFoodsForMealView: View {
         for log in allLogs {
             guard let food = log.foodItem, result[food.id] == nil else { continue }
             result[food.id] = log.timestamp
+        }
+        return result
+    }
+
+    private var lastLogs: [UUID: FoodLog] {
+        var result: [UUID: FoodLog] = [:]
+        for log in allLogs {
+            guard let food = log.foodItem, result[food.id] == nil else { continue }
+            result[food.id] = log
         }
         return result
     }
@@ -2062,7 +2162,8 @@ struct RecentFoodsForMealView: View {
                                     foodItem: foodItem,
                                     lastUsed: lastUsedDates[foodItem.id],
                                     onTap: { onFoodSelected(foodItem) },
-                                    onQuickAdd: { onFoodQuickAdded(foodItem) }
+                                    onQuickAdd: { onFoodQuickAdded(foodItem) },
+                                    lastLog: lastLogs[foodItem.id]
                                 )
                             }
                         }

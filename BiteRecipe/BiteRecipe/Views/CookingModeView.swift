@@ -71,6 +71,8 @@ struct CookingModeView: View {
     // Step index. steps.count == step index pointing at completion card.
     @State private var currentStep: Int = 0
     @State private var dragOffset: CGFloat = 0
+    @State private var activeToast: AppToastModel? = nil
+    @State private var toastDismissTask: Task<Void, Never>? = nil
 
     private var steps: [String] { recipe.directions }
     private var isComplete: Bool { currentStep >= steps.count }
@@ -78,7 +80,7 @@ struct CookingModeView: View {
     // MARK: Body
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .bottom) {
             Color("CookingModeSurface").ignoresSafeArea()
 
             if isComplete {
@@ -86,7 +88,14 @@ struct CookingModeView: View {
             } else {
                 stepView
             }
+
+            if let toast = activeToast {
+                AppToastView(model: toast)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.bottom, 8)
+            }
         }
+        .animation(.spring(duration: 0.3), value: activeToast?.id)
         .onAppear {
             // Keep screen on while cooking.
             // isIdleTimerDisabled is a global flag — always reset in all dismiss paths.
@@ -151,6 +160,13 @@ struct CookingModeView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 20)
+            }
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: advance(by: 1)
+                case .decrement: advance(by: -1)
+                @unknown default: break
+                }
             }
 
             Divider()
@@ -264,16 +280,21 @@ struct CookingModeView: View {
 
     private func openTimer(seconds: Int) {
         let minutes = max(1, (seconds + 59) / 60)
-        // Try iCloud Shortcuts deep link first; fall back to a banner copy button via alert.
-        // In v1.1 we open the Shortcuts app timer — no in-app countdown (deferred to v1.2).
         if let url = URL(string: "shortcuts://run-shortcut?name=Timer"),
            UIApplication.shared.canOpenURL(url) {
             UIApplication.shared.open(url)
         } else if let url = URL(string: "clock-app://"), UIApplication.shared.canOpenURL(url) {
             UIApplication.shared.open(url)
+        } else {
+            UIPasteboard.general.string = "\(minutes)"
+            toastDismissTask?.cancel()
+            withAnimation { activeToast = .info("Copied \(minutes) min to clipboard") }
+            toastDismissTask = Task {
+                try? await Task.sleep(for: .seconds(4))
+                guard !Task.isCancelled else { return }
+                await MainActor.run { withAnimation { activeToast = nil } }
+            }
         }
-        // Non-URL fallback: UIPasteboard copy so user can paste into any timer app.
-        UIPasteboard.general.string = "\(minutes)"
     }
 
     // MARK: - Navigation

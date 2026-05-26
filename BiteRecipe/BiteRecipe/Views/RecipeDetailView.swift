@@ -15,7 +15,8 @@ struct RecipeDetailView: View {
     @State private var showingNutrition = false
     @State private var showingCookingMode = false
     @State private var scaleFactor: Double = 1.0
-    @State private var showingAddedToast = false
+    @State private var activeToast: AppToastModel? = nil
+    @State private var toastDismissTask: Task<Void, Never>? = nil
     @State private var showingShareConfirmation = false
     @State private var showingDeleteConfirmation = false
 
@@ -122,6 +123,8 @@ struct RecipeDetailView: View {
                     }
                     .font(.subheadline)
                     .padding(.horizontal)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(String(format: "%.1f", rating)) out of 5 stars")
                 }
 
                 // Time row
@@ -256,6 +259,8 @@ struct RecipeDetailView: View {
                                 Text(step)
                             }
                             .padding(.horizontal)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityValue("Step \(i + 1) of \(recipe.directions.count)")
                         }
                     }
                 }
@@ -268,15 +273,21 @@ struct RecipeDetailView: View {
         // Sticky bottom action bar
         stickyActionBar
 
+        if let toast = activeToast {
+            AppToastView(model: toast)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .padding(.bottom, 80)
+        }
+
         } // end ZStack
+        .animation(.spring(duration: 0.3), value: activeToast?.id)
         .navigationTitle(recipe.name)
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 4) {
-                    if perServing.calories > 0 {
-                        Button("Nutrition") { showingNutrition = true }
-                    }
+                    Button("Nutrition") { showingNutrition = true }
+                        .disabled(perServing.calories == 0)
                     Menu {
                         Button { showingEditor = true } label: {
                             Label("Edit", systemImage: "pencil")
@@ -350,9 +361,12 @@ struct RecipeDetailView: View {
                 // Secondary: Add to Shopping List
                 Button {
                     shoppingCart.addRecipe(recipe, scaleFactor: scaleFactor)
-                    withAnimation { showingAddedToast = true }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                        withAnimation { showingAddedToast = false }
+                    toastDismissTask?.cancel()
+                    withAnimation { activeToast = .success("Added to shopping list") }
+                    toastDismissTask = Task {
+                        try? await Task.sleep(for: .seconds(4))
+                        guard !Task.isCancelled else { return }
+                        await MainActor.run { withAnimation { activeToast = nil } }
                     }
                 } label: {
                     Label("Shopping", systemImage: "cart.badge.plus")
@@ -365,18 +379,6 @@ struct RecipeDetailView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .background(.regularMaterial)
-        }
-        .overlay(alignment: .top) {
-            if showingAddedToast {
-                Text("Added to shopping list")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Color.brandPrimary, in: Capsule())
-                    .offset(y: -52)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
         }
     }
 

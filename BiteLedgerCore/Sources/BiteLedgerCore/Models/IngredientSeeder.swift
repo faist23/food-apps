@@ -30,10 +30,14 @@ public enum IngredientSeeder {
     ) async {
         let context = container.mainContext
 
-        // Already seeded at this version — nothing to do
         let allFoods = (try? context.fetch(FetchDescriptor<FoodItem>())) ?? []
         let alreadySeeded = allFoods.contains { $0.source == currentVersion }
-        guard !alreadySeeded else { return }
+        if alreadySeeded {
+            // Patch: insert staple foods absent from the original seed without re-seeding
+            // everything (a full re-seed would nullify all existing recipe ingredient links).
+            patchMissingStaples(context: context, existingFoods: allFoods)
+            return
+        }
 
         // Remove previous seed foods so there are no stale duplicates.
         // IMPORTANT: ServingSize has no declared inverse to RecipeIngredient, so SwiftData
@@ -77,6 +81,68 @@ public enum IngredientSeeder {
         exportBundleJSON(SeedBundle(version: currentVersion, ingredients: exported))
         print("✅ IngredientSeeder \(currentVersion): seeded \(exported.count) ingredients from USDA — bundle exported to Documents")
     }
+}
+
+// MARK: - Staple Patch
+
+/// Inserts common ingredients that were missing from an already-seeded version.
+/// Safe to call on every launch: checks by name before inserting, never deletes anything.
+/// This avoids a version bump (which would nullify all existing recipe ingredient links).
+@MainActor
+private func patchMissingStaples(context: ModelContext, existingFoods: [FoodItem]) {
+    struct Staple {
+        let name: String
+        let calories: Double
+        let protein: Double
+        let carbs: Double
+        let fat: Double
+        let sodium: Double?
+        let servings: [(label: String, grams: Double, isDefault: Bool, amount: Double, unit: String)]
+    }
+
+    let staples: [Staple] = [
+        // Baking soda (sodium bicarbonate): ~27.4% sodium by weight, zero calories.
+        // USDA FoodData Central: "Leavening agents, baking soda"
+        Staple(name: "Baking Soda", calories: 0, protein: 0, carbs: 0, fat: 0, sodium: 27360, servings: [
+            ("1/4 tsp", 1.15, true,  0.25, "tsp"),
+            ("1/2 tsp", 2.3,  false, 0.5,  "tsp"),
+            ("3/4 tsp", 3.45, false, 0.75, "tsp"),
+            ("1 tsp",   4.6,  false, 1.0,  "tsp"),
+            ("1 tbsp",  13.8, false, 1.0,  "tbsp"),
+        ]),
+    ]
+
+    let existingNames = Set(existingFoods.map { $0.name.lowercased() })
+    var didInsert = false
+
+    for staple in staples {
+        guard !existingNames.contains(staple.name.lowercased()) else { continue }
+        let food = FoodItem(
+            name: staple.name,
+            source: IngredientSeeder.currentVersion,
+            nutritionMode: .per100g,
+            calories: staple.calories,
+            protein: staple.protein,
+            carbs: staple.carbs,
+            fat: staple.fat,
+            sodium: staple.sodium
+        )
+        context.insert(food)
+        for (i, sv) in staple.servings.enumerated() {
+            let s = ServingSize(
+                label: sv.label,
+                gramWeight: sv.grams,
+                isDefault: sv.isDefault,
+                sortOrder: i,
+                unit: sv.unit,
+                amount: sv.amount
+            )
+            s.foodItem = food
+            context.insert(s)
+        }
+        didInsert = true
+    }
+    if didInsert { try? context.save() }
 }
 
 // MARK: - Codable Bundle Types

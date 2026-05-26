@@ -513,7 +513,7 @@ public struct RecipeEditorView: View {
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.dividerSubtle, lineWidth: 1))
                 }
 
-                if pendingIngredients.isEmpty {
+                if pendingIngredients.isEmpty && unmatchedHints.isEmpty {
                     Text("No ingredients added yet. Tap + to add.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -523,38 +523,16 @@ public struct RecipeEditorView: View {
                         ForEach(Array(pendingIngredients.enumerated()), id: \.element.id) { index, ingredient in
                             VStack(spacing: 0) {
                                 ingredientRow(ingredient, at: index)
-                                if index < pendingIngredients.count - 1 {
+                                if index < pendingIngredients.count - 1 || !unmatchedHints.isEmpty {
                                     thinDivider()
                                 }
                             }
                         }
-                    }
-
-                    if !unmatchedHints.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            thinDivider()
-                            Text("Not yet added (from import):")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .padding(.top, 4)
-                            ForEach(unmatchedHints) { hint in
-                                HStack(spacing: 6) {
-                                    Image(systemName: "magnifyingglass")
-                                        .font(.caption2)
-                                        .foregroundStyle(.orange)
-                                    Text(hint.raw)
-                                        .font(.caption)
-                                        .foregroundStyle(.orange)
-                                    Spacer()
-                                    Button {
-                                        hintBeingSearched = hint
-                                        showIngredientPicker = true
-                                    } label: {
-                                        Text("Find")
-                                            .font(.caption)
-                                            .foregroundStyle(Color.brandAccent)
-                                    }
-                                    .buttonStyle(.plain)
+                        ForEach(Array(unmatchedHints.enumerated()), id: \.element.id) { index, hint in
+                            VStack(spacing: 0) {
+                                unmatchedHintRow(hint: hint)
+                                if index < unmatchedHints.count - 1 {
+                                    thinDivider()
                                 }
                             }
                         }
@@ -637,6 +615,34 @@ public struct RecipeEditorView: View {
             } label: {
                 Image(systemName: "minus.circle.fill")
                     .foregroundStyle(.red)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 6)
+    }
+
+    @ViewBuilder
+    private func unmatchedHintRow(hint: ImportedRecipeData.UnmatchedHint) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(hint.raw)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .lineLimit(2)
+                Text("No match found — tap to search")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button {
+                hintBeingSearched = hint
+                showIngredientPicker = true
+            } label: {
+                Image(systemName: "magnifyingglass.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(Color.brandAccent)
             }
             .buttonStyle(.plain)
         }
@@ -1031,8 +1037,42 @@ public struct RecipeEditorView: View {
                                      recipeQuantity: ingredient.recipeQuantity,
                                      recipeUnit: ingredient.recipeUnit)
         }
+        // Surface saved ingredients that never got a food match (foodItem == nil but rawText set).
+        // Without this, they silently disappear in the editor even though they're still in the recipe.
+        let savedUnmatched = recipe.sortedIngredients
+            .filter { $0.foodItem == nil }
+            .compactMap { ingredient -> ImportedRecipeData.UnmatchedHint? in
+                guard let raw = ingredient.rawText, !raw.isEmpty else { return nil }
+                let qty = ingredient.recipeQuantity ?? 1.0
+                let unit = ingredient.recipeUnit ?? ""
+                return ImportedRecipeData.UnmatchedHint(
+                    raw: raw,
+                    searchTerm: searchTermFromRaw(raw, quantity: qty, unit: unit),
+                    quantity: qty,
+                    unit: unit
+                )
+            }
+        // Merge with any import-time hints already present (e.g., from a fresh URL import).
+        if !savedUnmatched.isEmpty {
+            let existingRaws = Set(unmatchedHints.map { $0.raw })
+            unmatchedHints += savedUnmatched.filter { !existingRaws.contains($0.raw) }
+        }
         baseIngredientQuantities = Dictionary(uniqueKeysWithValues:
             pendingIngredients.map { ($0.id, $0.quantity) })
+    }
+
+    /// Strips the leading quantity+unit from a raw ingredient string to produce a clean search term.
+    /// "1 tsp baking soda" → "baking soda"  |  "2 cups flour" → "flour"
+    private func searchTermFromRaw(_ raw: String, quantity: Double, unit: String) -> String {
+        guard !unit.isEmpty else { return raw }
+        let qtyStr = quantity.truncatingRemainder(dividingBy: 1) == 0
+            ? String(Int(quantity)) : String(format: "%.2g", quantity)
+        let prefix = "\(qtyStr) \(unit) "
+        if raw.lowercased().hasPrefix(prefix.lowercased()) {
+            let stripped = String(raw.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
+            return stripped.isEmpty ? raw : stripped
+        }
+        return raw
     }
 
     /// Auto-fills Total when Prep or Cook changes, unless the user has manually set Total

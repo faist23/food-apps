@@ -12,23 +12,6 @@ import BiteLedgerCore
 
 extension Notification.Name {
     static let biteRecipeImportURL   = Notification.Name("biteRecipeImportURL")
-    static let biteRecipeOpenBundle  = Notification.Name("biteRecipeOpenBundle")
-}
-
-// Catches .biterecipe file URLs on cold launch via the UIKit app-delegate path.
-// SwiftUI's onOpenURL bridges UISceneDelegate.scene(_:openURLContexts:), but on a
-// cold document-open the system sometimes routes through UIApplicationDelegate
-// application(_:open:options:) instead. Belt-and-suspenders with onOpenURL.
-final class BiteRecipeAppDelegate: NSObject, UIApplicationDelegate {
-    func application(_ app: UIApplication,
-                     open url: URL,
-                     options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
-        if url.pathExtension == "biterecipe" {
-            NotificationCenter.default.post(name: .biteRecipeOpenBundle, object: url)
-            return true
-        }
-        return false
-    }
 }
 
 // E-2: App store error types for graceful failure handling.
@@ -69,8 +52,6 @@ private struct BiteRecipeErrorView: View {
 
 @main
 struct BiteRecipeApp: App {
-    @UIApplicationDelegateAdaptor(BiteRecipeAppDelegate.self) var appDelegate
-
     // E-2: State-driven container — no fatalError or force-unwrap on failure.
     @State private var modelContainer: ModelContainer?
     @State private var storeError: Error?
@@ -118,12 +99,6 @@ struct BiteRecipeApp: App {
                     consumePendingRecipeURL()
                 } else if url.pathExtension == "biterecipe" {
                     // Opened via AirDrop, Messages, or Files (.biterecipe UTI).
-                    pendingBundleURL = url
-                }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .biteRecipeOpenBundle)) { note in
-                // Fallback: UIApplicationDelegate path on cold document-open.
-                if let url = note.object as? URL {
                     pendingBundleURL = url
                 }
             }

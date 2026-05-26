@@ -14,7 +14,7 @@ struct ShoppingListView: View {
     @Environment(ShoppingCart.self) private var shoppingCart
     @State private var itemToReclassify: ShoppingCartItem? = nil
     @State private var showingClearConfirm = false
-    @State private var showingCopiedToast = false
+    @State private var activeToast: AppToastModel? = nil
 
     var body: some View {
         NavigationStack {
@@ -32,10 +32,7 @@ struct ShoppingListView: View {
                         HStack(spacing: 4) {
                             Button {
                                 UIPasteboard.general.string = shoppingCart.shareText
-                                withAnimation { showingCopiedToast = true }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                    withAnimation { showingCopiedToast = false }
-                                }
+                                withAnimation { activeToast = .success("Copied to clipboard") }
                             } label: {
                                 Image(systemName: "doc.on.doc")
                             }
@@ -56,18 +53,7 @@ struct ShoppingListView: View {
                     }
                 }
             }
-            .overlay(alignment: .top) {
-                if showingCopiedToast {
-                    Text("Copied to clipboard")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(.tint, in: Capsule())
-                        .padding(.top, 8)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
-            }
+            .appToast($activeToast)
             .confirmationDialog(
                 "Clear shopping list?",
                 isPresented: $showingClearConfirm,
@@ -101,7 +87,13 @@ struct ShoppingListView: View {
                             }
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
+                                    let index = shoppingCart.items.firstIndex(where: { $0.id == item.id }) ?? shoppingCart.items.count
                                     shoppingCart.removeItem(item)
+                                    withAnimation {
+                                        activeToast = .undo("Removed \"\(item.displayText)\"") {
+                                            shoppingCart.restoreItem(item, at: index)
+                                        }
+                                    }
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }

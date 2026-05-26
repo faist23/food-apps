@@ -490,7 +490,7 @@ private struct IngredientServingPage: View {
     }
 
     private func adjustQuantity(by delta: Double) {
-        let newValue = max(0.5, (quantity + delta * 2).rounded() / 2)
+        let newValue = max(0.5, ((quantity + delta) * 2).rounded() / 2)
         quantity = newValue
         quantityText = newValue.truncatingRemainder(dividingBy: 1) == 0
             ? String(Int(newValue)) : String(format: "%.1f", newValue)
