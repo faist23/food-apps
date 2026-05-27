@@ -53,23 +53,32 @@ and passes them to `NutritionDashboard` and `MealSection`.
 
 ## USDA Nutriments Invariant (Critical — Do Not Regress)
 
-`USDAFoodDetail.toProductInfo()` must set **all `*Serving` fields to `nil`** for
-SR Legacy and Foundation data types:
+Any `Nutriments` built for a `per100g` food must set **all `*Serving` fields to `nil`**:
 ```swift
 energyKcalServing: nil, proteinsServing: nil, carbohydratesServing: nil,
 sugarsServing: nil, fatServing: nil, saturatedFatServing: nil,
 fiberServing: nil, sodiumServing: nil
 ```
-USDA SR Legacy and Foundation are per-100g databases. Any non-nil `*Serving` field
-causes `ImprovedServingPicker.nutritionMultiplier` to take the `hasServingData = true`
-branch, returning `resolvedServingCount` (= 1.0) × the serving value —
-producing wildly wrong calories (e.g. 1452 cal for one frankfurter instead of ~142).
+Any non-nil `*Serving` field causes `ImprovedServingPicker.nutritionMultiplier` to take
+the `hasServingData = true` branch, returning `resolvedServingCount` × the serving value —
+producing wildly wrong calories (e.g. 22,857 cal for 60g of Life cereal instead of ~228).
 
-**Exception — USDA Branded Foods:** Branded Foods carry a declared `servingSize` (in
-grams) from the FDA label. `toProductInfo()` computes `*Serving = nutrientPer100g ×
+This rule applies to **every code path** that constructs a `ProductInfo`/`Nutriments` for
+an existing `FoodItem` with `nutritionMode == .per100g`:
+- `USDAFoodDetail.toProductInfo()` — USDA SR Legacy and Foundation API results
+- `onFoodSelected` in `searchTabContent` (Recent foods tab)
+- `onFoodSelected` in `myFoodsTabContent` (My Foods tab)
+- `searchMyFoods()` — Search tab My Foods sub-results
+
+Pattern used in `onFoodSelected` closures:
+```swift
+energyKcalServing: foodItem.nutritionMode == .per100g ? nil : FlexibleDouble(foodItem.calories),
+```
+
+**Exception — USDA Branded Foods and `perServing` foods:** these carry a declared serving size
+and must populate `*Serving` fields. `toProductInfo()` computes `*Serving = nutrientPer100g ×
 (servingSize / 100)` for Branded foods only. The `*100g` fields are also populated so
-the per-100g path still works for free entry. SR Legacy and Foundation are never
-affected — their `*Serving` fields remain nil.
+the per-100g path still works for free entry.
 
 ---
 
@@ -200,21 +209,54 @@ regresses to a 1000-entry recency cap and hides foods logged more than ~3 months
 **Browse mode (`searchText` empty):** hybrid merge of `FoodHistoryEntry` @Query (all
 history, no cap) + `allLogs` (recent 1000, fills backfill gaps), sorted by `lastLoggedDate`.
 
-### Meals tab — two-query SQL + in-memory `matchesQuery`
+### Last-used serving display — `FoodItemRow` + `onFoodQuickAdded`
 
-`startMealSearch` runs two SQL queries then merges in memory:
+`FoodItemRow` accepts an optional `lastLog: FoodLog?` parameter. When present, the subtitle
+shows the actual last-logged serving (`loggedAmount`/`loggedUnit` if stored, otherwise the
+`servingSize.label`) and `caloriesAtLogTime` — not the food's default serving per-100g display.
 
-1. **Name query** — `FetchDescriptor<FoodLog>` where `foodItem?.name.localizedStandardContains(firstWord)`.
+Both `RecentFoodsForMealView` and `MyFoodsListView` pre-compute a `lastLogs: [UUID: FoodLog]`
+dictionary (keyed by food ID) from `allLogs` and pass it to `FoodItemRow`.
+
+`onFoodQuickAdded` in both tabs must use the last log's serving, quantity, `loggedAmount`, and
+`loggedUnit` — NOT `defaultServing` at `quantity: 1.0`. This ensures the `+` button re-logs
+exactly what the user had last time.
+
+`onFoodSelected` `initAmount`/`initUnit` must prefer `log.loggedAmount`/`log.loggedUnit` (the
+stored display values) over parsing `servingSize.label` via `ServingSizeParser`. Label parsing
+is kept only as a fallback for older logs that predate the `loggedAmount`/`loggedUnit` fields.
+
+### Meals tab — per-word SQL + intersection + timestamp-range DB fetch
+
+`startMealSearch` runs a pair of SQL queries **for each query word**, intersects the resulting
+meal keys, then fetches the full meal content from the DB.
+
+For each word:
+1. **Name query** — `FetchDescriptor<FoodLog>` where `foodItem?.name.localizedStandardContains(word)`.
    No fetchLimit — full history.
-2. **Brand query** — `FetchDescriptor<FoodItem>` where `brand?.localizedStandardContains(firstWord)`,
+2. **Brand query** — `FetchDescriptor<FoodItem>` where `brand?.localizedStandardContains(word)`,
    then `brandFoods.flatMap { $0.foodLogs }` for full log history via relationship traversal.
    **Do NOT put brand in the FoodLog predicate** — CoreData cannot generate SQL for
    `CONTAINS[cdl]` through an optional relationship and crashes with "bad RHS".
 
-Results are unioned (deduplicated by log ID), then filtered in memory via `matchesQuery` on
-`"name brand"` combined text. Meal reconstruction (showing all items in a matched meal, not
-just the matching food) uses `allLogs` for recent meals and a timestamp-range DB fetch for
-older ones — no fetchLimit on the range fetch.
+Each word's matching logs are unioned (deduplicated), mapped to a `mealKey` (day + mealType),
+and added to `perWordMealKeys`. The final `matchedMealKeys` is the **intersection** of all
+per-word sets — a meal only qualifies if it contains at least one food matching **every** query
+word.
+
+**Meal content fetch — always use a timestamp-range DB query, never `allLogs`.**
+`allMatchingLogs` (the union of all per-word SQL results) provides anchor timestamps for every
+matched meal. A single `FetchDescriptor<FoodLog>` covering `minTimestamp...maxTimestamp` fetches
+all logs in the matched date range; the result is filtered by `matchedMealKeys`.
+
+**Do NOT use `allLogs` (capped at 1000) to fill matched meal content.** A meal may have some
+logs inside the cap and others outside it. Using `allLogs` and marking a meal "covered" once
+any one of its logs appears causes the older logs to be silently dropped — e.g. "spinach" from
+a smoothie logged months ago would be missing even though "strawberries" from the same meal
+is recent. The timestamp-range DB fetch is uncapped and correct for all meal ages.
+
+The Search tab's API results are also filtered by `matchesQuery(displayName + brands, query)`
+after the network call — only items matching all search words are shown.
 
 ### Recipes tab — in-memory `matchesQuery`
 
