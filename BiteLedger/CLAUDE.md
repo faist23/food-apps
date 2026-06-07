@@ -228,8 +228,17 @@ is kept only as a fallback for older logs that predate the `loggedAmount`/`logge
 
 ### Meals tab — per-word SQL + intersection + timestamp-range DB fetch
 
-`startMealSearch` runs a pair of SQL queries **for each query word**, intersects the resulting
-meal keys, then fetches the full meal content from the DB.
+**Minimum query length:** `startMealSearch` requires at least **2 characters** before firing.
+Single-character queries match virtually every row in the store and were the primary cause of
+multi-second main-thread freezes.
+
+**Threading:** all fetches run inside `MealSearchActor` (`Services/MealSearchActor.swift`), a
+`@ModelActor` with its own background `ModelContext`. `startMealSearch` `await`s the actor,
+then re-fetches the matched logs by UUID on the main context so SwiftUI observation works
+correctly. The main thread is never blocked.
+
+`MealSearchActor.search(query:)` runs a pair of SQL queries **for each query word**, intersects
+the resulting meal keys, then fetches the full meal content from the DB.
 
 For each word:
 1. **Name query** — `FetchDescriptor<FoodLog>` where `foodItem?.name.localizedStandardContains(word)`.
@@ -238,6 +247,7 @@ For each word:
    then `brandFoods.flatMap { $0.foodLogs }` for full log history via relationship traversal.
    **Do NOT put brand in the FoodLog predicate** — CoreData cannot generate SQL for
    `CONTAINS[cdl]` through an optional relationship and crashes with "bad RHS".
+   Relationship faulting happens on the background context so the main thread stays free.
 
 Each word's matching logs are unioned (deduplicated), mapped to a `mealKey` (day + mealType),
 and added to `perWordMealKeys`. The final `matchedMealKeys` is the **intersection** of all
@@ -254,6 +264,10 @@ logs inside the cap and others outside it. Using `allLogs` and marking a meal "c
 any one of its logs appears causes the older logs to be silently dropped — e.g. "spinach" from
 a smoothie logged months ago would be missing even though "strawberries" from the same meal
 is recent. The timestamp-range DB fetch is uncapped and correct for all meal ages.
+
+The actor returns `[UUID]` (not model objects — `@Model` types are not `Sendable`). `startMealSearch`
+re-fetches on the main context using `#Predicate { matchedIDs.contains($0.id) }`, which translates
+to a fast indexed `IN` query bounded by the result set size.
 
 The Search tab's API results are also filtered by `matchesQuery(displayName + brands, query)`
 after the network call — only items matching all search words are shown.
@@ -320,6 +334,12 @@ a completely separate prefix namespace that the seeder never touches.
   — NOT `@Query`. With 1000+ logs, `@Query` blocks the main thread on sheet
   init, delaying keyboard appearance by several seconds. The `.task` loads
   after first render so the keyboard appears immediately.
+- **Meal search runs on `MealSearchActor`** — a `@ModelActor` with a dedicated background
+  `ModelContext` created in `.task {}` via `MealSearchActor(modelContainer: modelContext.container)`.
+  All `FetchDescriptor` calls (name scan, brand relationship traversal, timestamp-range fetch)
+  execute on the background context. `startMealSearch` `await`s the actor and re-fetches
+  matched UUIDs on the main context. Minimum 2-character guard prevents single-char
+  full-table queries. Do NOT move these fetches back to the main-context `Task {}` path.
 - **`MealDiarySection`** receives `hasYesterdayMeal` and `yesterdayCalories`
   as `let` params from `TodayView` — does not fetch from the DB itself.
   Avoids 4× per-section DB queries on every log change.
