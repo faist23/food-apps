@@ -213,10 +213,13 @@ extension FoodLog {
         timestamp: Date = Date(),
         loggedAmount: Double? = nil,
         loggedUnit: String? = nil,
-        context: ModelContext
+        context: ModelContext? = nil
     ) -> FoodLog {
         // Update the personal food history index.
-        FoodHistoryEntry.upsert(food: food, mealType: mealType, in: context)
+        // Pass nil to defer the upsert to a background task (avoids blocking the UI).
+        if let context {
+            FoodHistoryEntry.upsert(food: food, mealType: mealType, in: context)
+        }
 
         // Resolve gram amount via the calculator's canonical resolution logic.
         let gramAmount = NutritionCalculator.resolveGramAmount(food: food, serving: serving, quantity: quantity)

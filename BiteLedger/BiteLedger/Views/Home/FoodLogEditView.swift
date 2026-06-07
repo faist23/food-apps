@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
 import BiteLedgerCore
 
 /// Edit an existing food log entry's serving size
@@ -934,6 +935,7 @@ struct FoodLogEditView: View {
     }
     
     private func incrementAmount() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         let currentValue = amountValue
         
         // Smart increment based on current value

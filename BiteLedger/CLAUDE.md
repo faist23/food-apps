@@ -323,8 +323,16 @@ a completely separate prefix namespace that the seeder never touches.
 - **`MealDiarySection`** receives `hasYesterdayMeal` and `yesterdayCalories`
   as `let` params from `TodayView` — does not fetch from the DB itself.
   Avoids 4× per-section DB queries on every log change.
-- **`TodayView.loadStreak()`** is guarded by `hasLoadedStreak` — runs once
-  per session, not on every sheet dismiss.
+- **`TodayView` food logging uses optimistic UI** — on log tap, the new `FoodLog`
+  is inserted at its sorted position in the in-memory `logs` array immediately,
+  without a `loadLogsForSelectedDate()` round-trip. `FoodHistoryEntry.upsert()`,
+  spotlight, and streak run in a deferred `Task` after the UI renders.
+- **`FoodLog.create(context:)`** — `context` is optional (default `nil`). Pass
+  `nil` when the caller will handle `FoodHistoryEntry.upsert()` separately
+  (e.g. TodayView's deferred task). Pass the model context in bulk-create paths
+  (CSVImporter, `copyMealFromYesterday`, `MealEntryView`) to keep the index current.
+- **`TodayView.loadStreak()`** short-circuits via the `streakCachedDate`/`cachedStreak`
+  cache — if the cache is current for today it returns immediately with no DB query.
 
 ---
 

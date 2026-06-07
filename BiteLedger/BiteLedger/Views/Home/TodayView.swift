@@ -168,6 +168,7 @@ struct TodayView: View {
                     modelContext.insert(addedItem.foodItem)
                 }
 
+                // context: nil — FoodHistoryEntry.upsert deferred to background task below.
                 let foodLog = FoodLog.create(
                     mealType: meal,
                     quantity: addedItem.quantity,
@@ -175,8 +176,7 @@ struct TodayView: View {
                     serving: addedItem.servingSize,
                     timestamp: timestamp,
                     loggedAmount: addedItem.loggedAmount,
-                    loggedUnit: addedItem.loggedUnit,
-                    context: modelContext
+                    loggedUnit: addedItem.loggedUnit
                 )
                 modelContext.insert(foodLog)
 
@@ -193,8 +193,9 @@ struct TodayView: View {
                 // One save for all mutations.
                 try? modelContext.save()
 
-                // Update the diary immediately — this is what the user sees first.
-                loadLogsForSelectedDate()
+                // Optimistic: insert at correct sorted position without a fetch round-trip.
+                let insertIdx = logs.firstIndex(where: { $0.timestamp <= foodLog.timestamp }) ?? logs.count
+                logs.insert(foodLog, at: insertIdx)
 
                 // T-08: First-log micro-celebration.
                 if triggerCelebration {
@@ -206,16 +207,17 @@ struct TodayView: View {
                     }
                 }
 
-                // Defer non-critical work so the diary update renders first.
+                // Defer non-critical work — runs after the optimistic UI update renders.
                 let foodItem = addedItem.foodItem
                 let foodName = foodItem.name
                 Task { @MainActor in
+                    FoodHistoryEntry.upsert(food: foodItem, mealType: meal, in: modelContext)
                     if isNewFood, foodItem.canonicalFoodID == nil {
                         foodItem.canonicalFoodID = CanonicalFoodMatcher.match(
                             foodName: foodName, context: modelContext
                         )?.id
-                        try? modelContext.save()
                     }
+                    try? modelContext.save()
                     loadSevenDayLogs()
                     loadStreak()
                 }

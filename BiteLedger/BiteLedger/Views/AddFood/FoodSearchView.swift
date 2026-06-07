@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 import BiteLedgerCore
 
 /// Returns true if `text` contains `query` as a contiguous phrase OR contains
@@ -21,11 +22,11 @@ struct FoodSearchView: View {
     // fallback for searchMyFoods() before the T-14 backfill completes.
     // @Query avoided — .task loads after first render so keyboard appears immediately.
     @State private var allLogs: [FoodLog] = []
-    // mealSearchLogs: logs matching the current Meals search query. Populated
-    // asynchronously (debounced 400ms) via a FoodItem name predicate so SwiftData
-    // filters in SQL — avoids loading all logs and lazy-faulting foodItem per row.
+    // mealSearchLogs: populated by MealSearchActor (background context) after a 400ms
+    // debounce. Main context re-fetches by returned UUIDs so objects are main-context bound.
     @State private var mealSearchLogs: [FoodLog] = []
     @State private var mealSearchTask: Task<Void, Never>?
+    @State private var mealSearchActor: MealSearchActor?
     // T-14: personal food history index — powers searchMyFoods() with no log cap.
     @State private var foodHistory: [FoodHistoryEntry] = []
     
@@ -212,6 +213,7 @@ struct FoodSearchView: View {
             }
             .background(Color.surfacePrimary)
             .task {
+                mealSearchActor = MealSearchActor(modelContainer: modelContext.container)
                 // Load asynchronously so the sheet + keyboard appear without delay.
                 // allLogs: Meals tab + serving-size lookups only (capped at 1000).
                 var d = FetchDescriptor<FoodLog>(
@@ -975,94 +977,36 @@ struct FoodSearchView: View {
         }
     }
     
-    /// Debounced async meal search. Cancels any in-flight task before starting.
-    /// Queries FoodLog directly with a JOIN predicate on foodItem.name — one SQL pair
-    /// per query word, then intersects meal-key sets so "chicken milk" returns meals
-    /// that contain a food matching "chicken" AND a food matching "milk" (cross-item).
+    /// Debounced meal search. Delegates all fetches to MealSearchActor (background context)
+    /// so the main thread never blocks. Requires 2+ characters; clears results for shorter input.
     private func startMealSearch(query: String) {
         mealSearchTask?.cancel()
-        guard !query.isEmpty else {
+        guard query.count >= 2 else {
             mealSearchLogs = []
             return
         }
+        guard let actor = mealSearchActor else { return }
         mealSearchTask = Task {
             try? await Task.sleep(for: .milliseconds(400))
-            guard !Task.isCancelled else { return }
-            let words = query.split(separator: " ").map(String.init)
-            let calendar = Calendar.current
-            func mealKey(_ log: FoodLog) -> String {
-                let day = calendar.startOfDay(for: log.timestamp)
-                return "\(day.timeIntervalSince1970)-\(log.mealType.rawValue)"
-            }
+            guard !Task.isCancelled, searchText == query else { return }
 
-            // For each query word, find the set of meal keys that contain a matching food.
-            // Intersecting those sets means every word must be represented in the meal.
-            var perWordMealKeys: [Set<String>] = []
-            // Collect all matching logs (union across words) for older-meal timestamp range.
-            var allMatchingLogs: [FoodLog] = []
-            var allMatchingLogIDs = Set<UUID>()
+            let matchedIDs = await actor.search(query: query)
 
-            for word in words {
-                // SQL fetch by food name (safe — name is non-optional on FoodLog.foodItem).
-                let nameLogs = (try? modelContext.fetch(
-                    FetchDescriptor<FoodLog>(
-                        predicate: #Predicate { $0.foodItem?.name.localizedStandardContains(word) == true },
-                        sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)]
-                    )
-                )) ?? []
+            guard !Task.isCancelled, searchText == query else { return }
 
-                // Brand search: CoreData cannot generate SQL for CONTAINS[cdl] through an optional
-                // relationship (foodItem?.brand crashes with "bad RHS"). Fetch FoodItems by brand.
-                let brandFoods = (try? modelContext.fetch(
-                    FetchDescriptor<FoodItem>(
-                        predicate: #Predicate { $0.brand?.localizedStandardContains(word) == true }
-                    )
-                )) ?? []
-                let brandLogs = brandFoods.flatMap { $0.foodLogs }
-
-                // Union for this word (deduplicate by log ID)
-                var seenIDs = Set(nameLogs.map { $0.id })
-                let wordLogs = nameLogs + brandLogs.filter { seenIDs.insert($0.id).inserted }
-
-                perWordMealKeys.append(Set(wordLogs.map { mealKey($0) }))
-
-                for log in wordLogs where allMatchingLogIDs.insert(log.id).inserted {
-                    allMatchingLogs.append(log)
-                }
-            }
-
-            // A meal qualifies only if it has at least one food matching EVERY query word.
-            guard let firstSet = perWordMealKeys.first else { return }
-            let matchedMealKeys = perWordMealKeys.dropFirst().reduce(firstSet) { $0.intersection($1) }
-
-            guard !matchedMealKeys.isEmpty else {
+            guard !matchedIDs.isEmpty else {
                 mealSearchLogs = []
                 return
             }
 
-            // Fetch the complete content of every matched meal from the DB.
-            // We cannot use allLogs (capped at 1000) because a meal may have some logs
-            // inside the cap and others outside it — the "covered keys" optimisation would
-            // silently drop the older logs, showing an incomplete meal (e.g. strawberries
-            // but no spinach). allMatchingLogs comes from uncapped SQL queries, so its
-            // timestamp range is authoritative for all matched meals.
-            let anchorLogs = allMatchingLogs.filter { matchedMealKeys.contains(mealKey($0)) }
-            if let minTime = anchorLogs.map({ $0.timestamp }).min(),
-               let maxTime = anchorLogs.map({ $0.timestamp }).max() {
-                let rangeStart = calendar.startOfDay(for: minTime)
-                let rangeEnd = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: maxTime)) ?? maxTime
-                let rangeLogs = (try? modelContext.fetch(
-                    FetchDescriptor<FoodLog>(
-                        predicate: #Predicate { $0.timestamp >= rangeStart && $0.timestamp < rangeEnd },
-                        sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)]
-                    )
-                )) ?? []
-                mealSearchLogs = rangeLogs
-                    .filter { matchedMealKeys.contains(mealKey($0)) }
-                    .sorted { $0.timestamp > $1.timestamp }
-            } else {
-                mealSearchLogs = []
-            }
+            // Re-fetch by UUID on the main context — fast indexed IN query, bounded by result set.
+            // Objects are main-context bound so SwiftUI observation works correctly.
+            mealSearchLogs = (try? modelContext.fetch(
+                FetchDescriptor<FoodLog>(
+                    predicate: #Predicate { matchedIDs.contains($0.id) },
+                    sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)]
+                )
+            )) ?? []
         }
     }
 
@@ -2045,6 +1989,7 @@ struct FoodItemRow: View {
 
             if let onQuickAdd {
                 Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     onQuickAdd()
                 } label: {
                     Image(systemName: "plus.circle.fill")
