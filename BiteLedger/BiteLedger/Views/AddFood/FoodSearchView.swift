@@ -243,6 +243,7 @@ struct FoodSearchView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         dismiss()
                     } label: {
                         HStack(spacing: 6) {
