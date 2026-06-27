@@ -151,76 +151,19 @@ struct TodayView: View {
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: streakMilestoneToast)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showFirstLogCelebration)
         .sheet(item: $selectedMeal) { meal in
-            FoodSearchView(mealType: meal) { addedItem in
-                let timestamp: Date
-
-                if Calendar.current.isDateInToday(selectedDate) {
-                    timestamp = Date()
-                } else {
-                    var components = Calendar.current.dateComponents([.year, .month, .day], from: selectedDate)
-                    components.hour = 12
-                    timestamp = Calendar.current.date(from: components) ?? selectedDate
-                }
-
-                // Insert FoodItem if new — no intermediate save needed.
-                let isNewFood = addedItem.foodItem.modelContext == nil
-                if isNewFood {
-                    modelContext.insert(addedItem.foodItem)
-                }
-
-                // context: nil — FoodHistoryEntry.upsert deferred to background task below.
-                let foodLog = FoodLog.create(
-                    mealType: meal,
-                    quantity: addedItem.quantity,
-                    food: addedItem.foodItem,
-                    serving: addedItem.servingSize,
-                    timestamp: timestamp,
-                    loggedAmount: addedItem.loggedAmount,
-                    loggedUnit: addedItem.loggedUnit
-                )
-                modelContext.insert(foodLog)
-
-                // Batch all in-memory state mutations before the single save.
-                var triggerCelebration = false
-                if let prefs = preferences, prefs.hasSeenFirstLogCelebration == nil {
-                    prefs.hasSeenFirstLogCelebration = true
-                    triggerCelebration = true
-                }
-                if Calendar.current.isDateInToday(selectedDate), let prefs = preferences {
-                    prefs.streakCachedDate = nil
-                }
-
-                // One save for all mutations.
-                try? modelContext.save()
-
-                // Optimistic: insert at correct sorted position without a fetch round-trip.
-                let insertIdx = logs.firstIndex(where: { $0.timestamp <= foodLog.timestamp }) ?? logs.count
-                logs.insert(foodLog, at: insertIdx)
-
-                // T-08: First-log micro-celebration.
-                if triggerCelebration {
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    withAnimation { showFirstLogCelebration = true }
-                    Task {
-                        try? await Task.sleep(for: .seconds(2))
-                        withAnimation { showFirstLogCelebration = false }
+            FoodSearchView(
+                mealType: meal,
+                // Whole meal at once → one save + one reload (see commitLogs).
+                onFoodsBatchAdded: { items in
+                    let staged = items.map { item -> (food: FoodItem, meal: MealType, isNew: Bool) in
+                        let s = stageLog(item, meal: meal)
+                        return (food: s.food, meal: meal, isNew: s.isNew)
                     }
+                    commitLogs(staged)
                 }
-
-                // Defer non-critical work — runs after the optimistic UI update renders.
-                let foodItem = addedItem.foodItem
-                let foodName = foodItem.name
-                Task { @MainActor in
-                    FoodHistoryEntry.upsert(food: foodItem, mealType: meal, in: modelContext)
-                    if isNewFood, foodItem.canonicalFoodID == nil {
-                        foodItem.canonicalFoodID = CanonicalFoodMatcher.match(
-                            foodName: foodName, context: modelContext
-                        )?.id
-                    }
-                    try? modelContext.save()
-                    loadSevenDayLogs()
-                    loadStreak()
-                }
+            ) { addedItem in
+                let s = stageLog(addedItem, meal: meal)
+                commitLogs([(food: s.food, meal: meal, isNew: s.isNew)])
             }
         }
         .sheet(item: $editingLog) { log in
@@ -275,6 +218,86 @@ struct TodayView: View {
         }
     }
     
+    // MARK: - Logging
+
+    /// Synchronous, cheap part of logging a food: creates + inserts the FoodLog and does
+    /// the optimistic `logs` insert so the entry renders immediately. Does NOT save or
+    /// reload — the caller batches that via `commitLogs` so a multi-item meal triggers a
+    /// single save + reload instead of one per item. Returns what `commitLogs` needs.
+    private func stageLog(_ addedItem: AddedFoodItem, meal: MealType) -> (food: FoodItem, isNew: Bool) {
+        let timestamp: Date
+        if Calendar.current.isDateInToday(selectedDate) {
+            timestamp = Date()
+        } else {
+            var components = Calendar.current.dateComponents([.year, .month, .day], from: selectedDate)
+            components.hour = 12
+            timestamp = Calendar.current.date(from: components) ?? selectedDate
+        }
+
+        // Insert FoodItem if new — no intermediate save needed.
+        let isNewFood = addedItem.foodItem.modelContext == nil
+        if isNewFood {
+            modelContext.insert(addedItem.foodItem)
+        }
+
+        // context: nil — FoodHistoryEntry.upsert deferred to commitLogs.
+        let foodLog = FoodLog.create(
+            mealType: meal,
+            quantity: addedItem.quantity,
+            food: addedItem.foodItem,
+            serving: addedItem.servingSize,
+            timestamp: timestamp,
+            loggedAmount: addedItem.loggedAmount,
+            loggedUnit: addedItem.loggedUnit
+        )
+        modelContext.insert(foodLog)
+
+        var triggerCelebration = false
+        if let prefs = preferences, prefs.hasSeenFirstLogCelebration == nil {
+            prefs.hasSeenFirstLogCelebration = true
+            triggerCelebration = true
+        }
+        if Calendar.current.isDateInToday(selectedDate), let prefs = preferences {
+            prefs.streakCachedDate = nil
+        }
+
+        // Optimistic: insert at correct sorted position without a fetch round-trip.
+        let insertIdx = logs.firstIndex(where: { $0.timestamp <= foodLog.timestamp }) ?? logs.count
+        logs.insert(foodLog, at: insertIdx)
+
+        // T-08: First-log micro-celebration (only the first staged item trips this).
+        if triggerCelebration {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            withAnimation { showFirstLogCelebration = true }
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                withAnimation { showFirstLogCelebration = false }
+            }
+        }
+
+        return (addedItem.foodItem, isNewFood)
+    }
+
+    /// Deferred, heavier part of logging — runs once for a whole batch after the optimistic
+    /// UI has rendered: history upsert + canonical match per item, then a single
+    /// `modelContext.save()` and a single `loadSevenDayLogs()` / `loadStreak()`.
+    private func commitLogs(_ staged: [(food: FoodItem, meal: MealType, isNew: Bool)]) {
+        guard !staged.isEmpty else { return }
+        Task { @MainActor in
+            for entry in staged {
+                FoodHistoryEntry.upsert(food: entry.food, mealType: entry.meal, in: modelContext)
+                if entry.isNew, entry.food.canonicalFoodID == nil {
+                    entry.food.canonicalFoodID = CanonicalFoodMatcher.match(
+                        foodName: entry.food.name, context: modelContext
+                    )?.id
+                }
+            }
+            try? modelContext.save()
+            loadSevenDayLogs()
+            loadStreak()
+        }
+    }
+
     // MARK: - Data Loading
 
     /// Loads the rolling 7-day window anchored to real today (not selectedDate).

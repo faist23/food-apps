@@ -31,6 +31,10 @@ struct FoodSearchView: View {
     @State private var foodHistory: [FoodHistoryEntry] = []
     
     let mealType: MealType
+    // Optional batch sink. When set, the meal-selection path delivers all chosen items
+    // at once so the host can persist + reload a single time instead of once per item
+    // (avoids N deferred save + loadSevenDayLogs passes). Falls back to onFoodAdded.
+    var onFoodsBatchAdded: (([AddedFoodItem]) -> Void)? = nil
     let onFoodAdded: (AddedFoodItem) -> Void
     
     @FocusState private var isSearchFocused: Bool
@@ -943,6 +947,11 @@ struct FoodSearchView: View {
                             .padding()
                             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
                             .onTapGesture {
+                                // Drop focus before presenting so the search field isn't
+                                // restored as first responder when the sheet dismisses —
+                                // that auto-restore is what re-summons the keyboard and
+                                // triggers the system-keyboard fallback.
+                                isSearchFocused = false
                                 selectedMeal = meal.logs
                             }
                         }
@@ -951,28 +960,51 @@ struct FoodSearchView: View {
                 }
             }
         }
+        // No onDismiss refocus: leaving focus untouched keeps the keyboard down so
+        // the user's chosen keyboard loads on their next deliberate tap (a forced
+        // refocus here is what made iOS fall back to the system keyboard).
         .sheet(item: Binding(
             get: { selectedMeal != nil ? SelectedMeal(logs: selectedMeal!) : nil },
             set: { selectedMeal = $0?.logs }
-        ), onDismiss: { isSearchFocused = true }) { mealWrapper in
+        )) { mealWrapper in
             MealItemSelectionView(
                 sourceLogs: mealWrapper.logs,
                 targetMealType: mealType,
                 onAdd: { selectedLogs in
-                    // Batch add selected logs - preserve exact gram amounts
-                    for log in selectedLogs {
-                        if let foodItem = log.foodItem,
-                           let servingSize = log.servingSize {
-                            let addedItem = AddedFoodItem(
-                                foodItem: foodItem,
-                                servingSize: servingSize,
-                                quantity: log.quantity
-                            )
-                            onFoodAdded(addedItem)
+                    // Confirm instantly: bump the toolbar badge + haptic so the user
+                    // sees the add land even though the search sheet stays open (D).
+                    let snapshot = selectedLogs.compactMap { log -> AddedFoodItem? in
+                        guard let foodItem = log.foodItem,
+                              let servingSize = log.servingSize else { return nil }
+                        return AddedFoodItem(
+                            foodItem: foodItem,
+                            servingSize: servingSize,
+                            quantity: log.quantity,
+                            // Preserve the exact amount/unit the user originally logged
+                            // (e.g. "150 g") so copied meal items don't drift to the
+                            // serving-based fallback on display.
+                            loggedAmount: log.loggedAmount,
+                            loggedUnit: log.loggedUnit
+                        )
+                    }
+                    // No withAnimation: let the badge be present immediately so it shows
+                    // the instant the dismissing sheet uncovers the toolbar, rather than
+                    // fading in over ~0.35s on top of the dismiss animation.
+                    addedCount += snapshot.count
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
+                    // Deliver the whole meal at once so the host saves + reloads a single
+                    // time. Falling back to per-item onFoodAdded would schedule N deferred
+                    // save + loadSevenDayLogs passes — the residual multi-item freeze.
+                    // No refreshLogs() here: its two large fetches would re-block, and the
+                    // deferred save still includes the just-added (pending) logs.
+                    if let batch = onFoodsBatchAdded {
+                        batch(snapshot)
+                    } else {
+                        for item in snapshot {
+                            onFoodAdded(item)
                         }
                     }
-                    addedCount += selectedLogs.count
-                    refreshLogs()
                 }
             )
         }
