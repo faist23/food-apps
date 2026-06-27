@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to BiteLedger and BitePlan are documented here.
+All notable changes to BiteLedger and BiteRecipe are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [0.3.1.0] - 2026-06-26
