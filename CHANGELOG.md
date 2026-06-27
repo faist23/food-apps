@@ -3,6 +3,29 @@
 All notable changes to BiteLedger and BitePlan are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
+## [0.3.1.0] - 2026-06-26
+
+### Fixed
+- **Adding a previous meal is now responsive (BiteLedger).** Selecting a past meal from the
+  Meals tab and confirming in the "Add Foods" window no longer freezes for several seconds.
+  Root-caused and fixed a chain of issues:
+  - **Keyboard fallback:** the meal sheet force-refocused the search field on dismiss; the
+    auto-restored first responder re-summoned the keyboard mid-transition and made iOS fall
+    back to the system keyboard instead of the user's chosen one. Focus is now dropped before
+    presenting the sheet and never force-restored.
+  - **Logging freeze:** `TodayView`'s logging ran a synchronous `modelContext.save()` on the
+    critical path. Logging is split into `stageLog` (cheap, synchronous, optimistic insert)
+    and `commitLogs` (deferred save + reload), so the UI is never blocked by a disk flush.
+  - **Multi-item hitch:** the meal path looped per-item logging, scheduling N deferred
+    save + spotlight + streak passes. A new `onFoodsBatchAdded` sink delivers the whole meal
+    at once for a single save and single reload.
+  - **Late confirmation badge:** removed the badge fade so the count appears the instant the
+    dismissing sheet uncovers the toolbar.
+- **Copied meal items preserve their logged amount/unit (BiteLedger).** Items added from a
+  previous meal now keep the exact amount/unit originally logged (e.g. "150 g") instead of
+  drifting to the serving-based display fallback. Nutrition was always correct; this fixes the
+  displayed amount only.
+
 ## [0.3.0.0] - 2026-04-22
 
 ### Added

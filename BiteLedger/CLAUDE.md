@@ -226,6 +226,13 @@ exactly what the user had last time.
 stored display values) over parsing `servingSize.label` via `ServingSizeParser`. Label parsing
 is kept only as a fallback for older logs that predate the `loggedAmount`/`loggedUnit` fields.
 
+The **Meals tab "Add Foods" copy path** (`MealItemSelectionView` → `onAdd`) must also carry
+`log.loggedAmount`/`log.loggedUnit` into the `AddedFoodItem` it builds. Omitting them lets
+`FoodLog.create` reconstruct display via the `quantity` / `serving.unit` fallback, which drifts
+for amounts that don't map 1:1 to the serving (e.g. a "150 g" log re-displays as "1.5 serving").
+Nutrition is unaffected (it derives from `quantity × serving`), but the display amount/unit must
+be preserved.
+
 ### Meals tab — per-word SQL + intersection + timestamp-range DB fetch
 
 **Minimum query length:** `startMealSearch` requires at least **2 characters** before firing.
@@ -343,10 +350,26 @@ a completely separate prefix namespace that the seeder never touches.
 - **`MealDiarySection`** receives `hasYesterdayMeal` and `yesterdayCalories`
   as `let` params from `TodayView` — does not fetch from the DB itself.
   Avoids 4× per-section DB queries on every log change.
-- **`TodayView` food logging uses optimistic UI** — on log tap, the new `FoodLog`
-  is inserted at its sorted position in the in-memory `logs` array immediately,
-  without a `loadLogsForSelectedDate()` round-trip. `FoodHistoryEntry.upsert()`,
-  spotlight, and streak run in a deferred `Task` after the UI renders.
+- **`TodayView` food logging uses optimistic UI, split into `stageLog` + `commitLogs`** —
+  `stageLog(_:meal:)` is the cheap synchronous half: it creates + inserts the `FoodLog`
+  and inserts it at its sorted position in the in-memory `logs` array immediately, with
+  **no `modelContext.save()`** on the critical path (a synchronous save here blocks the
+  badge render and the dismiss animation). `commitLogs(_:)` is the deferred half — it runs
+  `FoodHistoryEntry.upsert()` + canonical match per item, then **one** `modelContext.save()`
+  and **one** `loadSevenDayLogs()` / `loadStreak()` for the whole batch. Do NOT reintroduce
+  a synchronous save in `stageLog`; the unstructured `Task` in `commitLogs` persists the
+  pending inserts a main-actor hop later (same optimistic durability window the index/streak
+  work already accepts).
+- **Multi-item meal adds use the `onFoodsBatchAdded` sink on `FoodSearchView`** — the
+  meal-selection ("Add Foods") path delivers all chosen items at once so `TodayView` runs
+  `commitLogs` a single time. Looping per-item `onFoodAdded` instead would schedule N
+  deferred save + `loadSevenDayLogs` + `loadStreak` passes (the multi-item freeze). Single
+  adds fall back to `onFoodAdded` → `stageLog` + `commitLogs([one])`.
+- **The meal sheet must not force keyboard focus** — drop `isSearchFocused = false` before
+  presenting the meal sheet and do NOT set `isSearchFocused = true` in its `onDismiss`.
+  A programmatic refocus restores the search field as first responder mid-dismiss, which
+  re-summons the keyboard and makes iOS fall back to the system keyboard instead of the
+  user's chosen one. Let the keyboard return only on a deliberate user tap.
 - **`FoodLog.create(context:)`** — `context` is optional (default `nil`). Pass
   `nil` when the caller will handle `FoodHistoryEntry.upsert()` separately
   (e.g. TodayView's deferred task). Pass the model context in bulk-create paths
