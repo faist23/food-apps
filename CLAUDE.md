@@ -55,7 +55,10 @@ fail to open on whichever app launches second.
 - `RecipeIngredient` → `FoodItem` (nullify on delete)
 - `RecipeIngredient` → `ServingSize` (nullify on delete — **no declared inverse**;
   must be manually nullified before deleting ServingSizes or the app will crash
-  with "model instance was invalidated")
+  with "model instance was invalidated". Use `ServingSize.safeDelete(_:in:)`
+  (`BiteLedgerCore/Models/ServingSize.swift`) for every ServingSize deletion —
+  it nullifies both `FoodLog.servingSize` and `RecipeIngredient.servingSize`
+  before deleting. Do not call `modelContext.delete(servingSize)` directly.)
 - `FoodHistoryEntry.food` → `FoodItem` (nullify on delete — **unidirectional, no back-reference on FoodItem**;
   FoodItem intentionally has no `historyEntries` property — adding one would cause SwiftData to follow
   the relationship edge when computing schema checksums, making SchemaV1 and SchemaV2 produce identical
@@ -109,6 +112,12 @@ fingerprint identically).
 - Use `NutritionCalculator.preview()` for live picker previews (not stored)
 - Use `NutritionCalculator.calculate()` only when creating a new `FoodLog`
 - Use `NutritionCalculator.fromLog()` when displaying existing log entries
+- Use `NutritionCalculator.perPortionCalories(caloriesPer100g:gramWeight:)` for
+  display-only math on data that isn't a `FoodItem` yet (e.g. a raw API search
+  result shown before the user selects it)
+- Use `NutritionCalculator.per100gValue(from:gramAmount:)` to convert an
+  absolute nutrient amount back to its per-100g equivalent (e.g. building
+  `ProductInfo` display data from an already-logged amount)
 
 ### FoodItem Nutrition Modes
 - `NutritionMode.per100g` — USDA, OpenFoodFacts, packaged foods with known gram

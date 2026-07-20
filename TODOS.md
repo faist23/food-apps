@@ -40,6 +40,13 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 
 ## P3 — Future
 
+**Meal Planning — on hold (2026-07-20):** Craig tried the shipped Meal Planning flow
+hands-on and found it too involved to be worthwhile for this app. All `T-MP*`,
+`T-12-iPad`, `T-12-MealTemplates`, `T-12-AllMealTypes`, `T-12-WeekSummary`,
+`T-12-TodayView`, and `T-12-ShoppingCart` items below are paused pending a product
+decision, not just low-priority — don't lead with these when picking up next work.
+Current focus is BiteLedger performance/architecture efficiency instead.
+
 ---
 
 ### T-MP1: Meal Planner — Copy to Next Week: Add Merge Option
@@ -259,6 +266,21 @@ Before shipping any SchemaV2+ change: verify that a SchemaV1 app can open a V2 s
 ---
 
 ## Completed
+
+- **BiteLedger Efficiency Pass (2026-07-20):** Prompted by Craig deprioritizing meal planning
+  in favor of BiteLedger perf/architecture work. `ServingSize.safeDelete(_:in:)` added to
+  BiteLedgerCore — nullifies `RecipeIngredient.servingSize` (no declared inverse) before
+  deleting a serving, closing the invalidated-instance crash risk in
+  `FoodItemEditorView.deletePortionSize`. `MyFoodsQuery.fetch()` extracted — My Foods search
+  now debounces (300ms) and pushes the name/brand match into a SQL predicate instead of
+  fetching every `FoodItem` on each keystroke. `NutritionCalculator` gained
+  `perPortionCalories()` and `per100gValue()`; three hand-rolled per100g formulas in
+  FoodSearchView/RecipeImportReviewView now route through the calculator. `AddedFoodItem`
+  computes nutrition once in `init` instead of per field access. `TodayView` caches the
+  spotlight-chip `DateFormatter` and groups today's logs once per render instead of
+  filtering 8 times. Removed dead `SearchDebugView.swift`. Also fixed three pre-existing,
+  unrelated test-target bugs found along the way (see commit 05e5af7 for detail) that were
+  blocking `BiteLedgerTests` from compiling at all.
 
 - **T-14: SchemaV2 — FoodHistoryEntry (Personal Food History Index)** — New `FoodHistoryEntry` @Model (one record per (FoodItem, MealType)), lightweight V1→V2 migration in both apps, `FoodLog.create()` extended with `context:` param to drive upsert at all 6 call sites, chunked @MainActor backfill guarded by `UserPreferences.hasBackfilledFoodHistory`, `RecentFoodsForMealView` migrated to O(1) history-based query, 12 unit tests. **Completed:** feature/v1-ship (2026-03-22)
 

@@ -295,7 +295,8 @@ name+brand text independently and is correct as-is.
 
 ## MyFoodsManagementView — Filter Invariant (Do Not Regress)
 
-`loadFoods()` and `startMyFoodsSearch()` use identical three-tier filter logic:
+`MyFoodsQuery.fetch()` (`Views/Settings/MyFoodsQuery.swift`) and `startMyFoodsSearch()`
+(FoodSearchView.swift) use identical three-tier filter logic:
 
 1. Exclude `usda_seed_*` and `built_in_*` (catalog)
 2. Always include known user-created sources: `isEmpty`, `"Manual"`, `"Quick Add"`,
@@ -305,6 +306,14 @@ name+brand text independently and is correct as-is.
 **`loggedIDs` is built with `hasPrefix` matching** (`usda_*`, `fatsecret_*`), NOT exact
 strings like `"USDA"` or `"FatSecret"`. Real source values are `"usda_<fdcId>"` and
 `"fatsecret_<id>"` — exact-string matching silently never fires.
+
+**Performance:** `MyFoodsManagementView.loadFoods()` pushes the active-search name/brand
+match into a SQL `#Predicate` (via `MyFoodsQuery.fetch`) instead of fetching every
+`FoodItem` and filtering in memory, and only runs on a 300ms debounce while typing —
+mirrors `startMyFoodsSearch()`'s pattern in FoodSearchView. Sort-order changes and the
+initial `.onAppear` load run immediately (no debounce). Do NOT go back to an unbounded
+`FetchDescriptor<FoodItem>()` fired directly from `.onChange(of: searchText)` — that
+was a full-table scan on every keystroke.
 
 Last-used sort uses FoodHistoryEntry + `food.foodLogs` fallback (two-pass). Do not
 revert to FoodHistoryEntry-only — foods logged before T-14 launched have no entry.
