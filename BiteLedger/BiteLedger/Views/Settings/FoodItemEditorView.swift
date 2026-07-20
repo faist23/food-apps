@@ -750,28 +750,17 @@ struct FoodItemEditorView: View {
     }
     
     private func deletePortionSize(_ servingSize: ServingSize) {
-        // First, find all FoodLog entries that reference this ServingSize and set their servingSize to nil
-        let servingSizeId = servingSize.id
-        let descriptor = FetchDescriptor<FoodLog>(
-            predicate: #Predicate<FoodLog> { log in
-                log.servingSize?.id == servingSizeId
-            }
-        )
-        
         do {
-            let affectedLogs = try modelContext.fetch(descriptor)
-            for log in affectedLogs {
-                log.servingSize = nil  // Nullify the reference
-            }
-            
             // Remove from the array
             if let index = foodItem.servingSizes.firstIndex(where: { $0.id == servingSize.id }) {
                 foodItem.servingSizes.remove(at: index)
             }
-            
-            // Delete the ServingSize
-            modelContext.delete(servingSize)
-            
+
+            // Nullifies FoodLog + RecipeIngredient references (RecipeIngredient has no
+            // declared inverse, so it must be nullified manually or the app will crash
+            // the next time that recipe is opened) then deletes the ServingSize.
+            try ServingSize.safeDelete(servingSize, in: modelContext)
+
             // Save all changes
             try modelContext.save()
         } catch {

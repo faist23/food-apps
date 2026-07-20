@@ -237,25 +237,24 @@ struct AddedFoodItem: Identifiable {
     var loggedAmount: Double? = nil  // Display amount user typed (e.g., 2 for "2 cups")
     var loggedUnit: String? = nil    // Display unit string (e.g., "cup")
 
-    var calories: Double {
-        let nutrition = NutritionCalculator.calculate(food: foodItem, serving: servingSize, quantity: quantity)
-        return nutrition.calories
+    private let nutrition: NutritionCalculator.Result
+
+    init(
+        foodItem: FoodItem, servingSize: ServingSize, quantity: Double,
+        loggedAmount: Double? = nil, loggedUnit: String? = nil
+    ) {
+        self.foodItem = foodItem
+        self.servingSize = servingSize
+        self.quantity = quantity
+        self.loggedAmount = loggedAmount
+        self.loggedUnit = loggedUnit
+        self.nutrition = NutritionCalculator.calculate(food: foodItem, serving: servingSize, quantity: quantity)
     }
 
-    var protein: Double {
-        let nutrition = NutritionCalculator.calculate(food: foodItem, serving: servingSize, quantity: quantity)
-        return nutrition.protein
-    }
-
-    var carbs: Double {
-        let nutrition = NutritionCalculator.calculate(food: foodItem, serving: servingSize, quantity: quantity)
-        return nutrition.carbs
-    }
-
-    var fat: Double {
-        let nutrition = NutritionCalculator.calculate(food: foodItem, serving: servingSize, quantity: quantity)
-        return nutrition.fat
-    }
+    var calories: Double { nutrition.calories }
+    var protein: Double { nutrition.protein }
+    var carbs: Double { nutrition.carbs }
+    var fat: Double { nutrition.fat }
 
     var totalGrams: Double? {
         guard let gramWeight = servingSize.gramWeight else { return nil }

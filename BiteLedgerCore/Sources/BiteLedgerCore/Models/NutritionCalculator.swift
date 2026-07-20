@@ -412,6 +412,25 @@ public struct NutritionCalculator {
         }
     }
 
+    // MARK: - Raw Display Conversions (no FoodItem — for pre-selection API/search results)
+
+    /// Converts a raw per-100g calorie value + a gram weight into absolute calories.
+    /// Same formula as `calculate(food:gramAmount:)` but for data that isn't a
+    /// `FoodItem` yet (e.g. a raw API search result being shown before the user
+    /// selects it), so `calculate()` can't be used directly.
+    public static func perPortionCalories(caloriesPer100g: Double, gramWeight: Double) -> Double {
+        guard gramWeight > 0 else { return 0 }
+        return caloriesPer100g * gramWeight / 100.0
+    }
+
+    /// Converts an absolute nutrient value consumed over `gramAmount` grams into its
+    /// per-100g equivalent. The inverse of `perPortionCalories` — used to build
+    /// per-100g `ProductInfo` display data from an already-logged amount.
+    public static func per100gValue(from value: Double, gramAmount: Double) -> Double {
+        guard gramAmount > 0 else { return 0 }
+        return (value / gramAmount) * 100.0
+    }
+
     // MARK: - Private Helpers
 
     /// Converts food + serving + quantity into a gram amount for `calculate(food:gramAmount:)`.

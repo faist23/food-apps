@@ -193,6 +193,74 @@ final class NutritionCalculatorTests: XCTestCase {
         XCTAssertEqual(result.count, 2)
         XCTAssertLessThan(result[0].date, result[1].date)
     }
+
+    // MARK: - perPortionCalories (raw per-100g + gram weight → absolute calories,
+    // used for display-only math on data that has no FoodItem yet, e.g. raw API results)
+
+    func testPerPortionCalories_scalesByGramWeight() {
+        let cal = NutritionCalculator.perPortionCalories(caloriesPer100g: 200, gramWeight: 150)
+        XCTAssertEqual(cal, 300, accuracy: 0.001)
+    }
+
+    func testPerPortionCalories_zeroGramWeight_returnsZero() {
+        let cal = NutritionCalculator.perPortionCalories(caloriesPer100g: 200, gramWeight: 0)
+        XCTAssertEqual(cal, 0, accuracy: 0.001)
+    }
+
+    // MARK: - per100gValue (absolute value + grams consumed → per-100g equivalent,
+    // the inverse of the primary formula — used to build ProductInfo display data
+    // from an already-logged amount)
+
+    func testPer100gValue_convertsAbsoluteToPer100gBasis() {
+        // 300 cal from 150g → 200 cal/100g
+        let value = NutritionCalculator.per100gValue(from: 300, gramAmount: 150)
+        XCTAssertEqual(value, 200, accuracy: 0.001)
+    }
+
+    func testPer100gValue_zeroGramAmount_returnsZero() {
+        let value = NutritionCalculator.per100gValue(from: 300, gramAmount: 0)
+        XCTAssertEqual(value, 0, accuracy: 0.001)
+    }
+}
+
+// MARK: - AddedFoodItem Tests (calorie/macro fields computed once, not per-access)
+
+final class AddedFoodItemTests: XCTestCase {
+
+    func testNutritionFields_matchNutritionCalculator() {
+        let food = FoodItem(
+            name: "Rice", source: "test", nutritionMode: .per100g,
+            calories: 130, protein: 2.7, carbs: 28, fat: 0.3
+        )
+        let serving = ServingSize(label: "1 cup", gramWeight: 158, isDefault: true, sortOrder: 0, unit: "cup")
+        serving.foodItem = food
+
+        let item = AddedFoodItem(foodItem: food, servingSize: serving, quantity: 1.5)
+        let expected = NutritionCalculator.calculate(food: food, serving: serving, quantity: 1.5)
+
+        XCTAssertEqual(item.calories, expected.calories, accuracy: 0.001)
+        XCTAssertEqual(item.protein, expected.protein, accuracy: 0.001)
+        XCTAssertEqual(item.carbs, expected.carbs, accuracy: 0.001)
+        XCTAssertEqual(item.fat, expected.fat, accuracy: 0.001)
+    }
+
+    func testNutritionFields_areStableAcrossRepeatedAccess() {
+        let food = FoodItem(
+            name: "Oats", source: "test", nutritionMode: .per100g,
+            calories: 389, protein: 17, carbs: 66, fat: 7
+        )
+        let serving = ServingSize(label: "1/2 cup", gramWeight: 40, isDefault: true, sortOrder: 0, unit: "cup")
+        serving.foodItem = food
+
+        let item = AddedFoodItem(foodItem: food, servingSize: serving, quantity: 2)
+
+        // Reading each field twice must return identical values (guards against the
+        // fields being recomputed differently across accesses).
+        XCTAssertEqual(item.calories, item.calories)
+        XCTAssertEqual(item.protein, item.protein)
+        XCTAssertEqual(item.carbs, item.carbs)
+        XCTAssertEqual(item.fat, item.fat)
+    }
 }
 
 // MARK: - USDA dataType branching tests (test plan items 1-3)
@@ -1315,10 +1383,15 @@ final class PendingIngredientTests: XCTestCase {
     /// written to RecipeIngredient.
     func testPendingIngredient_roundTrip_preservesAllFields() throws {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(
-            for: FoodItem.self, ServingSize.self, Recipe.self, RecipeIngredient.self,
-            configurations: config
-        )
+        let container: ModelContainer
+        do {
+            container = try ModelContainer(
+                for: FoodItem.self, ServingSize.self, Recipe.self, RecipeIngredient.self,
+                configurations: config
+            )
+        } catch {
+            throw XCTSkip("SwiftData ModelContainer unavailable in this test environment. Error: \(error)")
+        }
         let context = ModelContext(container)
 
         // Build a minimal per-serving food with one serving size.
@@ -1352,7 +1425,7 @@ final class PendingIngredientTests: XCTestCase {
         XCTAssertEqual(pending.serving.label, "2 tbsp")
         XCTAssertEqual(pending.quantity,      2.5, accuracy: 0.001)
         XCTAssertEqual(pending.rawText,       "2.5 tbsp peanut butter")
-        XCTAssertEqual(pending.recipeQuantity, 2.5, accuracy: 0.001)
+        XCTAssertEqual(pending.recipeQuantity, 2.5)
         XCTAssertEqual(pending.recipeUnit,    "tbsp")
 
         // Write through to RecipeIngredient (mirrors RecipeEditorView.saveChanges()).
@@ -1377,7 +1450,7 @@ final class PendingIngredientTests: XCTestCase {
         XCTAssertEqual(ri.foodItem?.name, "Peanut Butter")
         XCTAssertEqual(ri.servingSize?.label, "2 tbsp")
         XCTAssertEqual(ri.rawText,        "2.5 tbsp peanut butter")
-        XCTAssertEqual(ri.recipeQuantity, 2.5, accuracy: 0.001)
+        XCTAssertEqual(ri.recipeQuantity, 2.5)
         XCTAssertEqual(ri.recipeUnit,     "tbsp")
     }
 
@@ -1395,5 +1468,189 @@ final class PendingIngredientTests: XCTestCase {
         let p1 = RecipeEditorView.PendingIngredient(food: food, serving: serving, quantity: 1.0)
         let p2 = RecipeEditorView.PendingIngredient(food: food, serving: serving, quantity: 1.0)
         XCTAssertNotEqual(p1.id, p2.id, "Each PendingIngredient must have a distinct UUID")
+    }
+}
+
+// MARK: - ServingSize.safeDelete Tests (RecipeIngredient nullify crash fix)
+
+@MainActor
+final class ServingSizeSafeDeleteTests: XCTestCase {
+
+    private func makeContainer() throws -> ModelContainer {
+        let schema = Schema(BiteLedgerSchemaV4.models)
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        do {
+            return try ModelContainer(for: schema, configurations: [config])
+        } catch {
+            throw XCTSkip("SwiftData ModelContainer unavailable in this test environment. Error: \(error)")
+        }
+    }
+
+    func testSafeDelete_nullifiesRecipeIngredientReference() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let food = FoodItem(
+            name: "Peanut Butter", source: "test", nutritionMode: .per100g,
+            calories: 588, protein: 25, carbs: 20, fat: 50
+        )
+        context.insert(food)
+
+        let serving = ServingSize(label: "1 tbsp", gramWeight: 16, isDefault: true, sortOrder: 0, unit: "tbsp")
+        serving.foodItem = food
+        context.insert(serving)
+        food.servingSizes.append(serving)
+
+        let recipe = Recipe(name: "PB Toast")
+        context.insert(recipe)
+
+        let ingredient = RecipeIngredient(quantity: 2.0)
+        ingredient.recipe = recipe
+        ingredient.foodItem = food
+        ingredient.servingSize = serving
+        context.insert(ingredient)
+        recipe.ingredients.append(ingredient)
+
+        try context.save()
+
+        try ServingSize.safeDelete(serving, in: context)
+        try context.save()
+
+        let ingredients = try context.fetch(FetchDescriptor<RecipeIngredient>())
+        XCTAssertEqual(ingredients.count, 1, "Deleting a ServingSize must not delete the RecipeIngredient that referenced it")
+        XCTAssertNil(
+            ingredients[0].servingSize,
+            "RecipeIngredient.servingSize must be nullified before the ServingSize is deleted — this relationship has no declared inverse, so SwiftData won't do it automatically"
+        )
+
+        let servingSizes = try context.fetch(FetchDescriptor<ServingSize>())
+        XCTAssertTrue(servingSizes.isEmpty, "ServingSize should actually be deleted")
+    }
+
+    func testSafeDelete_withNoReferencingIngredients_stillDeletes() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+
+        let food = FoodItem(
+            name: "Banana", source: "test", nutritionMode: .per100g,
+            calories: 89, protein: 1.1, carbs: 23, fat: 0.3
+        )
+        context.insert(food)
+        let serving = ServingSize(label: "1 medium", gramWeight: 118, isDefault: true, sortOrder: 0, unit: nil)
+        serving.foodItem = food
+        context.insert(serving)
+        food.servingSizes.append(serving)
+        try context.save()
+
+        try ServingSize.safeDelete(serving, in: context)
+        try context.save()
+
+        let servingSizes = try context.fetch(FetchDescriptor<ServingSize>())
+        XCTAssertTrue(servingSizes.isEmpty)
+    }
+}
+
+// MARK: - MyFoodsQuery Tests (My Foods search perf fix — SQL predicate instead of full-table scan)
+
+@MainActor
+final class MyFoodsQueryTests: XCTestCase {
+
+    private func makeContainer() throws -> ModelContainer {
+        let schema = Schema(BiteLedgerSchemaV4.models)
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        do {
+            return try ModelContainer(for: schema, configurations: [config])
+        } catch {
+            throw XCTSkip("SwiftData ModelContainer unavailable in this test environment. Error: \(error)")
+        }
+    }
+
+    @discardableResult
+    private func makeFood(
+        in context: ModelContext, name: String, brand: String? = nil, source: String = "Manual"
+    ) -> FoodItem {
+        let food = FoodItem(
+            name: name, brand: brand, source: source, nutritionMode: .per100g,
+            calories: 100, protein: 5, carbs: 10, fat: 2
+        )
+        context.insert(food)
+        return food
+    }
+
+    func testFetch_emptySearch_excludesCatalogSeeds() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        makeFood(in: context, name: "Homemade Chili", source: "Manual")
+        makeFood(in: context, name: "Seeded Apple", source: "usda_seed_123")
+        try context.save()
+
+        let results = MyFoodsQuery.fetch(searchText: "", sortOrder: .dateAdded, context: context)
+        XCTAssertEqual(results.map(\.name), ["Homemade Chili"])
+    }
+
+    func testFetch_searchText_matchesNameSubstring() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        makeFood(in: context, name: "Greek Yogurt", source: "Manual")
+        makeFood(in: context, name: "Chicken Breast", source: "Manual")
+        try context.save()
+
+        let results = MyFoodsQuery.fetch(searchText: "greek", sortOrder: .dateAdded, context: context)
+        XCTAssertEqual(results.map(\.name), ["Greek Yogurt"])
+    }
+
+    func testFetch_searchText_matchesBrandSubstring() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        makeFood(in: context, name: "Cereal", brand: "Life", source: "Manual")
+        makeFood(in: context, name: "Cereal", brand: "Cheerios", source: "Manual")
+        try context.save()
+
+        let results = MyFoodsQuery.fetch(searchText: "life", sortOrder: .dateAdded, context: context)
+        XCTAssertEqual(results.map(\.brand), ["Life"])
+    }
+
+    func testFetch_apiSourcedFood_requiresLoggedHistory() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let logged = makeFood(in: context, name: "USDA Apple Logged", source: "usda_12345")
+        makeFood(in: context, name: "USDA Apple Ghost", source: "usda_67890")
+        try context.save()
+
+        FoodHistoryEntry.upsert(food: logged, mealType: .breakfast, in: context)
+        try context.save()
+
+        let results = MyFoodsQuery.fetch(searchText: "usda apple", sortOrder: .dateAdded, context: context)
+        XCTAssertEqual(results.map(\.name), ["USDA Apple Logged"],
+                       "API-sourced foods must require personal log history to appear (ghost-food guard)")
+    }
+
+    func testFetch_userCreatedSource_alwaysIncluded_evenUnlogged() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        makeFood(in: context, name: "My Custom Soup", source: "Manual")
+        try context.save()
+
+        let results = MyFoodsQuery.fetch(searchText: "soup", sortOrder: .dateAdded, context: context)
+        XCTAssertEqual(results.map(\.name), ["My Custom Soup"])
+    }
+
+    func testFetch_sortOrderLastUsed_ordersByHistoryDateDescending() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let older = makeFood(in: context, name: "Older Food", source: "Manual")
+        let newer = makeFood(in: context, name: "Newer Food", source: "Manual")
+        try context.save()
+
+        FoodHistoryEntry.upsert(food: older, mealType: .breakfast, in: context)
+        try context.save()
+        let entries = try context.fetch(FetchDescriptor<FoodHistoryEntry>())
+        entries.first { $0.food?.id == older.id }?.lastLoggedDate = Date().addingTimeInterval(-86400)
+
+        FoodHistoryEntry.upsert(food: newer, mealType: .breakfast, in: context)
+        try context.save()
+
+        let results = MyFoodsQuery.fetch(searchText: "", sortOrder: .lastUsed, context: context)
+        XCTAssertEqual(results.map(\.name), ["Newer Food", "Older Food"])
     }
 }

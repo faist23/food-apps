@@ -1245,13 +1245,12 @@ struct FoodSearchView: View {
                 // Per-100g foods without a serving fall back to 100g as before.
                 actualGrams = foodItem.nutritionMode == .perServing ? 1.0 : 100.0
             }
-            
+
             // Convert to per-100g for ProductInfo display
-            let baseGrams = actualGrams
-            let per100gCalories = (actualCalories / baseGrams) * 100.0
-            let per100gProtein = (actualProtein / baseGrams) * 100.0
-            let per100gCarbs = (actualCarbs / baseGrams) * 100.0
-            let per100gFat = (actualFat / baseGrams) * 100.0
+            let per100gCalories = NutritionCalculator.per100gValue(from: actualCalories, gramAmount: actualGrams)
+            let per100gProtein = NutritionCalculator.per100gValue(from: actualProtein, gramAmount: actualGrams)
+            let per100gCarbs = NutritionCalculator.per100gValue(from: actualCarbs, gramAmount: actualGrams)
+            let per100gFat = NutritionCalculator.per100gValue(from: actualFat, gramAmount: actualGrams)
             
             return ProductInfo(
                 code: foodItem.barcode ?? "myfoods_\(foodItem.id.uuidString)",
@@ -2058,7 +2057,7 @@ struct FoodItemRow: View {
 
     private func caloriesDisplayText(for foodItem: FoodItem, serving: ServingSize) -> String {
         if foodItem.nutritionMode == .per100g, let gramWeight = serving.gramWeight, gramWeight > 0 {
-            let displayCalories = Int((foodItem.calories / 100.0) * gramWeight)
+            let displayCalories = Int(NutritionCalculator.preview(food: foodItem, serving: serving, quantity: 1).calories)
             let gramsText = gramWeight.truncatingRemainder(dividingBy: 1) == 0
                 ? String(Int(gramWeight))
                 : String(format: "%.0f", gramWeight)

@@ -97,4 +97,37 @@ public final class ServingSize {
         }
         return label
     }
+
+    /// Safely deletes a ServingSize, nullifying every reference to it first.
+    ///
+    /// `FoodLog.servingSize` pairs with the declared `ServingSize.foodLogs` relationship,
+    /// so SwiftData should nullify it automatically — this loop is a defensive no-op that
+    /// preserves the safety net that existed before this method was extracted.
+    /// `RecipeIngredient.servingSize` has **no** declared inverse — SwiftData cannot
+    /// propagate the delete, and touching an ingredient that still points at a deleted
+    /// ServingSize crashes with "model instance was invalidated". Nullify it explicitly
+    /// before every delete.
+    public static func safeDelete(_ servingSize: ServingSize, in context: ModelContext) throws {
+        let servingSizeId = servingSize.id
+
+        let affectedLogs = try context.fetch(
+            FetchDescriptor<FoodLog>(
+                predicate: #Predicate<FoodLog> { $0.servingSize?.id == servingSizeId }
+            )
+        )
+        for log in affectedLogs {
+            log.servingSize = nil
+        }
+
+        let affectedIngredients = try context.fetch(
+            FetchDescriptor<RecipeIngredient>(
+                predicate: #Predicate<RecipeIngredient> { $0.servingSize?.id == servingSizeId }
+            )
+        )
+        for ingredient in affectedIngredients {
+            ingredient.servingSize = nil
+        }
+
+        context.delete(servingSize)
+    }
 }

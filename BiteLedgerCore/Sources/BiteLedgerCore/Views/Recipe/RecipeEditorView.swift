@@ -43,6 +43,22 @@ public struct RecipeEditorView: View {
         public var recipeQuantity: Double? = nil
         /// Parsed recipe unit (e.g. "lbs"). Stored on RecipeIngredient for future display.
         public var recipeUnit: String? = nil
+
+        public init(
+            food: FoodItem,
+            serving: ServingSize,
+            quantity: Double,
+            rawText: String? = nil,
+            recipeQuantity: Double? = nil,
+            recipeUnit: String? = nil
+        ) {
+            self.food = food
+            self.serving = serving
+            self.quantity = quantity
+            self.rawText = rawText
+            self.recipeQuantity = recipeQuantity
+            self.recipeUnit = recipeUnit
+        }
     }
 
     // MARK: Form State

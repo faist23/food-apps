@@ -899,8 +899,8 @@ private struct IngredientFoodPickerView: View {
                     Text(brand).font(.caption).foregroundStyle(.secondary)
                 }
                 if let cal = food.defaultServing.flatMap({ s -> Double? in
-                    guard let gw = s.gramWeight else { return nil }
-                    return food.calories * gw / 100
+                    guard s.gramWeight != nil else { return nil }
+                    return NutritionCalculator.preview(food: food, serving: s, quantity: 1).calories
                 }) {
                     Text("\(Int(cal)) cal / \(food.defaultServing?.label ?? "serving")")
                         .font(.caption2).foregroundStyle(.secondary)
@@ -921,7 +921,8 @@ private struct IngredientFoodPickerView: View {
                 }
                 if let cal = product.nutriments?.energyKcal100g?.value {
                     if let portion = product.portions?.first {
-                        Text("\(Int(cal * portion.gramWeight / 100)) cal / \(portion.modifier)")
+                        let displayCal = NutritionCalculator.perPortionCalories(caloriesPer100g: cal, gramWeight: portion.gramWeight)
+                        Text("\(Int(displayCal)) cal / \(portion.modifier)")
                             .font(.caption2).foregroundStyle(.secondary)
                     } else {
                         Text("\(Int(cal)) cal/100g")

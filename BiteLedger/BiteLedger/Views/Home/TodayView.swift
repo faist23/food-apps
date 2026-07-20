@@ -37,11 +37,14 @@ struct TodayView: View {
         logs
     }
 
-    private var isChipDismissedToday: Bool {
+    private static let dayFormatter: DateFormatter = {
         let fmt = DateFormatter()
         fmt.dateFormat = "yyyy-MM-dd"
-        let today = fmt.string(from: Date())
-        return spotlightChipDismissedDate == today
+        return fmt
+    }()
+
+    private var isChipDismissedToday: Bool {
+        spotlightChipDismissedDate == Self.dayFormatter.string(from: Date())
     }
 
     private var showSpotlightChip: Bool {
@@ -50,10 +53,8 @@ struct TodayView: View {
         !isChipDismissedToday
     }
 
-    private func caloriesFor(meal: MealType) -> Double {
-        todayLogs
-            .filter { $0.mealType == meal }
-            .reduce(into: 0) { $0 += $1.caloriesAtLogTime }
+    private var logsByMealType: [MealType: [FoodLog]] {
+        Dictionary(grouping: todayLogs, by: \.mealType)
     }
 
     // MARK: - Body
@@ -321,9 +322,7 @@ struct TodayView: View {
     }
 
     private func dismissChip() {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
-        spotlightChipDismissedDate = fmt.string(from: Date())
+        spotlightChipDismissedDate = Self.dayFormatter.string(from: Date())
     }
 
     private func loadLogsForSelectedDate() {
@@ -653,12 +652,16 @@ struct TodayView: View {
     }
 
     private var mealSections: some View {
-        VStack(spacing: 16) {
+        // Grouped once per render instead of filtering todayLogs from scratch for
+        // every meal type (this previously ran an O(n) filter per meal, twice over).
+        let grouped = logsByMealType
+        return VStack(spacing: 16) {
             ForEach(MealType.allCases, id: \.self) { meal in
+                let mealLogs = grouped[meal] ?? []
                 MealDiarySection(
                     meal: meal,
-                    logs: todayLogs.filter { $0.mealType == meal },
-                    calories: caloriesFor(meal: meal),
+                    logs: mealLogs,
+                    calories: NutritionCalculator.dailyTotal(logs: mealLogs).calories,
                     selectedDate: selectedDate,
                     hasYesterdayMeal: hasYesterdayMeal(meal),
                     yesterdayCalories: yesterdayCalories(for: meal),
@@ -670,7 +673,7 @@ struct TodayView: View {
                         loadLogsForSelectedDate()
                     },
                     onTapMeal: {
-                        if !todayLogs.filter({ $0.mealType == meal }).isEmpty {
+                        if !mealLogs.isEmpty {
                             showingMealNutrition = meal
                         }
                     },
