@@ -81,7 +81,7 @@ internally by `importFromOCRLines` (idempotent).
   (catches single-letter OCR artifacts from decorative card lettering)
 
 ### `RecipeImportResult.detectedSource`
-New `String?` field. Claude extracts "from the kitchen of / recipe by / submitted by"
+`String?` field. Claude extracts "from the kitchen of / recipe by / submitted by"
 style attributions from the OCR text and returns them here. `OCRTextReviewView`
 auto-fills the source field if the user left it blank.
 
@@ -131,7 +131,7 @@ via `Bundle.module`) into the shared store on first launch.
 
 ## autoMatch() — Ingredient Matching
 
-Located in `RecipeImportReviewView` (now in `BiteLedgerCore/Sources/BiteLedgerCore/Views/Recipe/RecipeImportReviewView.swift` — moved from BiteRecipe in v0.3.0.0). Runs once on view appear for all ingredients.
+Located in `RecipeImportReviewView` (`BiteLedgerCore/Sources/BiteLedgerCore/Views/Recipe/RecipeImportReviewView.swift`). Runs once on view appear for all ingredients.
 
 ### Term preparation (applied in order)
 1. **`termAliases`** dict maps ambiguous terms to specific ones:
@@ -168,7 +168,7 @@ Falls back gracefully to the local candidate if the API call fails.
 
 ## ingredientScore()
 
-Public free function in `BiteLedgerCore/Sources/BiteLedgerCore/Services/IngredientMatching.swift` (moved from BiteRecipe in v0.3.0.0).
+Public free function in `BiteLedgerCore/Sources/BiteLedgerCore/Services/IngredientMatching.swift`.
 
 ```
 100 — exact name match
@@ -190,7 +190,7 @@ Score floor is 0 (never negative).
 
 ## resolveGrams() — Gram Amount Resolution
 
-Public free function in `BiteLedgerCore/Sources/BiteLedgerCore/Services/IngredientMatching.swift` (moved from BiteRecipe in v0.3.0.0). Converts a recipe ingredient's
+Public free function in `BiteLedgerCore/Sources/BiteLedgerCore/Services/IngredientMatching.swift`. Converts a recipe ingredient's
 `quantity + unit` to a gram amount using the matched food's servings.
 
 **Must be called in two places:**

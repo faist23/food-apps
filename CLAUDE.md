@@ -6,7 +6,7 @@ Two standalone iOS apps sharing a common data layer:
 - **BiteRecipe** (`BiteRecipe/`) — recipe manager and importer
 - **BiteLedgerCore** (`BiteLedgerCore/`) — shared Swift package (models, services, calculators)
 
-Platform: iOS 26.0+, Swift 6.0, SwiftUI + SwiftData, Xcode 16.3.
+Platform: iOS 26.0+, SwiftUI + SwiftData, Xcode 26 (`SWIFT_VERSION = 5.0` language mode).
 
 Both apps ship independently on the App Store. When both are installed they share
 the same SwiftData store via App Groups and can read each other's data.
@@ -21,14 +21,15 @@ that applies to both.
 - **App Group ID:** `group.com.ridepro.biteledger`
 - **Store file:** `biteledger.store`
 
-Both `BiteLedgerApp.swift` and `BiteRecipeApp.swift` open the same physical store.
-The `Schema([...])` list in both files **must always be identical and in the same
-order**. If one app registers a model the other does not, the shared store will
+Both `BiteLedgerApp.swift` and `BiteRecipeApp.swift` open the same physical store,
+each via `Schema(versionedSchema:)`. The versioned schemas in `BiteLedgerSchema.swift`
+and `BiteRecipeSchema.swift` **must list identical models in the same order, at the
+same version**. If one app registers a model the other does not, the shared store will
 fail to open on whichever app launches second.
 
 **Any schema change requires a coordinated release of both apps.**
 
-### Current schema (9 models — must match in both apps)
+### Current schema (14 models — must match in both apps)
 
 | Model | Purpose |
 |---|---|
@@ -72,13 +73,11 @@ fail to open on whichever app launches second.
 - **SchemaV2** — `FoodHistoryEntry` added (shipped feature/v1-ship); lightweight migration from V1. BiteRecipe registers it but never queries it.
 - **SchemaV3** — `MealPlan` + `MealPlanEntry` added (shipped feature/v1-ship); lightweight migration from V2.
 - **SchemaV4** — `MealPlanMeal` + `MealPlanMealItem` added (shipped feature/v1-ship 2026-03-30); lightweight migration from V3. 14 models total.
-- **SchemaV5** (planned) — T-09 HealthKit (`healthKitEnabled` flag in UserPreferences) and T-10 Recipe Creation in BiteLedger. Both require a coordinated 2-app release.
+- **SchemaV5** — defined in both apps (adds `id: UUID` to `MealPlan`, `MealPlanMeal`, `MealPlanMealItem` for the CSV meal-plan round-trip) but not yet opened: both apps still open SchemaV4. Switching to it requires a coordinated 2-app release.
 
-**Current state:** both apps use `VersionedSchema` + `SchemaMigrationPlan`
-(`BiteLedgerMigrationPlan` / `BiteRecipeMigrationPlan`), wired into
-`ModelContainer` via the `migrationPlan:` parameter. SchemaV2 (FoodHistoryEntry) is
-the current baseline. Data is never deleted on mismatch — an error screen + Retry is
-shown instead.
+**Current state:** both apps define `VersionedSchema`s and a `SchemaMigrationPlan`
+(`BiteLedgerMigrationPlan` / `BiteRecipeMigrationPlan`) and open the store with
+SchemaV4. Data is never deleted on mismatch — an error screen + Retry is shown instead.
 
 **Migration plan status:** `BiteLedgerMigrationPlan` / `BiteRecipeMigrationPlan` are
 defined but **NOT passed to `ModelContainer`**. SwiftData auto-migrates lightweight
@@ -141,8 +140,9 @@ fingerprint identically).
 - Editing a `FoodItem` never rewrites log history
 - Always use `FoodLog.create(mealType:quantity:food:serving:)` — it is the only
   correct way to create a log entry
-- When displaying a log entry, read `*AtLogTime` fields; never call
-  `NutritionCalculator` on existing logs
+- When displaying a log entry, read `*AtLogTime` fields (directly or via
+  `NutritionCalculator.fromLog()`); never recompute an existing log with
+  `calculate()` or `preview()`
 
 ---
 
@@ -202,4 +202,3 @@ default goal types (minimum/maximum/range). When adding new nutrients, update
 
 ## gstack
 Use /browse from gstack for all web browsing. Never use mcp__claude-in-chrome__* tools.
-Available skills: /plan-ceo-review, /plan-eng-review, /plan-design-review, /design-consultation, /review, /ship, /browse, /qa, /qa-only, /qa-design-review, /setup-browser-cookies, /retro, /document-release.
