@@ -374,6 +374,10 @@ a completely separate prefix namespace that the seeder never touches.
   `commitLogs` a single time. Looping per-item `onFoodAdded` instead would schedule N
   deferred save + `loadSevenDayLogs` + `loadStreak` passes (the multi-item freeze). Single
   adds fall back to `onFoodAdded` → `stageLog` + `commitLogs([one])`.
+- **Recent list exclusions come from `addedFoodIDs`, not a refetch** — every add path in
+  `FoodSearchView` inserts the food's id into `addedFoodIDs`, which `RecentFoodsForMealView`
+  hides. The meal-copy path deliberately skips `refreshLogs()`, so `allLogs` is stale after it;
+  do not "fix" duplicates in Recent by refetching there.
 - **The meal sheet must not force keyboard focus** — drop `isSearchFocused = false` before
   presenting the meal sheet and do NOT set `isSearchFocused = true` in its `onDismiss`.
   A programmatic refocus restores the search field as first responder mid-dismiss, which

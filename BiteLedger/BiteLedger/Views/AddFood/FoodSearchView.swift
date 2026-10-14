@@ -61,6 +61,10 @@ struct FoodSearchView: View {
     @State private var searchTask: Task<Void, Never>? // Track current search task
     @State private var debounceTask: Task<Void, Never>? // Track debounce task
     @State private var addedCount = 0 // Items added this session
+    // Foods added this session — hidden from the Recent list so it doesn't re-suggest
+    // what was just logged. Needed because the meal-copy path skips refreshLogs()
+    // (allLogs stays stale) and adds to past dates aren't caught by the "today" filter.
+    @State private var addedFoodIDs: Set<UUID> = []
     
     private let foodService = UnifiedFoodSearchService.shared
     
@@ -290,6 +294,7 @@ struct FoodSearchView: View {
                 ) { addedItem in
                     onFoodAdded(addedItem)
                     addedCount += 1
+                    addedFoodIDs.insert(addedItem.foodItem.id)
                     refreshLogs()
                     selectedProduct = nil
                 }
@@ -323,6 +328,7 @@ struct FoodSearchView: View {
                 ) { addedItem in
                     onFoodAdded(addedItem)
                     addedCount += 1
+                    addedFoodIDs.insert(addedItem.foodItem.id)
                     refreshLogs()
                     selectedProductContext = nil
                 }
@@ -331,6 +337,7 @@ struct FoodSearchView: View {
                 ManualFoodEntryView(mealType: mealType) { addedItem in
                     onFoodAdded(addedItem)
                     addedCount += 1
+                    addedFoodIDs.insert(addedItem.foodItem.id)
                     refreshLogs()
                 }
             }
@@ -358,6 +365,7 @@ struct FoodSearchView: View {
                 RecentFoodsForMealView(
                     allLogs: allLogs,
                     mealType: mealType,
+                    excludedFoodIDs: addedFoodIDs,
                     onFoodQuickAdded: { foodItem in
                         let lastLog = allLogs.first { $0.foodItem?.id == foodItem.id }
                         let serving = lastLog?.servingSize ?? foodItem.defaultServing ?? foodItem.servingSizes.first
@@ -369,6 +377,7 @@ struct FoodSearchView: View {
                         )
                         onFoodAdded(addedItem)
                         addedCount += 1
+                        addedFoodIDs.insert(addedItem.foodItem.id)
                         refreshLogs()
                     },
                     onFoodSelected: { foodItem in
@@ -568,6 +577,7 @@ struct FoodSearchView: View {
                 )
                 onFoodAdded(addedItem)
                 addedCount += 1
+                addedFoodIDs.insert(addedItem.foodItem.id)
                 refreshLogs()
             },
             onFoodSelected: { foodItem in
@@ -793,6 +803,7 @@ struct FoodSearchView: View {
         )
         onFoodAdded(addedItem)
         addedCount += 1
+        addedFoodIDs.insert(addedItem.foodItem.id)
         refreshLogs()
         selectedRecipeForLog = nil
     }
@@ -1001,6 +1012,7 @@ struct FoodSearchView: View {
                     // the instant the dismissing sheet uncovers the toolbar, rather than
                     // fading in over ~0.35s on top of the dismiss animation.
                     addedCount += snapshot.count
+                    addedFoodIDs.formUnion(snapshot.map { $0.foodItem.id })
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
 
                     // Deliver the whole meal at once so the host saves + reloads a single
@@ -1184,6 +1196,7 @@ struct FoodSearchView: View {
         
         onFoodAdded(addedItem)
         addedCount += 1
+        addedFoodIDs.insert(addedItem.foodItem.id)
         refreshLogs()
     }
 
@@ -2087,6 +2100,7 @@ struct FoodItemRow: View {
 struct RecentFoodsForMealView: View {
     let allLogs: [FoodLog]
     let mealType: MealType
+    var excludedFoodIDs: Set<UUID> = []
     let onFoodQuickAdded: (FoodItem) -> Void
     let onFoodSelected: (FoodItem) -> Void
 
@@ -2109,9 +2123,9 @@ struct RecentFoodsForMealView: View {
     }
 
     /// Top 8 most-frequently logged foods for this meal type, excluding foods
-    /// already logged today.
+    /// already logged today and foods added in this Add Food session.
     private var recentFoods: [FoodItem] {
-        let todaysFoodIDs = Set(
+        let todaysFoodIDs = excludedFoodIDs.union(
             allLogs
                 .filter { Calendar.current.isDate($0.timestamp, inSameDayAs: Date()) && $0.mealType == mealType }
                 .compactMap { $0.foodItem?.id }
