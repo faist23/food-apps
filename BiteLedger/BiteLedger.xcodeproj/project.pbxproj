@@ -447,6 +447,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BiteLedger/Info.plist;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "BiteLedger needs camera access to scan product barcodes for quick food logging.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "BiteLedger can sync your nutrition data to Apple Health if you choose.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "BiteLedger can save your nutrition data to Apple Health if you choose.";
@@ -485,6 +486,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BiteLedger/Info.plist;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "BiteLedger needs camera access to scan product barcodes for quick food logging.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "BiteLedger can sync your nutrition data to Apple Health if you choose.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "BiteLedger can save your nutrition data to Apple Health if you choose.";
@@ -519,7 +521,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = DT58WA8N32;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridepro.BiteLedgerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -541,7 +543,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = DT58WA8N32;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridepro.BiteLedgerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -562,6 +564,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = DT58WA8N32;
 				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridepro.BiteLedgerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -582,6 +585,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = DT58WA8N32;
 				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ridepro.BiteLedgerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
