@@ -258,8 +258,17 @@ struct TodayView: View {
             prefs.hasSeenFirstLogCelebration = true
             triggerCelebration = true
         }
-        if Calendar.current.isDateInToday(selectedDate), let prefs = preferences {
-            prefs.streakCachedDate = nil
+        // Keep the streak cache current instead of invalidating it. Nil'ing
+        // streakCachedDate here made loadStreak() (in commitLogs) walk the whole
+        // streak — one COUNT query per day, synchronously on the main actor — right
+        // as the add sheet dismissed, which delayed taps on FoodSearchView's
+        // checkmark. The first log of today extends a cache computed today by one;
+        // any later log leaves the streak unchanged. `logs` holds today's entries
+        // here (selectedDate is today), so empty == today wasn't counted yet.
+        if Calendar.current.isDateInToday(selectedDate), let prefs = preferences, logs.isEmpty,
+           let cachedDate = prefs.streakCachedDate,
+           Calendar.current.isDateInToday(cachedDate) {
+            prefs.cachedStreak += 1
         }
 
         // Optimistic: insert at correct sorted position without a fetch round-trip.
@@ -671,6 +680,13 @@ struct TodayView: View {
                         modelContext.delete(log)
                         try? modelContext.save()
                         loadLogsForSelectedDate()
+                        // Deleting today's last log un-counts today: drop the cache so
+                        // the next stageLog doesn't increment on top of a stale value.
+                        if Calendar.current.isDateInToday(selectedDate), logs.isEmpty,
+                           let prefs = preferences {
+                            prefs.streakCachedDate = nil
+                            loadStreak()
+                        }
                     },
                     onTapMeal: {
                         if !mealLogs.isEmpty {

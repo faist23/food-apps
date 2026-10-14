@@ -46,7 +46,15 @@ struct FoodSearchView: View {
     @State private var showManualEntry = false
     @State private var selectedProduct: ProductInfo?
     @State private var selectedProductContext: (product: ProductInfo, existingFood: FoodItem?, initialAmount: Double?, initialPortionId: Int?, initialUnit: String?)? // Combined context
-    @State private var selectedMeal: [FoodLog]?
+    // Stable identity for the meal sheet. The previous Binding minted a new
+    // SelectedMeal (fresh UUID) on every body evaluation, so the presented item's
+    // id changed on each re-render of this view.
+    @State private var selectedMeal: SelectedMeal?
+    // Cached Meals-tab grouping. Was a computed property re-run several times per
+    // render (isEmpty + once per visible row via groupedMeals[index]) — grouping up
+    // to 1000 logs each time. Every re-render after a meal add (badge bump, sheet
+    // dismiss) paid that cost on the main thread, delaying taps on the checkmark.
+    @State private var groupedMeals: [(date: Date, mealType: MealType, logs: [FoodLog])] = []
     @State private var allRecipes: [Recipe] = []
     @State private var selectedRecipeForLog: Recipe?
     @State private var errorMessage: String?
@@ -78,6 +86,7 @@ struct FoodSearchView: View {
                         .onChange(of: searchText) { _, newValue in
                             if selectedTab == .meals {
                                 startMealSearch(query: newValue)
+                                rebuildGroupedMeals()
                             }
                             if selectedTab == .search {
                                 // Cancel any existing debounce task
@@ -122,6 +131,7 @@ struct FoodSearchView: View {
                                 // searchText doesn't change on tab switch, so onChange(of: searchText)
                                 // won't fire. Re-trigger the meal search if a query is already typed.
                                 startMealSearch(query: searchText)
+                                rebuildGroupedMeals()
                             }
                         }
 
@@ -225,6 +235,7 @@ struct FoodSearchView: View {
                 )
                 d.fetchLimit = 1000
                 allLogs = (try? modelContext.fetch(d)) ?? []
+                rebuildGroupedMeals()
 
                 // T-14: FoodHistoryEntry — powers Recent Foods + My Foods (no cutoff).
                 foodHistory = (try? modelContext.fetch(
@@ -833,51 +844,53 @@ struct FoodSearchView: View {
 
     // MARK: - Meals Tab
 
-    private var groupedMeals: [(date: Date, mealType: MealType, logs: [FoodLog])] {
+    private struct MealKey: Hashable {
+        let day: Date
+        let mealType: MealType
+    }
+
+    /// Recomputes the cached `groupedMeals`. Call after `allLogs`, `mealSearchLogs`,
+    /// or `searchText` change. Skipped off the Meals tab (the tab switch rebuilds),
+    /// so single adds from other tabs don't pay for it in `refreshLogs()`.
+    private func rebuildGroupedMeals() {
+        guard selectedTab == .meals else { return }
         // When a debounced meal search is in flight or complete, use mealSearchLogs —
         // these are pre-filtered by FoodItem name predicate (SQL), so no per-row
         // relationship faulting needed. When browsing with no query, use allLogs (1000 cap).
         let usingSearchResults = !searchText.isEmpty && !mealSearchLogs.isEmpty
+
+        // Three cases:
+        //   searchText empty           → show all recent meals (allLogs path)
+        //   searchText set + results   → show mealSearchLogs (already SQL-filtered)
+        //   searchText set + no results yet → show nothing to avoid N lazy-fault reads
+        //     during the 400ms debounce window. ContentUnavailableView handles display.
+        guard searchText.isEmpty || usingSearchResults else {
+            groupedMeals = []
+            return
+        }
+
         let logsSource = usingSearchResults ? mealSearchLogs : allLogs
         let calendar = Calendar.current
-        let grouped = Dictionary(grouping: logsSource) { log -> String in
-            let dateComponents = calendar.dateComponents([.year, .month, .day], from: log.timestamp)
-            let dateKey = calendar.date(from: dateComponents) ?? log.timestamp
-            return "\(dateKey)-\(log.mealType.rawValue)"
+        let grouped = Dictionary(grouping: logsSource) { log in
+            MealKey(day: calendar.startOfDay(for: log.timestamp), mealType: log.mealType)
         }
 
         // Meal sort priority: snack=0, dinner=1, lunch=2, breakfast=3
         // Combined with date descending, this puts the last meal of the day at the top of each group.
         let mealPriority: [MealType: Int] = [.snack: 0, .dinner: 1, .lunch: 2, .breakfast: 3]
 
-        let sorted = grouped.map { (_, logs) -> (date: Date, mealType: MealType, logs: [FoodLog]) in
-            let firstLog = logs.first!
-            return (firstLog.timestamp, firstLog.mealType, logs.sorted { $0.timestamp < $1.timestamp })
-        }
-        .sorted { a, b in
-            let aDay = calendar.startOfDay(for: a.date)
-            let bDay = calendar.startOfDay(for: b.date)
-            if aDay != bDay { return aDay > bDay }
-            return (mealPriority[a.mealType] ?? 99) < (mealPriority[b.mealType] ?? 99)
-        }
-
-        // Three cases:
-        //   searchText empty           → show all recent meals (allLogs path)
-        //   searchText set + results   → show mealSearchLogs (already SQL-filtered)
-        //   searchText set + no results yet → return [] to avoid N lazy-fault reads
-        //     during the 400ms debounce window. ContentUnavailableView handles display.
-        let filtered: [(date: Date, mealType: MealType, logs: [FoodLog])]
-        if searchText.isEmpty || usingSearchResults {
-            filtered = sorted
-        } else {
-            // Debounce still pending — nothing to show yet.
-            filtered = []
+        let sorted = grouped.sorted { a, b in
+            if a.key.day != b.key.day { return a.key.day > b.key.day }
+            return (mealPriority[a.key.mealType] ?? 99) < (mealPriority[b.key.mealType] ?? 99)
         }
 
         // Cap at 60 meal groups to keep the list fast to render
-        return Array(filtered.prefix(60))
+        groupedMeals = sorted.prefix(60).map { key, logs in
+            let ordered = logs.sorted { $0.timestamp < $1.timestamp }
+            return (ordered[0].timestamp, key.mealType, ordered)
+        }
     }
-    
+
     private var mealsTabContent: some View {
         Group {
             if groupedMeals.isEmpty {
@@ -952,7 +965,7 @@ struct FoodSearchView: View {
                                 // that auto-restore is what re-summons the keyboard and
                                 // triggers the system-keyboard fallback.
                                 isSearchFocused = false
-                                selectedMeal = meal.logs
+                                selectedMeal = SelectedMeal(logs: meal.logs)
                             }
                         }
                     }
@@ -963,10 +976,7 @@ struct FoodSearchView: View {
         // No onDismiss refocus: leaving focus untouched keeps the keyboard down so
         // the user's chosen keyboard loads on their next deliberate tap (a forced
         // refocus here is what made iOS fall back to the system keyboard).
-        .sheet(item: Binding(
-            get: { selectedMeal != nil ? SelectedMeal(logs: selectedMeal!) : nil },
-            set: { selectedMeal = $0?.logs }
-        )) { mealWrapper in
+        .sheet(item: $selectedMeal) { mealWrapper in
             MealItemSelectionView(
                 sourceLogs: mealWrapper.logs,
                 targetMealType: mealType,
@@ -1016,6 +1026,7 @@ struct FoodSearchView: View {
         mealSearchTask?.cancel()
         guard query.count >= 2 else {
             mealSearchLogs = []
+            rebuildGroupedMeals()
             return
         }
         guard let actor = mealSearchActor else { return }
@@ -1029,6 +1040,7 @@ struct FoodSearchView: View {
 
             guard !matchedIDs.isEmpty else {
                 mealSearchLogs = []
+                rebuildGroupedMeals()
                 return
             }
 
@@ -1040,6 +1052,7 @@ struct FoodSearchView: View {
                     sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)]
                 )
             )) ?? []
+            rebuildGroupedMeals()
         }
     }
 
@@ -1178,6 +1191,7 @@ struct FoodSearchView: View {
         var d = FetchDescriptor<FoodLog>(sortBy: [SortDescriptor(\FoodLog.timestamp, order: .reverse)])
         d.fetchLimit = 1000
         allLogs = (try? modelContext.fetch(d)) ?? []
+        rebuildGroupedMeals()
         // Refresh the history index to reflect the food just logged.
         foodHistory = (try? modelContext.fetch(
             FetchDescriptor<FoodHistoryEntry>(
